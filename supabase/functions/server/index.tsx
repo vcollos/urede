@@ -59,6 +59,51 @@ const supabase = createClient(
   { db: { schema: DB_SCHEMA } }
 );
 
+// Helpers de mapeamento para o formato esperado pelo frontend
+const mapCooperativa = (row: any) => ({
+  id_singular: row.id_singular ?? row.ID_SINGULAR,
+  uniodonto: row.UNIODONTO ?? row.uniodonto ?? '',
+  cnpj: row.CNPJ ?? row.cnpj ?? '',
+  cro_operadora: row.CRO_OPERAORA ?? row.CRO_OPERADORA ?? row.cro_operadora ?? '',
+  data_fundacao: row.DATA_FUNDACAO ?? row.data_fundacao ?? '',
+  raz_social: row.RAZ_SOCIAL ?? row.raz_social ?? '',
+  codigo_ans: row.CODIGO_ANS ?? row.codigo_ans ?? '',
+  federacao: row.FEDERACAO ?? row.federacao ?? '',
+  software: row.SOFTWARE ?? row.software ?? '',
+  tipo: row.TIPO ?? row.tipo ?? '',
+  op_pr: row.OP_PR ?? row.op_pr ?? '',
+});
+
+const mapCidade = (row: any) => ({
+  cd_municipio_7: row.CD_MUNICIPIO_7 ?? row.cd_municipio_7,
+  cd_municipio: row.CD_MUNICIPIO ?? row.cd_municipio,
+  regional_saude: row.REGIONAL_SAUDE ?? row.regional_saude,
+  nm_cidade: row.NM_CIDADE ?? row.nm_cidade,
+  uf_municipio: row.UF_MUNICIPIO ?? row.uf_municipio,
+  nm_regiao: row.NM_REGIAO ?? row.nm_regiao,
+  cidades_habitantes: row.CIDADES_HABITANTES ?? row.cidades_habitantes,
+  id_singular: row.ID_SINGULAR ?? row.id_singular,
+});
+
+const mapOperador = (row: any) => ({
+  id: (row.id ?? '').toString(),
+  nome: row.nome ?? '',
+  email: row.email ?? '',
+  telefone: row.telefone ?? '',
+  whatsapp: row.whatsapp ?? '',
+  cargo: row.cargo ?? '',
+  id_singular: row.id_singular ?? '',
+  ativo: (row.status ?? true) as boolean,
+  data_cadastro: row.created_at ?? new Date().toISOString(),
+});
+
+const computeDiasRestantes = (prazoIso: string) => {
+  const agora = new Date();
+  const prazo = new Date(prazoIso);
+  const diffTime = prazo.getTime() - agora.getTime();
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+};
+
 // Middleware para verificar autenticação
 const requireAuth = async (c: any, next: any) => {
   const accessToken = c.req.header('Authorization')?.split(' ')[1];
@@ -207,8 +252,6 @@ const escalarPedidos = async () => {
             cooperativa_responsavel_id: novaCooperativaResponsavel,
             prazo_atual: novoPrazo,
             data_ultima_alteracao: agora,
-            responsavel_atual_id: null,
-            responsavel_atual_nome: null,
           })
           .eq('id', pedido.id);
 
@@ -306,7 +349,8 @@ app.get('/cooperativas/public', async (c) => {
       console.error('Erro ao buscar cooperativas do banco:', error);
       return c.json({ error: 'Erro ao buscar cooperativas' }, 500);
     }
-    return c.json(data || []);
+    const mapped = (data || []).map(mapCooperativa);
+    return c.json(mapped);
   } catch (error) {
     console.error('Erro ao buscar cooperativas públicas:', error);
     return c.json({ error: 'Erro ao buscar cooperativas' }, 500);
@@ -323,7 +367,8 @@ app.get('/cooperativas', requireAuth, async (c) => {
       console.error('Erro ao buscar cooperativas do banco:', error);
       return c.json({ error: 'Erro ao buscar cooperativas' }, 500);
     }
-    return c.json(data || []);
+    const mapped = (data || []).map(mapCooperativa);
+    return c.json(mapped);
   } catch (error) {
     console.error('Erro ao buscar cooperativas:', error);
     return c.json({ error: 'Erro ao buscar cooperativas' }, 500);
@@ -340,7 +385,8 @@ app.get('/cidades', requireAuth, async (c) => {
       console.error('Erro ao buscar cidades do banco:', error);
       return c.json({ error: 'Erro ao buscar cidades' }, 500);
     }
-    return c.json(data || []);
+    const mapped = (data || []).map(mapCidade);
+    return c.json(mapped);
   } catch (error) {
     console.error('Erro ao buscar cidades:', error);
     return c.json({ error: 'Erro ao buscar cidades' }, 500);
@@ -357,7 +403,8 @@ app.get('/operadores', requireAuth, async (c) => {
       console.error('Erro ao buscar operadores do banco:', error);
       return c.json({ error: 'Erro ao buscar operadores' }, 500);
     }
-    return c.json(data || []);
+    const mapped = (data || []).map(mapOperador);
+    return c.json(mapped);
   } catch (error) {
     console.error('Erro ao buscar operadores:', error);
     return c.json({ error: 'Erro ao buscar operadores' }, 500);
@@ -371,9 +418,8 @@ app.get('/pedidos', requireAuth, async (c) => {
     const userData = await getUserData(authUser.id, authUser.email);
     
     let { data: pedidosData, error } = await supabase
-      .from('pedidos')
-      .select('*')
-      .order('data_criacao', { ascending: false });
+      .from(TBL('pedidos'))
+      .select('*');
     if (error) {
       console.error('Erro ao buscar pedidos do banco:', error);
       return c.json({ error: 'Erro ao buscar pedidos' }, 500);
@@ -406,17 +452,10 @@ app.get('/pedidos', requireAuth, async (c) => {
     });
 
     // Calcular dias restantes para cada pedido
-    const pedidosComDias = pedidosFiltrados.map(pedidoData => {
-      const agora = new Date();
-      const prazo = new Date(pedidoData.prazo_atual);
-      const diffTime = prazo.getTime() - agora.getTime();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      
-      return {
-        ...pedidoData,
-        dias_restantes: diffDays
-      };
-    });
+    const pedidosComDias = pedidosFiltrados.map(p => ({
+      ...p,
+      dias_restantes: computeDiasRestantes(p.prazo_atual),
+    }));
 
     return c.json(pedidosComDias);
   } catch (error) {
@@ -427,11 +466,11 @@ app.get('/pedidos', requireAuth, async (c) => {
 
 app.post('/pedidos', requireAuth, async (c) => {
   try {
-    const userData = await getUserData(c.get('user').id);
+    const authUser = c.get('user');
+    const userData = await getUserData(authUser.id, authUser.email);
     const pedidoData = await c.req.json();
     
     const novoPedido = {
-      id: `PED_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       titulo: pedidoData.titulo,
       criado_por: userData.id,
       cooperativa_solicitante_id: userData.cooperativa_id,
@@ -445,13 +484,14 @@ app.post('/pedidos', requireAuth, async (c) => {
       data_criacao: new Date().toISOString(),
       data_ultima_alteracao: new Date().toISOString(),
       cooperativa_responsavel_id: userData.cooperativa_id,
-      dias_restantes: 30,
       prioridade: pedidoData.prioridade || 'media'
     };
 
-    const { error: insertError } = await supabase
+    const { data: inserted, error: insertError } = await supabase
       .from(TBL('pedidos'))
-      .insert([novoPedido]);
+      .insert([novoPedido])
+      .select('*')
+      .single();
 
     if (insertError) {
       console.error('Erro ao inserir pedido na tabela:', insertError);
@@ -476,7 +516,10 @@ app.post('/pedidos', requireAuth, async (c) => {
       console.error('Erro ao salvar auditoria:', auditoriaError);
     }
 
-    return c.json(novoPedido);
+    return c.json({
+      ...inserted,
+      dias_restantes: computeDiasRestantes(inserted.prazo_atual),
+    });
   } catch (error) {
     console.error('Erro ao criar pedido:', error);
     return c.json({ error: 'Erro ao criar pedido' }, 500);
@@ -501,23 +544,24 @@ app.put('/pedidos/:id', requireAuth, async (c) => {
     
     // Verificar permissões
     const podeEditar = userData.papel === 'admin' || 
-                      pedido.cooperativa_responsavel_id === userData.cooperativa_id ||
-                      pedido.responsavel_atual_id === userData.id;
+                      pedido.cooperativa_responsavel_id === userData.cooperativa_id;
     
     if (!podeEditar) {
       return c.json({ error: 'Acesso negado para editar este pedido' }, 403);
     }
 
-    // Atualizar dados
-    const pedidoAtualizado = {
-      ...pedido,
-      ...updateData,
-      data_ultima_alteracao: new Date().toISOString()
-    };
+    // Sanitizar update apenas para colunas conhecidas
+    const allowed: Record<string, any> = {};
+    const whitelist = [
+      'titulo', 'cooperativa_responsavel_id', 'cidade_id', 'especialidades', 'quantidade',
+      'observacoes', 'prioridade', 'nivel_atual', 'status', 'prazo_atual',
+    ];
+    for (const k of whitelist) if (k in updateData) allowed[k] = updateData[k];
+    allowed.data_ultima_alteracao = new Date().toISOString();
 
     const { error: upErr } = await supabase
       .from(TBL('pedidos'))
-      .update(pedidoAtualizado)
+      .update(allowed)
       .eq('id', pedidoId);
     if (upErr) {
       console.error('Erro ao atualizar pedido:', upErr);
@@ -535,14 +579,22 @@ app.put('/pedidos/:id', requireAuth, async (c) => {
       detalhes: `Campos atualizados: ${Object.keys(updateData).join(', ')}`
     };
 
-    const { error: audErr } = await supabase
-      .from('auditoria_logs')
-      .insert([auditoria]);
-    if (audErr) {
-      console.error('Erro ao salvar auditoria de atualização:', audErr);
+    try {
+      const { error: audErr } = await supabase
+        .from(TBL('auditoria_logs'))
+        .insert([auditoria]);
+      if (audErr) {
+        console.error('Erro ao salvar auditoria de atualização:', audErr);
+      }
+    } catch (e) {
+      console.warn('Auditoria não registrada (tabela ausente?):', e);
     }
 
-    return c.json(pedidoAtualizado);
+    const updated = { ...pedido, ...allowed };
+    return c.json({
+      ...updated,
+      dias_restantes: computeDiasRestantes(updated.prazo_atual),
+    });
   } catch (error) {
     console.error('Erro ao atualizar pedido:', error);
     return c.json({ error: 'Erro ao atualizar pedido' }, 500);
@@ -572,7 +624,8 @@ app.get('/pedidos/:id/auditoria', requireAuth, async (c) => {
 // Dashboard - Estatísticas
 app.get('/dashboard/stats', requireAuth, async (c) => {
   try {
-    const userData = await getUserData(c.get('user').id);
+    const authUser = c.get('user');
+    const userData = await getUserData(authUser.id, authUser.email);
     
     let { data: pedidosData, error } = await supabase
       .from(TBL('pedidos'))
