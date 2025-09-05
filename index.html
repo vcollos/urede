@@ -5,6 +5,22 @@
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       <title>Credenciamento e Suprimento App</title>
+      <script>
+        (function () {
+          try {
+            var originalDefine = customElements.define.bind(customElements);
+            // Prevent errors from duplicate custom element registrations (e.g., extensions)
+            customElements.define = function (name, ctor, options) {
+              if (customElements.get(name)) {
+                return; // ignore re-definition
+              }
+              return originalDefine(name, ctor, options);
+            };
+          } catch (e) {
+            // noop
+          }
+        })();
+      </script>
     </head>
 
     <body>

@@ -41,6 +41,15 @@ export const getAuthHeaders = async () => {
 
 // Função para fazer requisições autenticadas ao servidor
 export const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
+  // Dev-only diagnostics to aid deploy/debug
+  if ((import.meta as any)?.env?.DEV && !(globalThis as any).__SUPA_DEBUG_PRINTED__) {
+    (globalThis as any).__SUPA_DEBUG_PRINTED__ = true;
+    try {
+      console.info('[Supabase] URL:', SUPABASE_URL);
+      console.info('[API Base] serverUrl:', serverUrl);
+    } catch {}
+  }
+
   const headers = await getAuthHeaders();
   
   const response = await fetch(`${serverUrl}${endpoint}`, {

@@ -9,3 +9,5 @@ build/
 # Env files
 .env
 supabase/functions/server/.env
+supabase/.temp/
+supabase/functions/server/index\ 2.ts

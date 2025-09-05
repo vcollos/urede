@@ -17,10 +17,26 @@ app.use('*', logger(console.log));
 
 // Configurar Supabase client
 // SUPABASE_URL é fornecida automaticamente pelo ambiente do Supabase (variável reservada)
-// Para a chave de serviço, use um secret próprio (ex.: SERVICE_ROLE_KEY)
+// Para a chave de serviço, priorizamos SERVICE_ROLE_KEY, com fallback para nomes comuns e, por fim, ANON para rotas públicas.
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+const SERVICE_ROLE_KEY =
+  Deno.env.get('SERVICE_ROLE_KEY') ||
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ||
+  Deno.env.get('SB_SERVICE_ROLE_KEY') ||
+  '';
+const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') || '';
+
+if (!SUPABASE_URL) {
+  console.error('[server] SUPABASE_URL ausente no ambiente.');
+}
+
+if (!SERVICE_ROLE_KEY) {
+  console.warn('[server] SERVICE_ROLE_KEY não encontrado; usando ANON para rotas públicas. Defina SERVICE_ROLE_KEY para privilégios de serviço.');
+}
+
 const supabase = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SERVICE_ROLE_KEY')!
+  SUPABASE_URL || '',
+  SERVICE_ROLE_KEY || SUPABASE_ANON_KEY || ''
 );
 
 // Middleware para verificar autenticação
