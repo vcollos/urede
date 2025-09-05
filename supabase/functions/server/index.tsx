@@ -1,6 +1,5 @@
-import { Hono } from "https://deno.land/x/hono@v4.4.12/mod.ts";
-import { cors } from "https://deno.land/x/hono@v4.4.12/middleware/cors/index.ts";
-import { logger } from "https://deno.land/x/hono@v4.4.12/middleware/logger/index.ts";
+import { Hono } from "https://deno.land/x/hono@v4.3.11/mod.ts";
+import { cors, logger } from "https://deno.land/x/hono@v4.3.11/middleware.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const app = new Hono();
