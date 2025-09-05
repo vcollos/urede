@@ -36,6 +36,8 @@ app.use('*', logger(console.log));
 // Para a chave de serviço, priorizamos SERVICE_ROLE_KEY, com fallback para nomes comuns e, por fim, ANON para rotas públicas.
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const DB_SCHEMA = Deno.env.get('DB_SCHEMA') || 'public';
+const TABLE_PREFIX = Deno.env.get('TABLE_PREFIX') || '';
+const TBL = (name: string) => `${TABLE_PREFIX}${name}`;
 const SERVICE_ROLE_KEY =
   Deno.env.get('SERVICE_ROLE_KEY') ||
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ||
@@ -74,47 +76,46 @@ const requireAuth = async (c: any, next: any) => {
 };
 
 // Função para obter dados do usuário somente via SQL
-const getUserData = async (userId: string) => {
+const getUserData = async (userId: string, userEmail?: string | null) => {
   try {
-    const { data, error } = await supabase
-      .from('usuarios_sistema')
-      .select('*')
-      .eq('id', userId)
-      .single();
-
-    if (error && error.code === 'PGRST116') {
-      // Usuário não encontrado: criar registro padrão
-      const defaultUser = {
-        id: userId,
-        nome: 'Usuário',
-        display_name: 'Usuário',
-        email: '',
-        telefone: '',
-        whatsapp: '',
-        cargo: '',
-        cooperativa_id: '',
-        papel: 'operador',
-        ativo: true,
-        data_cadastro: new Date().toISOString()
-      };
-
-      const { data: insertData, error: insertError } = await supabase
-        .from('usuarios_sistema')
-        .insert([defaultUser])
-        .select()
-        .single();
-
-      if (insertError) {
-        console.error('Erro ao criar usuário padrão:', insertError);
-        return null;
+    // 1) tentar por email em <prefix>operadores
+    if (userEmail) {
+      const byEmail = await supabase
+        .from(TBL('operadores'))
+        .select('*')
+        .eq('email', userEmail)
+        .maybeSingle();
+      if (byEmail.data) return byEmail.data as any;
+      if (byEmail.error && byEmail.error.code !== 'PGRST116') {
+        console.warn('[getUserData] erro byEmail:', byEmail.error);
       }
-      return insertData;
-    } else if (error) {
-      console.error('Erro ao buscar usuário:', error);
-      return null;
     }
 
-    return data;
+    // 2) fallback por id
+    const byId = await supabase
+      .from(TBL('operadores'))
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+    if (byId.data) return byId.data as any;
+    if (byId.error && byId.error.code !== 'PGRST116') {
+      console.warn('[getUserData] erro byId:', byId.error);
+    }
+
+    // 3) fallback básico a partir do auth
+    return {
+      id: userId,
+      nome: 'Usuário',
+      display_name: 'Usuário',
+      email: userEmail || '',
+      telefone: '',
+      whatsapp: '',
+      cargo: '',
+      cooperativa_id: '',
+      papel: 'operador',
+      ativo: true,
+      data_cadastro: new Date().toISOString(),
+    };
   } catch (error) {
     console.error('Erro ao obter dados do usuário:', error);
     return null;
@@ -125,7 +126,7 @@ const getUserData = async (userId: string) => {
 const requireRole = (roles: string[]) => {
   return async (c: any, next: any) => {
     const user = c.get('user');
-    const userData = await getUserData(user.id);
+    const userData = await getUserData(user.id, user.email);
     
     if (!roles.includes(userData.papel)) {
       return c.json({ error: 'Acesso negado' }, 403);
@@ -144,7 +145,7 @@ const escalarPedidos = async () => {
   try {
     const agoraIso = new Date().toISOString();
     const { data: pedidos, error } = await supabase
-      .from('pedidos')
+      .from(TBL('pedidos'))
       .select('*')
       .eq('status', 'em_andamento')
       .lt('prazo_atual', agoraIso);
@@ -162,7 +163,7 @@ const escalarPedidos = async () => {
       if (pedido.nivel_atual === 'singular') {
         // Buscar federação da cooperativa solicitante
         const { data: coopSolic, error: coopErr } = await supabase
-          .from('cooperativas')
+          .from(TBL('cooperativas'))
           .select('federacao')
           .eq('id_singular', pedido.cooperativa_solicitante_id)
           .maybeSingle();
@@ -173,7 +174,7 @@ const escalarPedidos = async () => {
         const federacaoNome = coopSolic?.federacao;
         if (federacaoNome) {
           const { data: fed, error: fedErr } = await supabase
-            .from('cooperativas')
+            .from(TBL('cooperativas'))
             .select('id_singular')
             .eq('tipo', 'FEDERAÇÃO')
             .eq('federacao', federacaoNome)
@@ -185,7 +186,7 @@ const escalarPedidos = async () => {
         }
       } else if (pedido.nivel_atual === 'federacao') {
         const { data: conf, error: confErr } = await supabase
-          .from('cooperativas')
+          .from(TBL('cooperativas'))
           .select('id_singular')
           .eq('tipo', 'CONFEDERACAO')
           .maybeSingle();
@@ -200,7 +201,7 @@ const escalarPedidos = async () => {
         const agora = new Date().toISOString();
 
         const { error: upErr } = await supabase
-          .from('pedidos')
+          .from(TBL('pedidos'))
           .update({
             nivel_atual: novoNivel,
             cooperativa_responsavel_id: novaCooperativaResponsavel,
@@ -218,7 +219,7 @@ const escalarPedidos = async () => {
 
         // Registrar auditoria com autor como criador do pedido para evitar FK inválida
         const { error: audErr } = await supabase
-          .from('auditoria_logs')
+          .from(TBL('auditoria_logs'))
           .insert([{
             id: `audit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             pedido_id: pedido.id,
@@ -258,34 +259,22 @@ app.post('/auth/register', async (c) => {
       return c.json({ error: 'Erro ao criar usuário', details: error.message }, 400);
     }
 
-    // Salvar dados adicionais do usuário
-    const userData = {
-      id: data.user.id,
-      nome,
-      display_name,
-      email,
-      telefone,
-      whatsapp,
-      cargo,
-      cooperativa_id,
-      papel,
-      ativo: true,
-      data_cadastro: new Date().toISOString()
-    };
-
-    // Tentar salvar na tabela usuarios_sistema primeiro
-    const { error: insertError } = await supabase
-      .from('usuarios_sistema')
-      .insert([userData]);
-
-    if (insertError) {
-      console.error('Erro ao salvar usuário na tabela:', insertError);
-      return c.json({ error: 'Erro ao salvar dados do usuário' }, 500);
-    }
-
+    // Apenas retorna o usuário criado no auth; não insere em tabelas locais
     return c.json({ 
       message: 'Usuário criado com sucesso',
-      user: userData
+      user: {
+        id: data.user.id,
+        nome,
+        display_name,
+        email,
+        telefone,
+        whatsapp,
+        cargo,
+        cooperativa_id,
+        papel,
+        ativo: true,
+        data_cadastro: new Date().toISOString()
+      }
     });
 
   } catch (error) {
@@ -311,9 +300,8 @@ app.get('/auth/me', requireAuth, async (c) => {
 app.get('/cooperativas/public', async (c) => {
   try {
     const { data, error } = await supabase
-      .from('cooperativas')
-      .select('*')
-      .order('uniodonto');
+      .from(TBL('cooperativas'))
+      .select('*');
     if (error) {
       console.error('Erro ao buscar cooperativas do banco:', error);
       return c.json({ error: 'Erro ao buscar cooperativas' }, 500);
@@ -329,9 +317,8 @@ app.get('/cooperativas/public', async (c) => {
 app.get('/cooperativas', requireAuth, async (c) => {
   try {
     const { data, error } = await supabase
-      .from('cooperativas')
-      .select('*')
-      .order('uniodonto');
+      .from(TBL('cooperativas'))
+      .select('*');
     if (error) {
       console.error('Erro ao buscar cooperativas do banco:', error);
       return c.json({ error: 'Erro ao buscar cooperativas' }, 500);
@@ -347,9 +334,8 @@ app.get('/cooperativas', requireAuth, async (c) => {
 app.get('/cidades', requireAuth, async (c) => {
   try {
     const { data, error } = await supabase
-      .from('cidades')
-      .select('*')
-      .order('nm_cidade');
+      .from(TBL('cidades'))
+      .select('*');
     if (error) {
       console.error('Erro ao buscar cidades do banco:', error);
       return c.json({ error: 'Erro ao buscar cidades' }, 500);
@@ -364,30 +350,13 @@ app.get('/cidades', requireAuth, async (c) => {
 // ROTAS DE OPERADORES
 app.get('/operadores', requireAuth, async (c) => {
   try {
-    // Verificar se existe tabela operadores, senão buscar de usuarios_sistema
-    let { data, error } = await supabase
-      .from('operadores')
-      .select('*')
-      .order('nome');
-
-    // Se não encontrar tabela operadores, tentar usuarios_sistema
-    if (error && error.code === 'PGRST116') {
-      const { data: usersData, error: usersError } = await supabase
-        .from('usuarios_sistema')
-        .select('*')
-        .order('nome');
-
-      if (usersError) {
-        console.error('Erro ao buscar operadores/usuários do banco:', usersError);
-        return c.json({ error: 'Erro ao buscar operadores' }, 500);
-      }
-
-      data = usersData;
-    } else if (error) {
+    const { data, error } = await supabase
+      .from(TBL('operadores'))
+      .select('*');
+    if (error) {
       console.error('Erro ao buscar operadores do banco:', error);
       return c.json({ error: 'Erro ao buscar operadores' }, 500);
     }
-
     return c.json(data || []);
   } catch (error) {
     console.error('Erro ao buscar operadores:', error);
@@ -398,7 +367,8 @@ app.get('/operadores', requireAuth, async (c) => {
 // ROTAS DE PEDIDOS
 app.get('/pedidos', requireAuth, async (c) => {
   try {
-    const userData = await getUserData(c.get('user').id);
+    const authUser = c.get('user');
+    const userData = await getUserData(authUser.id, authUser.email);
     
     let { data: pedidosData, error } = await supabase
       .from('pedidos')
@@ -480,7 +450,7 @@ app.post('/pedidos', requireAuth, async (c) => {
     };
 
     const { error: insertError } = await supabase
-      .from('pedidos')
+      .from(TBL('pedidos'))
       .insert([novoPedido]);
 
     if (insertError) {
@@ -500,7 +470,7 @@ app.post('/pedidos', requireAuth, async (c) => {
     };
 
     const { error: auditoriaError } = await supabase
-      .from('auditoria_logs')
+      .from(TBL('auditoria_logs'))
       .insert([auditoria]);
     if (auditoriaError) {
       console.error('Erro ao salvar auditoria:', auditoriaError);
@@ -521,7 +491,7 @@ app.put('/pedidos/:id', requireAuth, async (c) => {
     const updateData = await c.req.json();
 
     const { data: pedido, error: getErr } = await supabase
-      .from('pedidos')
+      .from(TBL('pedidos'))
       .select('*')
       .eq('id', pedidoId)
       .maybeSingle();
@@ -546,7 +516,7 @@ app.put('/pedidos/:id', requireAuth, async (c) => {
     };
 
     const { error: upErr } = await supabase
-      .from('pedidos')
+      .from(TBL('pedidos'))
       .update(pedidoAtualizado)
       .eq('id', pedidoId);
     if (upErr) {
@@ -584,7 +554,7 @@ app.get('/pedidos/:id/auditoria', requireAuth, async (c) => {
   try {
     const pedidoId = c.req.param('id');
     const { data, error } = await supabase
-      .from('auditoria_logs')
+      .from(TBL('auditoria_logs'))
       .select('*')
       .eq('pedido_id', pedidoId)
       .order('timestamp', { ascending: false });
@@ -605,7 +575,7 @@ app.get('/dashboard/stats', requireAuth, async (c) => {
     const userData = await getUserData(c.get('user').id);
     
     let { data: pedidosData, error } = await supabase
-      .from('pedidos')
+      .from(TBL('pedidos'))
       .select('*');
     if (error) {
       console.error('Erro ao buscar pedidos para estatísticas:', error);
