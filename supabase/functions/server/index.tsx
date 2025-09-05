@@ -707,3 +707,11 @@ app.post('/', async (c) => {
 // Usar agendador do Supabase para acionar o job via POST '/'
 
 export default app.fetch;
+
+// Permite rodar localmente sem Docker/Edge, usando Deno diretamente.
+// Mantém compatível com Edge Functions (export default app.fetch acima).
+if (import.meta.main) {
+  const port = Number(Deno.env.get('PORT') || '8000');
+  console.log(`[server] Iniciando servidor HTTP local na porta ${port}...`);
+  Deno.serve({ port }, app.fetch);
+}

@@ -31,6 +31,16 @@
   - A função já está configurada com `verify_jwt = false` (arquivo `supabase/functions/server/supabase.toml`).
     As rotas sensíveis continuam protegidas pelo middleware de autenticação do próprio código.
 
+  2.1) Sem Docker (execução local com Deno)
+  - Crie `supabase/functions/server/.env` a partir de `supabase/functions/server/.env.example`.
+  - Rode localmente: `npm run server:dev`
+  - Aponte o frontend para `http://127.0.0.1:8000` com `VITE_API_BASE_URL` (veja `.env.local.example`).
+
+  2.2) Alternativa sem Docker no deploy (Deno Deploy)
+  - Conecte o repositório no Deno Deploy e selecione o entry `supabase/functions/server/index.tsx`.
+  - Configure envs: `SUPABASE_URL`, `SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`.
+  - Após publicar, use a URL do Deno Deploy em `VITE_API_BASE_URL`.
+
   3) Banco de dados (no Supabase Studio → SQL Editor)
   - Execute:
     - `supabase/migrations/001_initial_schema.sql`
@@ -50,4 +60,5 @@
   Observações
   - Se preferir JWT obrigatório em produção, mude `verify_jwt = true` e faça o deploy da função. O frontend já envia o token do usuário autenticado.
   - Para desenvolvimento local do backend sem Docker, use `npm run server:dev` (Deno) e aponte `VITE_API_BASE_URL` para `http://127.0.0.1:8000`.
+  - Arquivos de exemplo de configuração foram adicionados: `.env.local.example` (frontend) e `supabase/functions/server/.env.example` (backend).
   
