@@ -60,6 +60,7 @@
   Observações
   - Se preferir JWT obrigatório em produção, mude `verify_jwt = true` e faça o deploy da função. O frontend já envia o token do usuário autenticado.
   - Para desenvolvimento local do backend sem Docker, use `npm run server:dev` (Deno) e aponte `VITE_API_BASE_URL` para `http://127.0.0.1:8000`.
-  - Para restringir CORS no backend (Deno Deploy ou local), defina `ALLOWED_ORIGINS` como lista separada por vírgulas (ex.: `https://urede.deno.com,https://seuapp.vercel.app`). Suporta curingas `*.dominio.com`.
+  - Para restringir CORS no backend (Deno Deploy ou local), defina `ALLOWED_ORIGINS` como lista separada por vírgulas (ex.: `https://urede.deno.com,https://urede.vercel.app`). Suporta curingas `*.dominio.com`.
+    - Observação: domínios de preview do Vercel (ex.: `https://urede-git-main-<user>.vercel.app`) não são subdomínios de `urede.vercel.app`. Para permitir previews temporariamente, adicione `*.vercel.app` durante os testes e remova depois para restringir.
   - Arquivos de exemplo de configuração foram adicionados: `.env.local.example` (frontend) e `supabase/functions/server/.env.example` (backend).
   
