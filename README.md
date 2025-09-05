@@ -16,7 +16,7 @@
   1) Variáveis de ambiente (Vercel → Project Settings → Environment Variables)
   - `VITE_SUPABASE_URL` = URL do projeto Supabase (ex.: `https://<project-ref>.supabase.co`)
   - `VITE_SUPABASE_ANON_KEY` = Anon Key do seu projeto
-  - `VITE_API_BASE_URL` = `https://<project-ref>.supabase.co/functions/v1/server`
+  - `VITE_API_BASE_URL` = `https://urede.deno.com`
   - (opcional) `VITE_APP_ENV` = `production`
 
   2) Edge Function no Supabase (Backend)
@@ -38,8 +38,8 @@
 
   2.2) Alternativa sem Docker no deploy (Deno Deploy)
   - Conecte o repositório no Deno Deploy e selecione o entry `supabase/functions/server/index.tsx`.
-  - Configure envs: `SUPABASE_URL`, `SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`.
-  - Após publicar, use a URL do Deno Deploy em `VITE_API_BASE_URL`.
+  - Configure envs: `SUPABASE_URL`, `SERVICE_ROLE_KEY`.
+  - Após publicar, use a URL do Deno Deploy em `VITE_API_BASE_URL` (ex.: `https://urede.deno.com`).
 
   3) Banco de dados (no Supabase Studio → SQL Editor)
   - Execute:
@@ -60,6 +60,6 @@
   Observações
   - Se preferir JWT obrigatório em produção, mude `verify_jwt = true` e faça o deploy da função. O frontend já envia o token do usuário autenticado.
   - Para desenvolvimento local do backend sem Docker, use `npm run server:dev` (Deno) e aponte `VITE_API_BASE_URL` para `http://127.0.0.1:8000`.
-  - Para restringir CORS no backend (Deno Deploy ou local), defina `ALLOWED_ORIGINS` como lista separada por vírgulas (ex.: `https://seuapp.vercel.app,https://admin.seuapp.com`). Suporta curingas `*.dominio.com`.
+  - Para restringir CORS no backend (Deno Deploy ou local), defina `ALLOWED_ORIGINS` como lista separada por vírgulas (ex.: `https://urede.deno.com,https://seuapp.vercel.app`). Suporta curingas `*.dominio.com`.
   - Arquivos de exemplo de configuração foram adicionados: `.env.local.example` (frontend) e `supabase/functions/server/.env.example` (backend).
   
