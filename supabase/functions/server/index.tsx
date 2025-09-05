@@ -36,7 +36,9 @@ app.use('*', logger(console.log));
 // Para a chave de serviço, priorizamos SERVICE_ROLE_KEY, com fallback para nomes comuns e, por fim, ANON para rotas públicas.
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const DB_SCHEMA = Deno.env.get('DB_SCHEMA') || 'public';
-const TABLE_PREFIX = Deno.env.get('TABLE_PREFIX') || '';
+// Por padrão, usamos o prefixo 'urede_' pois suas tabelas reais seguem esse padrão.
+// Você pode sobrescrever via env TABLE_PREFIX se precisar mudar.
+const TABLE_PREFIX = Deno.env.get('TABLE_PREFIX') || 'urede_';
 const TBL = (name: string) => `${TABLE_PREFIX}${name}`;
 const SERVICE_ROLE_KEY =
   Deno.env.get('SERVICE_ROLE_KEY') ||
@@ -451,6 +453,29 @@ app.get('/operadores/public', async (c) => {
   } catch (error) {
     console.error('Erro ao buscar operadores públicos:', error);
     return c.json({ error: 'Erro ao buscar operadores' }, 500);
+  }
+});
+
+// ROTA DE DEBUG: contagem de registros por tabela
+app.get('/debug/counts', async (c) => {
+  try {
+    const tables = ['cooperativas', 'cidades', 'operadores', 'pedidos'];
+    const result: Record<string, number | null> = {};
+    for (const t of tables) {
+      const { count, error } = await supabase
+        .from(TBL(t))
+        .select('*', { count: 'exact', head: true });
+      if (error) {
+        console.warn(`[debug/counts] erro em ${TBL(t)}:`, error.message);
+        result[TBL(t)] = null;
+      } else {
+        result[TBL(t)] = count ?? 0;
+      }
+    }
+    return c.json({ tables: result, prefix: TABLE_PREFIX, schema: DB_SCHEMA });
+  } catch (e) {
+    console.error('Erro em /debug/counts:', e);
+    return c.json({ error: 'Erro ao obter contagens' }, 500);
   }
 });
 
