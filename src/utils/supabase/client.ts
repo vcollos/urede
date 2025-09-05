@@ -35,6 +35,7 @@ export const getAuthHeaders = async () => {
   return {
     'Content-Type': 'application/json',
     'Authorization': session?.access_token ? `Bearer ${session.access_token}` : `Bearer ${SUPABASE_ANON_KEY}`,
+    'apikey': SUPABASE_ANON_KEY,
   };
 };
 

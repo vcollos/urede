@@ -9,8 +9,9 @@ const app = new Hono();
 // Configurar CORS para aceitar requisições do frontend
 app.use('*', cors({
   origin: '*',
-  allowHeaders: ['Content-Type', 'Authorization'],
+  allowHeaders: ['Content-Type', 'Authorization', 'apikey', 'Accept', 'X-Requested-With'],
   allowMethods: ['POST', 'GET', 'PUT', 'DELETE', 'OPTIONS'],
+  maxAge: 86400,
 }));
 
 app.use('*', logger(console.log));
@@ -665,18 +666,19 @@ const initServer = async () => {
 };
 
 // Inicializar servidor
-initServer().then(() => {
-  console.log('Servidor Uniodonto inicializado com sucesso!');
-});
-
-// Permite definir a porta via variável de ambiente PORT (default 8000 ao rodar local com Deno)
-const PORT = Number(Deno.env.get('PORT') ?? '8000');
-try {
-  Deno.serve({ port: PORT, hostname: '127.0.0.1' }, app.fetch);
-  console.log(`HTTP server escutando em http://127.0.0.1:${PORT}`);
-} catch (e) {
-  console.error('Falha ao iniciar servidor HTTP:', e);
-}
-
 // Health check simples da função
 app.get('/health', (c) => c.json({ status: 'ok', time: new Date().toISOString() }));
+
+// Inicializar e iniciar servidor
+initServer().then(() => {
+  console.log('Servidor Uniodonto inicializado com sucesso!');
+
+  // Permite definir a porta via variável de ambiente PORT (default 8000 ao rodar local com Deno)
+  const PORT = Number(Deno.env.get('PORT') ?? '8000');
+  try {
+    Deno.serve({ port: PORT, hostname: '127.0.0.1' }, app.fetch);
+    console.log(`HTTP server escutando em http://127.0.0.1:${PORT}`);
+  } catch (e) {
+    console.error('Falha ao iniciar servidor HTTP:', e);
+  }
+});
