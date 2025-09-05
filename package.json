@@ -59,7 +59,7 @@
       "prebuild": "node scripts/write-health.mjs",
       "build": "vite build",
       "server:dev": "deno run -A --env-file=supabase/functions/server/.env supabase/functions/server/index.tsx",
-      "functions:secrets": "supabase functions secrets set --project-ref $PROJECT_REF SUPABASE_URL=$VITE_SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY",
+      "functions:secrets": "supabase secrets set --project-ref $PROJECT_REF SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY",
       "functions:deploy": "supabase functions deploy server --project-ref $PROJECT_REF"
   }
   }

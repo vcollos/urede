@@ -21,11 +21,11 @@
 
   2) Edge Function no Supabase (Backend)
   - Secrets da função (Dashboard → Project Settings → Functions → Secrets):
-    - `SUPABASE_URL` = `https://<project-ref>.supabase.co`
-    - `SUPABASE_SERVICE_ROLE_KEY` = Service Role Key do projeto
+    - `SERVICE_ROLE_KEY` = Service Role Key do projeto (evite prefixo `SUPABASE_`, que é reservado)
   - Deploy da função `server` (na raiz do repo):
     ```bash
     supabase login
+    supabase secrets set --project-ref <project-ref> SERVICE_ROLE_KEY=... 
     supabase functions deploy server --project-ref <project-ref>
     ```
   - A função já está configurada com `verify_jwt = false` (arquivo `supabase/functions/server/supabase.toml`).

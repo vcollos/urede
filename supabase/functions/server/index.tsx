@@ -16,9 +16,11 @@ app.use('*', cors({
 app.use('*', logger(console.log));
 
 // Configurar Supabase client
+// SUPABASE_URL é fornecida automaticamente pelo ambiente do Supabase (variável reservada)
+// Para a chave de serviço, use um secret próprio (ex.: SERVICE_ROLE_KEY)
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  Deno.env.get('SERVICE_ROLE_KEY')!
 );
 
 // Middleware para verificar autenticação
@@ -668,16 +670,9 @@ const initServer = async () => {
 // Health check simples da função
 app.get('/health', (c) => c.json({ status: 'ok', time: new Date().toISOString() }));
 
-// Inicializar e iniciar servidor
+// Inicializar e expor handler (Edge Runtime)
 initServer().then(() => {
   console.log('Servidor Uniodonto inicializado com sucesso!');
-
-  // Permite definir a porta via variável de ambiente PORT (default 8000 ao rodar local com Deno)
-  const PORT = Number(Deno.env.get('PORT') ?? '8000');
-  try {
-    Deno.serve({ port: PORT, hostname: '127.0.0.1' }, app.fetch);
-    console.log(`HTTP server escutando em http://127.0.0.1:${PORT}`);
-  } catch (e) {
-    console.error('Falha ao iniciar servidor HTTP:', e);
-  }
 });
+
+Deno.serve(app.fetch);
