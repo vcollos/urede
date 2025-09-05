@@ -670,6 +670,13 @@ const initServer = async () => {
 // Health check simples da função
 app.get('/health', (c) => c.json({ status: 'ok', time: new Date().toISOString() }));
 
+// Rotas raiz (úteis para testes rápidos: GET/POST /)
+app.get('/', (c) => c.json({ status: 'ok', name: 'server', method: 'GET', time: new Date().toISOString() }));
+app.post('/', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  return c.json({ status: 'ok', name: 'server', method: 'POST', body, time: new Date().toISOString() });
+});
+
 // Inicializar (logs) e exportar handler para Edge Runtime
 initServer().then(() => {
   console.log('Servidor Uniodonto inicializado com sucesso!');
