@@ -54,9 +54,10 @@
           "@vitejs/plugin-react-swc": "^3.10.2",
           "vite": "6.3.5"
       },
-      "scripts": {
-          "dev": "vite",
-          "build": "vite build",
-          "server:dev": "deno run -A --env-file=supabase/functions/server/.env supabase/functions/server/index.tsx"
-      }
+  "scripts": {
+      "dev": "vite",
+      "prebuild": "node scripts/write-health.mjs",
+      "build": "vite build",
+      "server:dev": "deno run -A --env-file=supabase/functions/server/.env supabase/functions/server/index.tsx"
+  }
   }

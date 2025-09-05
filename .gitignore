@@ -4,8 +4,8 @@
 # Node
 node_modules/
 dist/
+build/
 
 # Env files
 .env
 supabase/functions/server/.env
-

@@ -677,3 +677,6 @@ try {
 } catch (e) {
   console.error('Falha ao iniciar servidor HTTP:', e);
 }
+
+// Health check simples da função
+app.get('/health', (c) => c.json({ status: 'ok', time: new Date().toISOString() }));
