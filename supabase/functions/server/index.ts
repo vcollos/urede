@@ -670,9 +670,9 @@ const initServer = async () => {
 // Health check simples da função
 app.get('/health', (c) => c.json({ status: 'ok', time: new Date().toISOString() }));
 
-// Inicializar e expor handler (Edge Runtime)
+// Inicializar (logs) e exportar handler para Edge Runtime
 initServer().then(() => {
   console.log('Servidor Uniodonto inicializado com sucesso!');
 });
 
-Deno.serve(app.fetch);
+export default app.fetch;
