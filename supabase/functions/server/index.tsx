@@ -674,12 +674,20 @@ app.get('/health', (c) => c.json({ status: 'ok', time: new Date().toISOString() 
 app.get('/', (c) => c.json({ status: 'ok', name: 'server', method: 'GET', time: new Date().toISOString() }));
 app.post('/', async (c) => {
   const body = await c.req.json().catch(() => ({}));
+  const isSchedule = c.req.header('x-supabase-schedule') === 'true';
+  if (isSchedule || body?.task === 'escalar') {
+    try {
+      await escalarPedidos();
+      return c.json({ status: 'ok', job: 'escalar', time: new Date().toISOString() });
+    } catch (e) {
+      console.error('Erro no job escalonar:', e);
+      return c.json({ status: 'error', message: 'cron failed' }, 500);
+    }
+  }
   return c.json({ status: 'ok', name: 'server', method: 'POST', body, time: new Date().toISOString() });
 });
 
-// Inicializar (logs) e exportar handler para Edge Runtime
-initServer().then(() => {
-  console.log('Servidor Uniodonto inicializado com sucesso!');
-});
+// Remover agendamentos/residentes: Edge Functions são stateless.
+// Usar agendador do Supabase para acionar o job via POST '/'
 
 export default app.fetch;
