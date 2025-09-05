@@ -393,6 +393,24 @@ app.get('/cidades', requireAuth, async (c) => {
   }
 });
 
+// ROTA PÚBLICA DE CIDADES (apenas leitura)
+app.get('/cidades/public', async (c) => {
+  try {
+    const { data, error } = await supabase
+      .from(TBL('cidades'))
+      .select('*');
+    if (error) {
+      console.error('Erro ao buscar cidades (public):', error);
+      return c.json({ error: 'Erro ao buscar cidades' }, 500);
+    }
+    const mapped = (data || []).map(mapCidade);
+    return c.json(mapped);
+  } catch (error) {
+    console.error('Erro ao buscar cidades públicas:', error);
+    return c.json({ error: 'Erro ao buscar cidades' }, 500);
+  }
+});
+
 // ROTAS DE OPERADORES
 app.get('/operadores', requireAuth, async (c) => {
   try {
@@ -408,6 +426,62 @@ app.get('/operadores', requireAuth, async (c) => {
   } catch (error) {
     console.error('Erro ao buscar operadores:', error);
     return c.json({ error: 'Erro ao buscar operadores' }, 500);
+  }
+});
+
+// ROTA PÚBLICA DE OPERADORES (campos restritos, sem contatos)
+app.get('/operadores/public', async (c) => {
+  try {
+    const { data, error } = await supabase
+      .from(TBL('operadores'))
+      .select('id, nome, cargo, id_singular, status, created_at');
+    if (error) {
+      console.error('Erro ao buscar operadores (public):', error);
+      return c.json({ error: 'Erro ao buscar operadores' }, 500);
+    }
+    const mapped = (data || []).map(mapOperador).map(o => ({
+      id: o.id,
+      nome: o.nome,
+      cargo: o.cargo,
+      id_singular: o.id_singular,
+      ativo: o.ativo,
+      data_cadastro: o.data_cadastro,
+    }));
+    return c.json(mapped);
+  } catch (error) {
+    console.error('Erro ao buscar operadores públicos:', error);
+    return c.json({ error: 'Erro ao buscar operadores' }, 500);
+  }
+});
+
+// ROTA PÚBLICA DE PEDIDOS (opcional via env PUBLIC_PEDIDOS=true)
+app.get('/pedidos/public', async (c) => {
+  const enabled = (Deno.env.get('PUBLIC_PEDIDOS') || '').toLowerCase() === 'true';
+  if (!enabled) {
+    return c.json({ error: 'Endpoint desabilitado' }, 403);
+  }
+  try {
+    const { data, error } = await supabase
+      .from(TBL('pedidos'))
+      .select('id, titulo, cidade_id, prioridade, status, nivel_atual, prazo_atual');
+    if (error) {
+      console.error('Erro ao buscar pedidos (public):', error);
+      return c.json({ error: 'Erro ao buscar pedidos' }, 500);
+    }
+    const mapped = (data || []).map((p: any) => ({
+      id: p.id,
+      titulo: p.titulo,
+      cidade_id: p.cidade_id,
+      prioridade: p.prioridade,
+      status: p.status,
+      nivel_atual: p.nivel_atual,
+      prazo_atual: p.prazo_atual,
+      dias_restantes: computeDiasRestantes(p.prazo_atual),
+    }));
+    return c.json(mapped);
+  } catch (error) {
+    console.error('Erro ao buscar pedidos públicos:', error);
+    return c.json({ error: 'Erro ao buscar pedidos' }, 500);
   }
 });
 
