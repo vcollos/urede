@@ -5,9 +5,26 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const app = new Hono();
 
-// Configurar CORS para aceitar requisições do frontend
+// Configurar CORS controlado por ambiente
+// ALLOWED_ORIGINS pode ser uma lista separada por vírgula (ex.: "https://app.vercel.app,https://admin.vercel.app")
+const ALLOWED_ORIGINS = (Deno.env.get('ALLOWED_ORIGINS') || '*')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const isOriginAllowed = (origin?: string | null): boolean => {
+  if (!origin) return true; // permitir chamadas server-to-server e curl
+  if (ALLOWED_ORIGINS.includes('*')) return true;
+  // suporta curingas simples do tipo "*.dominio.com"
+  for (const rule of ALLOWED_ORIGINS) {
+    if (rule === origin) return true;
+    if (rule.startsWith('*.') && origin.endsWith(rule.slice(1))) return true;
+  }
+  return false;
+};
+
 app.use('*', cors({
-  origin: '*',
+  origin: (origin) => (isOriginAllowed(origin) ? origin ?? '*' : ''),
   allowHeaders: ['Content-Type', 'Authorization', 'apikey', 'Accept', 'X-Requested-With'],
   allowMethods: ['POST', 'GET', 'PUT', 'DELETE', 'OPTIONS'],
   maxAge: 86400,

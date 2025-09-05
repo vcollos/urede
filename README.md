@@ -60,5 +60,6 @@
   Observações
   - Se preferir JWT obrigatório em produção, mude `verify_jwt = true` e faça o deploy da função. O frontend já envia o token do usuário autenticado.
   - Para desenvolvimento local do backend sem Docker, use `npm run server:dev` (Deno) e aponte `VITE_API_BASE_URL` para `http://127.0.0.1:8000`.
+  - Para restringir CORS no backend (Deno Deploy ou local), defina `ALLOWED_ORIGINS` como lista separada por vírgulas (ex.: `https://seuapp.vercel.app,https://admin.seuapp.com`). Suporta curingas `*.dominio.com`.
   - Arquivos de exemplo de configuração foram adicionados: `.env.local.example` (frontend) e `supabase/functions/server/.env.example` (backend).
   
