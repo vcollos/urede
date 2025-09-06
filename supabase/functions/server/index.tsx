@@ -106,6 +106,70 @@ const computeDiasRestantes = (prazoIso: string) => {
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 };
 
+// Carrega nomes de cidade e cooperativa para um conjunto de pedidos
+const enrichPedidos = async (pedidos: any[]) => {
+  if (!pedidos || pedidos.length === 0) return [] as any[];
+
+  const cityIds = Array.from(
+    new Set(
+      pedidos
+        .map((p) => p.cidade_id)
+        .filter((v) => typeof v === 'string' && v.trim().length > 0)
+    )
+  );
+  const coopIds = Array.from(
+    new Set(
+      pedidos
+        .map((p) => p.cooperativa_solicitante_id)
+        .filter((v) => typeof v === 'string' && v.trim().length > 0)
+    )
+  );
+
+  let cidadesMap: Record<string, any> = {};
+  let coopsMap: Record<string, any> = {};
+
+  try {
+    if (cityIds.length > 0) {
+      const { data: cidadesRows } = await supabase
+        .from(TBL('cidades'))
+        .select('CD_MUNICIPIO_7,NM_CIDADE,UF_MUNICIPIO')
+        .in('CD_MUNICIPIO_7', cityIds);
+      for (const r of cidadesRows || []) {
+        const c = mapCidade(r);
+        cidadesMap[c.cd_municipio_7] = c;
+      }
+    }
+  } catch (e) {
+    console.warn('[enrichPedidos] cidades lookup falhou:', e);
+  }
+
+  try {
+    if (coopIds.length > 0) {
+      const { data: coopRows } = await supabase
+        .from(TBL('cooperativas'))
+        .select('id_singular,UNIODONTO')
+        .in('id_singular', coopIds);
+      for (const r of coopRows || []) {
+        const c = mapCooperativa(r);
+        coopsMap[c.id_singular] = c;
+      }
+    }
+  } catch (e) {
+    console.warn('[enrichPedidos] cooperativas lookup falhou:', e);
+  }
+
+  return pedidos.map((p) => {
+    const cidade = cidadesMap[p.cidade_id];
+    const coop = coopsMap[p.cooperativa_solicitante_id];
+    return {
+      ...p,
+      cidade_nome: cidade?.nm_cidade || null,
+      estado: cidade?.uf_municipio || null,
+      cooperativa_solicitante_nome: coop?.uniodonto || null,
+    };
+  });
+};
+
 // Middleware para verificar autenticação
 const requireAuth = async (c: any, next: any) => {
   const accessToken = c.req.header('Authorization')?.split(' ')[1];
@@ -508,7 +572,7 @@ app.get('/pedidos/public', async (c) => {
       console.error('Erro ao buscar pedidos (public):', error);
       return c.json({ error: 'Erro ao buscar pedidos' }, 500);
     }
-    const mapped = (data || []).map((p: any) => ({
+    const base = (data || []).map((p: any) => ({
       id: p.id,
       titulo: p.titulo,
       cidade_id: p.cidade_id,
@@ -517,8 +581,11 @@ app.get('/pedidos/public', async (c) => {
       nivel_atual: p.nivel_atual,
       prazo_atual: p.prazo_atual,
       dias_restantes: computeDiasRestantes(p.prazo_atual),
+      cooperativa_solicitante_id: p.cooperativa_solicitante_id,
     }));
-    return c.json(mapped);
+    const enriched = await enrichPedidos(base);
+    const sanitized = enriched.map(({ cooperativa_solicitante_id, ...rest }) => rest);
+    return c.json(sanitized);
   } catch (error) {
     console.error('Erro ao buscar pedidos públicos:', error);
     return c.json({ error: 'Erro ao buscar pedidos' }, 500);
@@ -571,7 +638,8 @@ app.get('/pedidos', requireAuth, async (c) => {
       dias_restantes: computeDiasRestantes(p.prazo_atual),
     }));
 
-    return c.json(pedidosComDias);
+    const enriquecidos = await enrichPedidos(pedidosComDias);
+    return c.json(enriquecidos);
   } catch (error) {
     console.error('Erro ao buscar pedidos:', error);
     return c.json({ error: 'Erro ao buscar pedidos' }, 500);
@@ -630,10 +698,14 @@ app.post('/pedidos', requireAuth, async (c) => {
       console.error('Erro ao salvar auditoria:', auditoriaError);
     }
 
-    return c.json({
-      ...inserted,
-      dias_restantes: computeDiasRestantes(inserted.prazo_atual),
-    });
+    {
+      const base = [{
+        ...inserted,
+        dias_restantes: computeDiasRestantes(inserted.prazo_atual),
+      }];
+      const [enriched] = await enrichPedidos(base);
+      return c.json(enriched || base[0]);
+    }
   } catch (error) {
     console.error('Erro ao criar pedido:', error);
     return c.json({ error: 'Erro ao criar pedido' }, 500);
@@ -705,10 +777,14 @@ app.put('/pedidos/:id', requireAuth, async (c) => {
     }
 
     const updated = { ...pedido, ...allowed };
-    return c.json({
-      ...updated,
-      dias_restantes: computeDiasRestantes(updated.prazo_atual),
-    });
+    {
+      const base = [{
+        ...updated,
+        dias_restantes: computeDiasRestantes(updated.prazo_atual),
+      }];
+      const [enriched] = await enrichPedidos(base);
+      return c.json(enriched || base[0]);
+    }
   } catch (error) {
     console.error('Erro ao atualizar pedido:', error);
     return c.json({ error: 'Erro ao atualizar pedido' }, 500);

@@ -19,6 +19,105 @@
 - [12. Monitoramento e Logs](#12-monitoramento-e-logs)
 - [13. Troubleshooting](#13-troubleshooting)
 
+—
+
+## 0. Estado Atual (Set/2025)
+
+Este capítulo descreve, com precisão, o estado atual do sistema em produção/homologação, domínios, integrações, autenticação e RBAC, endpoints, CORS e banco de dados real usado.
+
+### 0.1 Ambientes e URLs
+- Frontend (Vercel, produção):
+  - Produção: `https://urede.vercel.app`
+  - Previews: `https://urede-git-main-vcollos-projects.vercel.app` e subdomínios dinâmicos `*.vercel.app`
+- Backend (API, Deno Deploy):
+  - Produção: `https://urede.deno.dev`
+- Supabase (Projeto):
+  - URL: `https://ddvpxxgdlqwmfugmdnvq.supabase.co`
+  - Banco: PostgreSQL gerenciado (dados reais), sem KV.
+
+### 0.2 Autenticação e RBAC
+- Login obrigatório para visualizar dados e operar (frontend exige sessão Supabase Auth JWT).
+- JWT validado no backend chamando `supabase.auth.getUser(access_token)`.
+- RBAC atual (servidor):
+  - operador: vê pedidos criados pela sua cooperativa (cooperativa_solicitante_id == sua cooperativa) e pedidos que ele criou (criado_por == seu id)
+  - federacao: vê pedidos em nível federação/confederação e os direcionados à sua federação
+  - confederacao/admin: visão global
+- Identidade do usuário no banco: buscada em `urede_operadores` por email (fallback por id). O registro deve conter `id_singular` (cooperativa) e `status=true`.
+
+### 0.3 CORS (origens permitidas)
+- Controlado por `ALLOWED_ORIGINS` no Deno Deploy. Suporta lista separada por vírgulas e wildcard `*.dominio.com`.
+- Recomendações atuais:
+  - Produção: `https://urede.vercel.app`
+  - Previews: `*.vercel.app`
+  - Local (opcional): `http://localhost:5173`
+
+### 0.4 Variáveis de Ambiente (atuais)
+- Deno Deploy (backend):
+  - `SUPABASE_URL=https://ddvpxxgdlqwmfugmdnvq.supabase.co`
+  - `SERVICE_ROLE_KEY=<service role key>` (NUNCA expor no cliente)
+  - `DB_SCHEMA=public`
+  - `TABLE_PREFIX=urede_` (padrão já é `urede_` mesmo sem setar)
+  - `ALLOWED_ORIGINS=https://urede.vercel.app,*.vercel.app`
+  - `PUBLIC_PEDIDOS` (opcional; hoje sem necessidade pois o frontend usa endpoints protegidos)
+- Vercel (frontend):
+  - `VITE_API_BASE_URL=https://urede.deno.dev`
+  - `VITE_SUPABASE_URL=https://ddvpxxgdlqwmfugmdnvq.supabase.co`
+  - `VITE_SUPABASE_ANON_KEY=<anon key>`
+
+### 0.5 Endpoints (API Hono em Deno Deploy)
+- Health/Debug (públicos):
+  - `GET /health` → `{ status: 'ok' }`
+  - `GET /debug/counts` → contagem de linhas por tabela (ajuda ver conectividade/prefixo/schema)
+- Autenticação (protegidos por JWT):
+  - `POST /auth/register` → cria usuário no Auth; não grava em tabelas locais.
+  - `GET /auth/me` → dados do operador (mapeados de `urede_operadores`).
+- Cooperativas:
+  - `GET /cooperativas` (protegido) → lê `urede_cooperativas`, mapeia CAIXA_ALTA → camel.
+  - `GET /cooperativas/public` (público) → mesmo payload; útil para tela de registro.
+- Cidades:
+  - `GET /cidades` (protegido)
+  - `GET /cidades/public` (público)
+- Operadores:
+  - `GET /operadores` (protegido)
+  - `GET /operadores/public` (público, campos restritos: id, nome, cargo, id_singular, ativo, data_cadastro)
+- Pedidos:
+  - `GET /pedidos` (protegido + RBAC): retorna também `cidade_nome`, `estado`, `cooperativa_solicitante_nome`, `dias_restantes`.
+  - `POST /pedidos` (protegido): cria registro em `urede_pedidos`; response já enriquecida (nomes + `dias_restantes`).
+  - `PUT /pedidos/:id` (protegido): update com whitelist de colunas; response enriquecida.
+  - `GET /pedidos/:id/auditoria` (protegido): opcional — se tabela `auditoria_logs` inexistente, apenas loga aviso.
+  - `POST /admin/escalar-pedidos` (protegido + admin): escalonamento automático por SLA.
+  - `GET /pedidos/public` (público, sanitizado; desabilitado por padrão no frontend).
+- Dashboard:
+  - `GET /dashboard/stats` (protegido): estatísticas filtradas por RBAC.
+
+### 0.6 Banco de Dados (real, Supabase)
+- Schema atual: `public` (configurável via `DB_SCHEMA`).
+- Prefixo de tabelas: `urede_` (configurável via `TABLE_PREFIX`).
+- Tabelas usadas:
+  - `urede_cidades(CD_MUNICIPIO_7, CD_MUNICIPIO, REGIONAL_SAUDE, NM_CIDADE, UF_MUNICIPIO, NM_REGIAO, CIDADES_HABITANTES, ID_SINGULAR)`
+  - `urede_cooperativas(id_singular, UNIODONTO, CNPJ, CRO_OPERAORA, DATA_FUNDACAO, RAZ_SOCIAL, CODIGO_ANS, FEDERACAO, SOFTWARE, TIPO, OP_PR)`
+  - `urede_operadores(id BIGINT, created_at, nome, id_singular, email, telefone, whatsapp, cargo, status)`
+  - `urede_pedidos(id UUID, titulo, criado_por BIGINT, cooperativa_solicitante_id TEXT, cooperativa_responsavel_id TEXT, cidade_id TEXT, especialidades TEXT[], quantidade INT, observacoes TEXT, prioridade TEXT, nivel_atual TEXT, status TEXT, data_criacao TIMESTAMPTZ, data_ultima_alteracao TIMESTAMPTZ, prazo_atual TIMESTAMPTZ)`
+- Observações de mapeamento:
+  - Cooperativas: `CRO_OPERAORA` (typo no nome da coluna) é mapeada para `cro_operadora` no payload.
+  - Operadores: `status` → `ativo`, `created_at` → `data_cadastro`.
+  - Enriquecimento de pedidos: usa chaves `cidade_id` → `urede_cidades.CD_MUNICIPIO_7` e `cooperativa_solicitante_id` → `urede_cooperativas.id_singular`.
+
+### 0.7 Requisitos para RBAC funcionar
+- O email do usuário autenticado deve existir em `urede_operadores.email` com `status = true` e `id_singular` preenchido.
+- Sem esse vínculo, `/pedidos` pode retornar vazio (por filtro de RBAC) ou falhar em criação.
+
+### 0.8 Known Issues (e mitigação)
+- Erro “A custom element with name 'mce-autosize-textarea' has already been defined.”
+  - Causa provável: redefinição de webcomponents por extensão do navegador/polyfill externo (não há TinyMCE no projeto).
+  - Mitigação aplicada: guard em `index.html` para ignorar redefinições duplicadas em `customElements.define` e não quebrar a app.
+  - Ação recomendada se persistir: testar em janela anônima (sem extensões), identificar pelo DevTools a origem do script conflituoso, e, se necessário, filtrar carregamento em produção.
+
+### 0.9 Como diagnosticar rápido
+- `GET https://urede.deno.dev/debug/counts` → verifica conectividade e contagens.
+- Se CORS bloquear no Vercel: adicionar `https://urede.vercel.app` e `*.vercel.app` em `ALLOWED_ORIGINS` e redeploy no Deno Deploy.
+- Se `/pedidos` retornar []: verificar `urede_pedidos` (vazia) e se o operador logado está em `urede_operadores` com email/id_singular corretos.
+
 ---
 
 ## 1. Visão Geral do Sistema
