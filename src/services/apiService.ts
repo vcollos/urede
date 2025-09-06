@@ -12,12 +12,8 @@ import type {
 class ApiService {
   // COOPERATIVAS
   async getCooperativas(): Promise<Cooperativa[]> {
-    try {
-      return await apiRequest('/cooperativas');
-    } catch (error) {
-      console.error('Erro ao buscar cooperativas:', error);
-      throw error;
-    }
+    // usar endpoint público por padrão
+    return this.getCooperativasPublic();
   }
 
   // COOPERATIVAS PÚBLICAS (para registro)
@@ -46,7 +42,16 @@ class ApiService {
   // CIDADES
   async getCidades(): Promise<Cidade[]> {
     try {
-      return await apiRequest('/cidades');
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${serverUrl}/cidades/public`, {
+        method: 'GET',
+        headers: { ...headers },
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+        throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
+      }
+      return response.json();
     } catch (error) {
       console.error('Erro ao buscar cidades:', error);
       throw error;
@@ -56,7 +61,16 @@ class ApiService {
   // OPERADORES
   async getOperadores(): Promise<Operador[]> {
     try {
-      return await apiRequest('/operadores');
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${serverUrl}/operadores/public`, {
+        method: 'GET',
+        headers: { ...headers },
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+        throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
+      }
+      return response.json();
     } catch (error) {
       console.error('Erro ao buscar operadores:', error);
       throw error;
@@ -66,7 +80,16 @@ class ApiService {
   // PEDIDOS
   async getPedidos(): Promise<Pedido[]> {
     try {
-      return await apiRequest('/pedidos');
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${serverUrl}/pedidos/public`, {
+        method: 'GET',
+        headers: { ...headers },
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+        throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
+      }
+      return response.json();
     } catch (error) {
       console.error('Erro ao buscar pedidos:', error);
       throw error;

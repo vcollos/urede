@@ -24,7 +24,7 @@ interface PedidosListaProps {
 }
 
 export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps) {
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('todos');
@@ -48,10 +48,8 @@ export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps
       }
     };
 
-    if (user) {
-      loadPedidos();
-    }
-  }, [user]);
+    loadPedidos();
+  }, []);
 
   // Filtrar pedidos baseado nos filtros aplicados
   const getFilteredPedidos = (): Pedido[] => {
@@ -222,10 +220,12 @@ export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps
           <h1 className="text-2xl font-bold text-gray-900">Pedidos de Credenciamento</h1>
           <p className="text-gray-600">Gerencie pedidos de credenciamento e suprimento da rede</p>
         </div>
+        {isAuthenticated && (
         <Button onClick={() => { onCreatePedido(); }} className="bg-blue-600 hover:bg-blue-700">
           <Plus className="w-4 h-4 mr-2" />
           Novo Pedido
         </Button>
+        )}
       </div>
 
       {/* Filtros */}

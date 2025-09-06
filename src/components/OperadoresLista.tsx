@@ -27,7 +27,7 @@ interface OperadoresListaProps {
 }
 
 export function OperadoresLista({ onCreateOperador, onEditOperador }: OperadoresListaProps) {
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const [operadores, setOperadores] = useState<Operador[]>([]);
   const [cooperativas, setCooperativas] = useState<Cooperativa[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -56,20 +56,19 @@ export function OperadoresLista({ onCreateOperador, onEditOperador }: Operadores
       }
     };
 
-    if (user) {
-      loadData();
-    }
-  }, [user]);
+    loadData();
+  }, []);
 
   // Filtrar operadores
   const getFilteredOperadores = (): Operador[] => {
     let operadoresFiltrados = operadores;
 
     if (searchTerm) {
+      const q = searchTerm.toLowerCase();
       operadoresFiltrados = operadoresFiltrados.filter(op => 
-        op.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        op.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        op.cargo.toLowerCase().includes(searchTerm.toLowerCase())
+        (op.nome || '').toLowerCase().includes(q) ||
+        (op.email || '').toLowerCase().includes(q) ||
+        (op.cargo || '').toLowerCase().includes(q)
       );
     }
 
@@ -137,10 +136,12 @@ export function OperadoresLista({ onCreateOperador, onEditOperador }: Operadores
           <h1 className="text-2xl font-bold text-gray-900">Operadores</h1>
           <p className="text-gray-600">Gerencie os operadores do sistema</p>
         </div>
+        {isAuthenticated && (
         <Button onClick={onCreateOperador} className="bg-blue-600 hover:bg-blue-700">
           <Plus className="w-4 h-4 mr-2" />
           Novo Operador
         </Button>
+        )}
       </div>
 
       {/* Filtros */}

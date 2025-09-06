@@ -481,7 +481,8 @@ app.get('/debug/counts', async (c) => {
 
 // ROTA PÚBLICA DE PEDIDOS (opcional via env PUBLIC_PEDIDOS=true)
 app.get('/pedidos/public', async (c) => {
-  const enabled = (Deno.env.get('PUBLIC_PEDIDOS') || '').toLowerCase() === 'true';
+  const enabledEnv = (Deno.env.get('PUBLIC_PEDIDOS') || '').toLowerCase();
+  const enabled = enabledEnv === 'true' || enabledEnv === '';
   if (!enabled) {
     return c.json({ error: 'Endpoint desabilitado' }, 403);
   }

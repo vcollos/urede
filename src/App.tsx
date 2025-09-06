@@ -35,10 +35,7 @@ function AppContent() {
     );
   }
 
-  // Se não estiver autenticado, mostrar tela de login
-  if (!isAuthenticated) {
-    return <AuthScreen />;
-  }
+  // Modo público: permitimos navegação e leitura sem autenticação.
 
   const handleCreatePedido = () => {
     setShowNovoPedido(false);
@@ -84,10 +81,8 @@ function AppContent() {
         }
       };
 
-      if (user) {
-        loadData();
-      }
-    }, [user]);
+      loadData();
+    }, []);
 
     const getOperadoresCount = (idSingular: string) => {
       return operadores.filter(op => op.id_singular === idSingular && op.ativo).length;
