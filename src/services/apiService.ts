@@ -12,8 +12,8 @@ import type {
 class ApiService {
   // COOPERATIVAS
   async getCooperativas(): Promise<Cooperativa[]> {
-    // usar endpoint público por padrão
-    return this.getCooperativasPublic();
+    // rota protegida
+    return await apiRequest('/cooperativas');
   }
 
   // COOPERATIVAS PÚBLICAS (para registro)
@@ -41,59 +41,17 @@ class ApiService {
 
   // CIDADES
   async getCidades(): Promise<Cidade[]> {
-    try {
-      const headers = await getAuthHeaders();
-      const response = await fetch(`${serverUrl}/cidades/public`, {
-        method: 'GET',
-        headers: { ...headers },
-      });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
-        throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
-      }
-      return response.json();
-    } catch (error) {
-      console.error('Erro ao buscar cidades:', error);
-      throw error;
-    }
+    return await apiRequest('/cidades');
   }
 
   // OPERADORES
   async getOperadores(): Promise<Operador[]> {
-    try {
-      const headers = await getAuthHeaders();
-      const response = await fetch(`${serverUrl}/operadores/public`, {
-        method: 'GET',
-        headers: { ...headers },
-      });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
-        throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
-      }
-      return response.json();
-    } catch (error) {
-      console.error('Erro ao buscar operadores:', error);
-      throw error;
-    }
+    return await apiRequest('/operadores');
   }
 
   // PEDIDOS
   async getPedidos(): Promise<Pedido[]> {
-    try {
-      const headers = await getAuthHeaders();
-      const response = await fetch(`${serverUrl}/pedidos/public`, {
-        method: 'GET',
-        headers: { ...headers },
-      });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
-        throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
-      }
-      return response.json();
-    } catch (error) {
-      console.error('Erro ao buscar pedidos:', error);
-      throw error;
-    }
+    return await apiRequest('/pedidos');
   }
 
   async createPedido(pedidoData: {

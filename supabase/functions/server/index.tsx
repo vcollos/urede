@@ -132,7 +132,14 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
         .select('*')
         .eq('email', userEmail)
         .maybeSingle();
-      if (byEmail.data) return byEmail.data as any;
+      if (byEmail.data) {
+        const o = mapOperador(byEmail.data);
+        return {
+          ...o,
+          cooperativa_id: o.id_singular,
+          papel: 'operador',
+        } as any;
+      }
       if (byEmail.error && byEmail.error.code !== 'PGRST116') {
         console.warn('[getUserData] erro byEmail:', byEmail.error);
       }
@@ -144,7 +151,14 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
       .select('*')
       .eq('id', userId)
       .maybeSingle();
-    if (byId.data) return byId.data as any;
+    if (byId.data) {
+      const o = mapOperador(byId.data);
+      return {
+        ...o,
+        cooperativa_id: o.id_singular,
+        papel: 'operador',
+      } as any;
+    }
     if (byId.error && byId.error.code !== 'PGRST116') {
       console.warn('[getUserData] erro byId:', byId.error);
     }

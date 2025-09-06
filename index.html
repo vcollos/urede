@@ -8,17 +8,19 @@
       <script>
         (function () {
           try {
-            var originalDefine = customElements.define.bind(customElements);
-            // Prevent errors from duplicate custom element registrations (e.g., extensions)
-            customElements.define = function (name, ctor, options) {
-              if (customElements.get(name)) {
-                return; // ignore re-definition
+            var ce = window.customElements;
+            if (!ce || !ce.define) return;
+            var _define = ce.define.bind(ce);
+            ce.define = function (name, ctor, options) {
+              try {
+                if (ce.get(name)) return; // ignore duplicate
+                return _define(name, ctor, options);
+              } catch (err) {
+                // some polyfills/extensions throw on duplicates; swallow to avoid breaking the app
+                console && console.warn && console.warn('CE define suppressed for', name, err);
               }
-              return originalDefine(name, ctor, options);
             };
-          } catch (e) {
-            // noop
-          }
+          } catch (e) {}
         })();
       </script>
     </head>

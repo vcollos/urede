@@ -25,30 +25,12 @@ export function Dashboard() {
     const loadDashboardData = async () => {
       try {
         setIsLoading(true);
-        const pedidosData = await apiService.getPedidos();
+        const [statsData, pedidosData] = await Promise.all([
+          apiService.getDashboardStats(),
+          apiService.getPedidos()
+        ]);
+        setDashboardStats(statsData);
         setPedidos(pedidosData);
-        // calcular stats localmente (visão pública)
-        const agora = new Date();
-        const concluidos = pedidosData.filter(p => p.status === 'concluido');
-        const emAndamento = pedidosData.filter(p => p.status === 'em_andamento');
-        const vencendo = pedidosData.filter(p => {
-          if (p.status === 'concluido') return false;
-          const prazo = new Date(p.prazo_atual);
-          const diffDays = Math.ceil((prazo.getTime() - agora.getTime()) / (1000 * 60 * 60 * 24));
-          return diffDays <= 7 && diffDays >= 0;
-        });
-        const slaCumprido = concluidos.length > 0
-          ? Math.round(
-              (concluidos.filter(p => new Date(p.data_ultima_alteracao) <= new Date(p.prazo_atual)).length / concluidos.length) * 100
-            )
-          : 0;
-        setDashboardStats({
-          total_pedidos: pedidosData.length,
-          pedidos_vencendo: vencendo.length,
-          pedidos_em_andamento: emAndamento.length,
-          pedidos_concluidos: concluidos.length,
-          sla_cumprido: slaCumprido,
-        });
       } catch (err) {
         console.error('Erro ao carregar dados do dashboard:', err);
         setError(err instanceof Error ? err.message : 'Erro ao carregar dados');
@@ -57,8 +39,8 @@ export function Dashboard() {
       }
     };
 
-    loadDashboardData();
-  }, []);
+    if (user) loadDashboardData();
+  }, [user]);
 
   if (isLoading) {
     return (
@@ -84,7 +66,7 @@ export function Dashboard() {
     );
   }
 
-  if (!dashboardStats) {
+  if (!dashboardStats || !user) {
     return null;
   }
 

@@ -56,8 +56,8 @@ export function OperadoresLista({ onCreateOperador, onEditOperador }: Operadores
       }
     };
 
-    loadData();
-  }, []);
+    if (user) loadData();
+  }, [user]);
 
   // Filtrar operadores
   const getFilteredOperadores = (): Operador[] => {

@@ -35,7 +35,10 @@ function AppContent() {
     );
   }
 
-  // Modo público: permitimos navegação e leitura sem autenticação.
+  // Se não estiver autenticado, mostrar tela de login
+  if (!isAuthenticated) {
+    return <AuthScreen />;
+  }
 
   const handleCreatePedido = () => {
     setShowNovoPedido(false);

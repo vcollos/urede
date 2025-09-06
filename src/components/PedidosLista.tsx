@@ -48,8 +48,8 @@ export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps
       }
     };
 
-    loadPedidos();
-  }, []);
+    if (user) loadPedidos();
+  }, [user]);
 
   // Filtrar pedidos baseado nos filtros aplicados
   const getFilteredPedidos = (): Pedido[] => {
