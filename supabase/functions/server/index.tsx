@@ -1,6 +1,8 @@
 import { Hono } from "https://deno.land/x/hono@v4.3.11/mod.ts";
 import { cors, logger } from "https://deno.land/x/hono@v4.3.11/middleware.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
+import { signJwt, verifyJwt } from "./lib/jwt.ts";
+import { getDb } from "./lib/sqlite.ts";
 
 const app = new Hono();
 
@@ -31,35 +33,30 @@ app.use('*', cors({
 
 app.use('*', logger(console.log));
 
-// Configurar Supabase client
-// SUPABASE_URL é fornecida automaticamente pelo ambiente do Supabase (variável reservada)
-// Para a chave de serviço, priorizamos SERVICE_ROLE_KEY, com fallback para nomes comuns e, por fim, ANON para rotas públicas.
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+ // Configurações gerais
 const DB_SCHEMA = Deno.env.get('DB_SCHEMA') || 'public';
-// Por padrão, usamos o prefixo 'urede_' pois suas tabelas reais seguem esse padrão.
-// Você pode sobrescrever via env TABLE_PREFIX se precisar mudar.
 const TABLE_PREFIX = Deno.env.get('TABLE_PREFIX') || 'urede_';
 const TBL = (name: string) => `${TABLE_PREFIX}${name}`;
-const SERVICE_ROLE_KEY =
-  Deno.env.get('SERVICE_ROLE_KEY') ||
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ||
-  Deno.env.get('SB_SERVICE_ROLE_KEY') ||
-  '';
-const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') || '';
 
-if (!SUPABASE_URL) {
-  console.error('[server] SUPABASE_URL ausente no ambiente.');
-}
+// Auth / DB local
+const AUTH_PROVIDER = 'local';
+const JWT_SECRET = Deno.env.get('JWT_SECRET') || 'dev-secret-change-me';
+const SQLITE_PATH_RAW = Deno.env.get('SQLITE_PATH') || './data/urede.db';
+// Resolver caminho absoluto do DB relativo à raiz do projeto (três níveis acima deste arquivo)
+let SQLITE_PATH = SQLITE_PATH_RAW;
+try {
+  if (!/^(?:\w+:)?\//.test(SQLITE_PATH_RAW)) {
+    const root = new URL('../../../', import.meta.url);
+    SQLITE_PATH = new URL(SQLITE_PATH_RAW.replace(/^\.\//, ''), root).pathname;
+  }
+} catch {}
+const DB_DRIVER = (Deno.env.get('DB_DRIVER') || 'sqlite').toLowerCase(); // sqlite
 
-if (!SERVICE_ROLE_KEY) {
-  console.warn('[server] SERVICE_ROLE_KEY não encontrado; usando ANON para rotas públicas. Defina SERVICE_ROLE_KEY para privilégios de serviço.');
-}
+// Modo inseguro para desenvolvimento local: quando true, pulamos checagens de autenticação e permissões.
+// Defina INSECURE_MODE=true no arquivo supabase/functions/server/.env para habilitar.
+const INSECURE_MODE = (Deno.env.get('INSECURE_MODE') || '').toLowerCase() === 'true';
 
-const supabase = createClient(
-  SUPABASE_URL || '',
-  SERVICE_ROLE_KEY || SUPABASE_ANON_KEY || '',
-  { db: { schema: DB_SCHEMA } }
-);
+// Operação 100% local (SQLite)
 
 // Helpers de mapeamento para o formato esperado pelo frontend
 const mapCooperativa = (row: any) => ({
@@ -107,6 +104,9 @@ const computeDiasRestantes = (prazoIso: string) => {
 };
 
 // Carrega nomes de cidade e cooperativa para um conjunto de pedidos
+console.log(`[sqlite] abrindo banco em: ${SQLITE_PATH}`);
+const db = getDb(SQLITE_PATH);
+
 const enrichPedidos = async (pedidos: any[]) => {
   if (!pedidos || pedidos.length === 0) return [] as any[];
 
@@ -120,7 +120,7 @@ const enrichPedidos = async (pedidos: any[]) => {
   const coopIds = Array.from(
     new Set(
       pedidos
-        .map((p) => p.cooperativa_solicitante_id)
+        .flatMap((p) => [p.cooperativa_solicitante_id, p.cooperativa_responsavel_id])
         .filter((v) => typeof v === 'string' && v.trim().length > 0)
     )
   );
@@ -130,10 +130,8 @@ const enrichPedidos = async (pedidos: any[]) => {
 
   try {
     if (cityIds.length > 0) {
-      const { data: cidadesRows } = await supabase
-        .from(TBL('cidades'))
-        .select('CD_MUNICIPIO_7,NM_CIDADE,UF_MUNICIPIO')
-        .in('CD_MUNICIPIO_7', cityIds);
+      const placeholders = cityIds.map(() => '?').join(',');
+      const cidadesRows = db.queryEntries(`SELECT CD_MUNICIPIO_7, NM_CIDADE, UF_MUNICIPIO FROM ${TBL('cidades')} WHERE CD_MUNICIPIO_7 IN (${placeholders})`, cityIds as any);
       for (const r of cidadesRows || []) {
         const c = mapCidade(r);
         cidadesMap[c.cd_municipio_7] = c;
@@ -145,10 +143,8 @@ const enrichPedidos = async (pedidos: any[]) => {
 
   try {
     if (coopIds.length > 0) {
-      const { data: coopRows } = await supabase
-        .from(TBL('cooperativas'))
-        .select('id_singular,UNIODONTO')
-        .in('id_singular', coopIds);
+      const placeholders = coopIds.map(() => '?').join(',');
+      const coopRows = db.queryEntries(`SELECT id_singular, UNIODONTO, FEDERACAO FROM ${TBL('cooperativas')} WHERE id_singular IN (${placeholders})`, coopIds as any);
       for (const r of coopRows || []) {
         const c = mapCooperativa(r);
         coopsMap[c.id_singular] = c;
@@ -161,73 +157,106 @@ const enrichPedidos = async (pedidos: any[]) => {
   return pedidos.map((p) => {
     const cidade = cidadesMap[p.cidade_id];
     const coop = coopsMap[p.cooperativa_solicitante_id];
+    const coopResp = coopsMap[p.cooperativa_responsavel_id];
     return {
       ...p,
       cidade_nome: cidade?.nm_cidade || null,
       estado: cidade?.uf_municipio || null,
       cooperativa_solicitante_nome: coop?.uniodonto || null,
+      cooperativa_responsavel_nome: coopResp?.uniodonto || null,
     };
   });
 };
 
 // Middleware para verificar autenticação
 const requireAuth = async (c: any, next: any) => {
-  const accessToken = c.req.header('Authorization')?.split(' ')[1];
-  if (!accessToken) {
-    return c.json({ error: 'Token de acesso não fornecido' }, 401);
+  // Se INSECURE_MODE estiver ativado, bypass completo de autenticação/permissões
+  if (INSECURE_MODE) {
+    c.set('user', { id: 'insecure', email: 'insecure@local', claims: {} });
+    return await next();
   }
 
-  const { data: { user }, error } = await supabase.auth.getUser(accessToken);
-  if (error || !user) {
-    return c.json({ error: 'Token inválido ou expirado' }, 401);
+  const authHeader = c.req.header('Authorization');
+  const token = authHeader?.startsWith('Bearer ')
+    ? authHeader.split(' ')[1]
+    : undefined;
+  if (!token) return c.json({ error: 'Token de acesso não fornecido' }, 401);
+
+  if (AUTH_PROVIDER === 'local') {
+    try {
+      const payload = await verifyJwt(JWT_SECRET, token);
+      c.set('user', { id: payload.sub, email: payload.email, claims: payload });
+      return await next();
+    } catch {
+      return c.json({ error: 'Token inválido ou expirado' }, 401);
+    }
   }
 
-  c.set('user', user);
-  await next();
+  // Nenhum fallback extra: apenas JWT local
+  return c.json({ error: 'Token inválido ou expirado' }, 401);
 };
 
 // Função para obter dados do usuário somente via SQL
 const getUserData = async (userId: string, userEmail?: string | null) => {
+  // Se INSECURE_MODE estiver ativo, retornar usuário com papel 'confederacao'
+  // para permitir criar/editar/excluir localmente sem checagens de RBAC.
+  if (INSECURE_MODE) {
+    return {
+      id: 'insecure',
+      nome: 'Insecure',
+      display_name: 'Insecure',
+      email: 'insecure@local',
+      telefone: '',
+      whatsapp: '',
+      cargo: '',
+      cooperativa_id: '',
+      papel: 'confederacao',
+      ativo: true,
+      data_cadastro: new Date().toISOString(),
+    } as any;
+  }
+
   try {
-    // 1) tentar por email em <prefix>operadores
+    // Se provider local, primeiro tentar em auth_users (SQLite)
+    if (AUTH_PROVIDER === 'local') {
+      try {
+        const db = getDb(SQLITE_PATH);
+        if (userEmail) {
+          const row = db.queryEntries<{
+            email: string; nome: string; display_name: string | null; telefone: string | null; whatsapp: string | null;
+            cargo: string | null; cooperativa_id: string | null; papel: string | null; ativo: number | null; data_cadastro: string | null;
+          }>(`SELECT email, nome, COALESCE(display_name, nome) as display_name, telefone, whatsapp, cargo, cooperativa_id, papel, COALESCE(ativo,1) as ativo, COALESCE(data_cadastro, CURRENT_TIMESTAMP) as data_cadastro FROM auth_users WHERE email = ?`, [userEmail])[0];
+          if (row) {
+            return {
+              id: userEmail,
+              nome: row.nome || 'Usuário',
+              display_name: row.display_name || 'Usuário',
+              email: userEmail,
+              telefone: row.telefone || '',
+              whatsapp: row.whatsapp || '',
+              cargo: row.cargo || '',
+              cooperativa_id: row.cooperativa_id || '',
+              papel: (row.papel as any) || 'operador',
+              ativo: !!row.ativo,
+              data_cadastro: row.data_cadastro,
+            } as any;
+          }
+        }
+      } catch (e) {
+        console.warn('[getUserData] sqlite auth_users lookup falhou:', e);
+      }
+    }
+
+    // Tentar por email em operadores (SQLite)
     if (userEmail) {
-      const byEmail = await supabase
-        .from(TBL('operadores'))
-        .select('*')
-        .eq('email', userEmail)
-        .maybeSingle();
-      if (byEmail.data) {
-        const o = mapOperador(byEmail.data);
-        return {
-          ...o,
-          cooperativa_id: o.id_singular,
-          papel: 'operador',
-        } as any;
-      }
-      if (byEmail.error && byEmail.error.code !== 'PGRST116') {
-        console.warn('[getUserData] erro byEmail:', byEmail.error);
+      const byEmail = db.queryEntries(`SELECT * FROM ${TBL('operadores')} WHERE email = ? LIMIT 1`, [userEmail])[0];
+      if (byEmail) {
+        const o = mapOperador(byEmail);
+        return { ...o, cooperativa_id: o.id_singular, papel: 'operador' } as any;
       }
     }
 
-    // 2) fallback por id
-    const byId = await supabase
-      .from(TBL('operadores'))
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
-    if (byId.data) {
-      const o = mapOperador(byId.data);
-      return {
-        ...o,
-        cooperativa_id: o.id_singular,
-        papel: 'operador',
-      } as any;
-    }
-    if (byId.error && byId.error.code !== 'PGRST116') {
-      console.warn('[getUserData] erro byId:', byId.error);
-    }
-
-    // 3) fallback básico a partir do auth
+    // Fallback básico
     return {
       id: userId,
       nome: 'Usuário',
@@ -269,16 +298,7 @@ const initializeData = async () => {};
 const escalarPedidos = async () => {
   try {
     const agoraIso = new Date().toISOString();
-    const { data: pedidos, error } = await supabase
-      .from(TBL('pedidos'))
-      .select('*')
-      .eq('status', 'em_andamento')
-      .lt('prazo_atual', agoraIso);
-
-    if (error) {
-      console.error('Erro ao buscar pedidos para escalonamento:', error);
-      return;
-    }
+    const pedidos = db.queryEntries<any>(`SELECT * FROM ${TBL('pedidos')} WHERE status = 'em_andamento' AND prazo_atual < ?`, [agoraIso]);
     if (!pedidos || pedidos.length === 0) return;
 
     for (const pedido of pedidos as any[]) {
@@ -287,35 +307,18 @@ const escalarPedidos = async () => {
 
       if (pedido.nivel_atual === 'singular') {
         // Buscar federação da cooperativa solicitante
-        const { data: coopSolic, error: coopErr } = await supabase
-          .from(TBL('cooperativas'))
-          .select('federacao')
-          .eq('id_singular', pedido.cooperativa_solicitante_id)
-          .maybeSingle();
-        if (coopErr) {
-          console.error('Erro ao buscar cooperativa solicitante:', coopErr);
-          continue;
-        }
-        const federacaoNome = coopSolic?.federacao;
+        const coopSolic = db.queryEntries<any>(`SELECT FEDERACAO FROM ${TBL('cooperativas')} WHERE id_singular = ? LIMIT 1`, [pedido.cooperativa_solicitante_id])[0];
+        const federacaoNome = coopSolic?.FEDERACAO;
         if (federacaoNome) {
-          const { data: fed, error: fedErr } = await supabase
-            .from(TBL('cooperativas'))
-            .select('id_singular')
-            .eq('tipo', 'FEDERAÇÃO')
-            .eq('federacao', federacaoNome)
-            .maybeSingle();
-          if (!fedErr && fed) {
+          const fed = db.queryEntries<any>(`SELECT id_singular FROM ${TBL('cooperativas')} WHERE TIPO = 'FEDERAÇÃO' AND FEDERACAO = ? LIMIT 1`, [federacaoNome])[0];
+          if (fed) {
             novoNivel = 'federacao';
             novaCooperativaResponsavel = fed.id_singular as string;
           }
         }
       } else if (pedido.nivel_atual === 'federacao') {
-        const { data: conf, error: confErr } = await supabase
-          .from(TBL('cooperativas'))
-          .select('id_singular')
-          .eq('tipo', 'CONFEDERACAO')
-          .maybeSingle();
-        if (!confErr && conf) {
+        const conf = db.queryEntries<any>(`SELECT id_singular FROM ${TBL('cooperativas')} WHERE TIPO = 'CONFEDERACAO' LIMIT 1`)[0];
+        if (conf) {
           novoNivel = 'confederacao';
           novaCooperativaResponsavel = conf.id_singular as string;
         }
@@ -325,35 +328,24 @@ const escalarPedidos = async () => {
         const novoPrazo = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
         const agora = new Date().toISOString();
 
-        const { error: upErr } = await supabase
-          .from(TBL('pedidos'))
-          .update({
-            nivel_atual: novoNivel,
-            cooperativa_responsavel_id: novaCooperativaResponsavel,
-            prazo_atual: novoPrazo,
-            data_ultima_alteracao: agora,
-          })
-          .eq('id', pedido.id);
-
-        if (upErr) {
-          console.error('Erro ao atualizar pedido no escalonamento:', upErr);
+        try {
+          db.query(
+            `UPDATE ${TBL('pedidos')} SET nivel_atual = ?, cooperativa_responsavel_id = ?, prazo_atual = ?, data_ultima_alteracao = ? WHERE id = ?`,
+            [novoNivel, novaCooperativaResponsavel, novoPrazo, agora, pedido.id]
+          );
+        } catch (e) {
+          console.error('Erro ao atualizar pedido no escalonamento:', e);
           continue;
         }
 
         // Registrar auditoria com autor como criador do pedido para evitar FK inválida
-        const { error: audErr } = await supabase
-          .from(TBL('auditoria_logs'))
-          .insert([{
-            id: `audit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            pedido_id: pedido.id,
-            usuario_id: pedido.criado_por,
-            usuario_nome: 'Sistema Automático',
-            acao: `Escalamento automático para ${novoNivel}`,
-            timestamp: agora,
-            detalhes: `Pedido escalado automaticamente por vencimento de prazo. Novo prazo: ${novoPrazo}`
-          }]);
-        if (audErr) {
-          console.error('Erro ao registrar auditoria de escalonamento:', audErr);
+        try {
+          const id = `audit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          db.query(`INSERT INTO ${TBL('auditoria_logs')} (id, pedido_id, usuario_id, usuario_nome, acao, timestamp, detalhes) VALUES (?,?,?,?,?,?,?)`,
+            [id, pedido.id, pedido.criado_por, 'Sistema Automático', `Escalamento automático para ${novoNivel}`, agora, `Pedido escalado automaticamente por vencimento de prazo. Novo prazo: ${novoPrazo}`]
+          );
+        } catch (e) {
+          console.error('Erro ao registrar auditoria de escalonamento:', e);
         }
       }
     }
@@ -364,44 +356,137 @@ const escalarPedidos = async () => {
 
 // ROTAS DA API
 
-// Rota de autenticação - Cadastro
+// Rota de autenticação - Cadastro (JWT local)
 app.post('/auth/register', async (c) => {
   try {
     const { email, password, nome, display_name, telefone, whatsapp, cargo, cooperativa_id, papel } = await c.req.json();
 
-    const { data, error } = await supabase.auth.admin.createUser({
-      email,
-      password,
-      user_metadata: { name: nome },
-      // Automatically confirm the user's email since an email server hasn't been configured.
-      email_confirm: true
-    });
+    if (AUTH_PROVIDER !== 'local') return c.json({ error: 'Cadastro local desabilitado' }, 400);
+    if (!email || !password) return c.json({ error: 'Email e senha são obrigatórios' }, 400);
 
-    if (error) {
-      console.error('Erro ao criar usuário:', error);
-      return c.json({ error: 'Erro ao criar usuário', details: error.message }, 400);
+    const db = getDb(SQLITE_PATH);
+    db.execute(`CREATE TABLE IF NOT EXISTS auth_users (
+      email TEXT PRIMARY KEY,
+      password_hash TEXT NOT NULL,
+      nome TEXT,
+      display_name TEXT,
+      telefone TEXT,
+      whatsapp TEXT,
+      cargo TEXT,
+      cooperativa_id TEXT,
+      papel TEXT DEFAULT 'operador',
+      ativo INTEGER DEFAULT 1,
+      data_cadastro TEXT DEFAULT (CURRENT_TIMESTAMP)
+    )`);
+
+    const already = db.queryEntries<{email: string}>(`SELECT email FROM auth_users WHERE email = ?`, [email])[0];
+    if (already) return c.json({ error: 'Email já registrado' }, 400);
+
+    // Verificar se há Authorization: se sim, aplicar regras de criação por papéis
+    let requester: any = null;
+    const authHeader = c.req.header('Authorization');
+    const authzToken = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : undefined;
+    if (authzToken) {
+      try {
+        const payload = await verifyJwt(JWT_SECRET, authzToken);
+        requester = await getUserData(payload.sub as string, payload.email as string);
+      } catch {}
     }
 
-    // Apenas retorna o usuário criado no auth; não insere em tabelas locais
-    return c.json({ 
+    // Regras:
+    // - Sem Authorization (auto-registro): força papel 'operador' e exige cooperativa_id
+    // - Com Authorization:
+    //   * confederacao: pode criar para qualquer cooperativa, qualquer papel
+    //   * federacao: pode criar para sua federação e singulares da sua federação
+    //   * admin (singular): pode criar apenas para sua cooperativa
+    let finalPapel = (papel as any) || 'operador';
+    let finalCoop = cooperativa_id || '';
+
+    if (!requester) {
+      // Auto-registro público
+      finalPapel = 'operador';
+      if (!finalCoop) return c.json({ error: 'cooperativa_id é obrigatório' }, 400);
+    } else {
+      if (requester.papel === 'confederacao') {
+        // Sem restrições
+      } else if (requester.papel === 'federacao') {
+        // Verificar se destino pertence à sua federação ou é a própria federação
+        if (!finalCoop) return c.json({ error: 'cooperativa_id é obrigatório' }, 400);
+        try {
+          const dest = db.queryEntries<any>(`SELECT id_singular, FEDERACAO FROM ${TBL('cooperativas')} WHERE id_singular = ? LIMIT 1`, [finalCoop])[0];
+          const reqCoop = db.queryEntries<any>(`SELECT id_singular, UNIODONTO, FEDERACAO, TIPO FROM ${TBL('cooperativas')} WHERE id_singular = ? LIMIT 1`, [requester.cooperativa_id])[0];
+          const sameFed = dest && reqCoop && (dest.FEDERACAO === reqCoop.UNIODONTO || dest.FEDERACAO === reqCoop.FEDERACAO);
+          const isSelf = dest && reqCoop && dest.id_singular === reqCoop.id_singular;
+          if (!sameFed && !isSelf) return c.json({ error: 'Sem permissão para criar usuário nesta cooperativa' }, 403);
+        } catch {
+          return c.json({ error: 'Falha ao validar federação' }, 400);
+        }
+      } else if (requester.papel === 'admin') {
+        if (!finalCoop || finalCoop !== requester.cooperativa_id) {
+          return c.json({ error: 'Admin de singular só cria usuários da sua operadora' }, 403);
+        }
+      } else if (requester.papel === 'operador') {
+        return c.json({ error: 'Operador não pode criar usuários' }, 403);
+      }
+    }
+
+    const hash = await bcrypt.hash(password);
+    db.query(`INSERT INTO auth_users (email, password_hash, nome, display_name, telefone, whatsapp, cargo, cooperativa_id, papel, ativo) VALUES (?,?,?,?,?,?,?,?,?,1)`, [
+      email, hash, nome || '', display_name || nome || '', telefone || '', whatsapp || '', cargo || '', finalCoop, finalPapel
+    ]);
+
+    // Emitir token após cadastro
+    const token = await signJwt(JWT_SECRET, { sub: email, email, nome: nome || '', cooperativa_id: cooperativa_id || '', papel: papel || 'operador' });
+    return c.json({
       message: 'Usuário criado com sucesso',
+      token,
       user: {
-        id: data.user.id,
-        nome,
-        display_name,
+        id: email,
+        nome: nome || '',
+        display_name: display_name || nome || '',
         email,
-        telefone,
-        whatsapp,
-        cargo,
-        cooperativa_id,
-        papel,
+        telefone: telefone || '',
+        whatsapp: whatsapp || '',
+        cargo: cargo || '',
+        cooperativa_id: cooperativa_id || '',
+        papel: (papel || 'operador'),
         ativo: true,
         data_cadastro: new Date().toISOString()
       }
     });
-
   } catch (error) {
     console.error('Erro no cadastro:', error);
+    return c.json({ error: 'Erro interno do servidor' }, 500);
+  }
+});
+
+// Rota de autenticação - Login (JWT local)
+app.post('/auth/login', async (c) => {
+  try {
+    const { email, password } = await c.req.json();
+    if (AUTH_PROVIDER !== 'local') return c.json({ error: 'Login local desabilitado' }, 400);
+    if (!email || !password) return c.json({ error: 'Email e senha são obrigatórios' }, 400);
+
+    const db = getDb(SQLITE_PATH);
+    const row = db.queryEntries<{ email: string; password_hash: string; nome: string | null; display_name: string | null; cooperativa_id: string | null; papel: string | null }>(
+      `SELECT email, password_hash, nome, display_name, cooperativa_id, papel FROM auth_users WHERE email = ?`,
+      [email]
+    )[0];
+    if (!row) return c.json({ error: 'Credenciais inválidas' }, 401);
+    const ok = await bcrypt.compare(password, row.password_hash);
+    if (!ok) return c.json({ error: 'Credenciais inválidas' }, 401);
+
+    const token = await signJwt(JWT_SECRET, {
+      sub: email,
+      email,
+      nome: row.nome || undefined,
+      cooperativa_id: row.cooperativa_id || undefined,
+      papel: (row.papel as any) || 'operador'
+    });
+
+    return c.json({ token });
+  } catch (error) {
+    console.error('Erro no login:', error);
     return c.json({ error: 'Erro interno do servidor' }, 500);
   }
 });
@@ -410,7 +495,7 @@ app.post('/auth/register', async (c) => {
 app.get('/auth/me', requireAuth, async (c) => {
   try {
     const user = c.get('user');
-    const userData = await getUserData(user.id);
+    const userData = await getUserData(user.id, user.email || user?.claims?.email);
     
     return c.json({ user: userData });
   } catch (error) {
@@ -422,14 +507,8 @@ app.get('/auth/me', requireAuth, async (c) => {
 // ROTA PÚBLICA PARA COOPERATIVAS (para registro)
 app.get('/cooperativas/public', async (c) => {
   try {
-    const { data, error } = await supabase
-      .from(TBL('cooperativas'))
-      .select('*');
-    if (error) {
-      console.error('Erro ao buscar cooperativas do banco:', error);
-      return c.json({ error: 'Erro ao buscar cooperativas' }, 500);
-    }
-    const mapped = (data || []).map(mapCooperativa);
+    const rows = db.queryEntries(`SELECT * FROM ${TBL('cooperativas')}`);
+    const mapped = (rows || []).map(mapCooperativa);
     return c.json(mapped);
   } catch (error) {
     console.error('Erro ao buscar cooperativas públicas:', error);
@@ -440,14 +519,8 @@ app.get('/cooperativas/public', async (c) => {
 // ROTAS DE COOPERATIVAS
 app.get('/cooperativas', requireAuth, async (c) => {
   try {
-    const { data, error } = await supabase
-      .from(TBL('cooperativas'))
-      .select('*');
-    if (error) {
-      console.error('Erro ao buscar cooperativas do banco:', error);
-      return c.json({ error: 'Erro ao buscar cooperativas' }, 500);
-    }
-    const mapped = (data || []).map(mapCooperativa);
+    const rows = db.queryEntries(`SELECT * FROM ${TBL('cooperativas')}`);
+    const mapped = (rows || []).map(mapCooperativa);
     return c.json(mapped);
   } catch (error) {
     console.error('Erro ao buscar cooperativas:', error);
@@ -458,14 +531,8 @@ app.get('/cooperativas', requireAuth, async (c) => {
 // ROTAS DE CIDADES
 app.get('/cidades', requireAuth, async (c) => {
   try {
-    const { data, error } = await supabase
-      .from(TBL('cidades'))
-      .select('*');
-    if (error) {
-      console.error('Erro ao buscar cidades do banco:', error);
-      return c.json({ error: 'Erro ao buscar cidades' }, 500);
-    }
-    const mapped = (data || []).map(mapCidade);
+    const rows = db.queryEntries(`SELECT * FROM ${TBL('cidades')}`);
+    const mapped = (rows || []).map(mapCidade);
     return c.json(mapped);
   } catch (error) {
     console.error('Erro ao buscar cidades:', error);
@@ -476,14 +543,8 @@ app.get('/cidades', requireAuth, async (c) => {
 // ROTA PÚBLICA DE CIDADES (apenas leitura)
 app.get('/cidades/public', async (c) => {
   try {
-    const { data, error } = await supabase
-      .from(TBL('cidades'))
-      .select('*');
-    if (error) {
-      console.error('Erro ao buscar cidades (public):', error);
-      return c.json({ error: 'Erro ao buscar cidades' }, 500);
-    }
-    const mapped = (data || []).map(mapCidade);
+    const rows = db.queryEntries(`SELECT * FROM ${TBL('cidades')}`);
+    const mapped = (rows || []).map(mapCidade);
     return c.json(mapped);
   } catch (error) {
     console.error('Erro ao buscar cidades públicas:', error);
@@ -494,14 +555,8 @@ app.get('/cidades/public', async (c) => {
 // ROTAS DE OPERADORES
 app.get('/operadores', requireAuth, async (c) => {
   try {
-    const { data, error } = await supabase
-      .from(TBL('operadores'))
-      .select('*');
-    if (error) {
-      console.error('Erro ao buscar operadores do banco:', error);
-      return c.json({ error: 'Erro ao buscar operadores' }, 500);
-    }
-    const mapped = (data || []).map(mapOperador);
+    const rows = db.queryEntries(`SELECT * FROM ${TBL('operadores')}`);
+    const mapped = (rows || []).map(mapOperador);
     return c.json(mapped);
   } catch (error) {
     console.error('Erro ao buscar operadores:', error);
@@ -512,14 +567,8 @@ app.get('/operadores', requireAuth, async (c) => {
 // ROTA PÚBLICA DE OPERADORES (campos restritos, sem contatos)
 app.get('/operadores/public', async (c) => {
   try {
-    const { data, error } = await supabase
-      .from(TBL('operadores'))
-      .select('id, nome, cargo, id_singular, status, created_at');
-    if (error) {
-      console.error('Erro ao buscar operadores (public):', error);
-      return c.json({ error: 'Erro ao buscar operadores' }, 500);
-    }
-    const mapped = (data || []).map(mapOperador).map(o => ({
+    const rows = db.queryEntries(`SELECT id, nome, cargo, id_singular, status, created_at FROM ${TBL('operadores')}`);
+    const mapped = (rows || []).map(mapOperador).map(o => ({
       id: o.id,
       nome: o.nome,
       cargo: o.cargo,
@@ -540,15 +589,8 @@ app.get('/debug/counts', async (c) => {
     const tables = ['cooperativas', 'cidades', 'operadores', 'pedidos'];
     const result: Record<string, number | null> = {};
     for (const t of tables) {
-      const { count, error } = await supabase
-        .from(TBL(t))
-        .select('*', { count: 'exact', head: true });
-      if (error) {
-        console.warn(`[debug/counts] erro em ${TBL(t)}:`, error.message);
-        result[TBL(t)] = null;
-      } else {
-        result[TBL(t)] = count ?? 0;
-      }
+      const row = db.queryEntries<{ c: number }>(`SELECT COUNT(*) AS c FROM ${TBL(t)}`)[0];
+      result[TBL(t)] = row?.c ?? 0;
     }
     return c.json({ tables: result, prefix: TABLE_PREFIX, schema: DB_SCHEMA });
   } catch (e) {
@@ -565,14 +607,10 @@ app.get('/pedidos/public', async (c) => {
     return c.json({ error: 'Endpoint desabilitado' }, 403);
   }
   try {
-    const { data, error } = await supabase
-      .from(TBL('pedidos'))
-      .select('id, titulo, cidade_id, prioridade, status, nivel_atual, prazo_atual');
-    if (error) {
-      console.error('Erro ao buscar pedidos (public):', error);
-      return c.json({ error: 'Erro ao buscar pedidos' }, 500);
-    }
-    const base = (data || []).map((p: any) => ({
+    const rows = db.queryEntries<any>(
+      `SELECT id, titulo, cidade_id, prioridade, status, nivel_atual, prazo_atual, cooperativa_solicitante_id FROM ${TBL('pedidos')}`
+    );
+    const base = (rows || []).map((p: any) => ({
       id: p.id,
       titulo: p.titulo,
       cidade_id: p.cidade_id,
@@ -598,38 +636,40 @@ app.get('/pedidos', requireAuth, async (c) => {
     const authUser = c.get('user');
     const userData = await getUserData(authUser.id, authUser.email);
     
-    let { data: pedidosData, error } = await supabase
-      .from(TBL('pedidos'))
-      .select('*');
-    if (error) {
-      console.error('Erro ao buscar pedidos do banco:', error);
-      return c.json({ error: 'Erro ao buscar pedidos' }, 500);
-    }
+    const pedidosRows = db.queryEntries<any>(`SELECT * FROM ${TBL('pedidos')}`);
+    const pedidosData = (pedidosRows || []).map((r) => ({
+      ...r,
+      especialidades: Array.isArray(r.especialidades)
+        ? r.especialidades
+        : (() => { try { return JSON.parse(r.especialidades || '[]'); } catch { return []; } })(),
+    }));
 
-    // Aplicar filtros baseados no papel do usuário
-    const pedidosFiltrados = (pedidosData || []).filter(pedidoData => {
-      let podeVer = false;
-      
-      switch (userData.papel) {
-        case 'admin':
-        case 'confederacao':
-          podeVer = true; // Vê todos os pedidos
-          break;
-        case 'federacao':
-          // Vê pedidos escalados para federação/confederação ou da sua federação
-          podeVer = pedidoData.nivel_atual === 'federacao' || 
-                   pedidoData.nivel_atual === 'confederacao' ||
-                   pedidoData.cooperativa_responsavel_id === userData.cooperativa_id;
-          break;
-        case 'operador':
-          // Vê apenas pedidos da sua cooperativa ou que ele criou
-          podeVer = pedidoData.cooperativa_solicitante_id === userData.cooperativa_id ||
-                   pedidoData.criado_por === userData.id ||
-                   pedidoData.responsavel_atual_id === userData.id;
-          break;
+    // Preparar mapas de cooperativas para federacao e nomes
+    const coopIds = Array.from(new Set((pedidosData || []).flatMap(p => [p.cooperativa_solicitante_id, p.cooperativa_responsavel_id]).filter(Boolean)));
+    const coops = coopIds.length
+      ? db.queryEntries<any>(`SELECT id_singular, UNIODONTO, FEDERACAO FROM ${TBL('cooperativas')} WHERE id_singular IN (${coopIds.map(()=>'?').join(',')})`, coopIds as any)
+      : [];
+    const coopsMap: Record<string, any> = {};
+    for (const r of coops) {
+      const c = mapCooperativa(r);
+      coopsMap[c.id_singular] = c;
+    }
+    const userFed = (userData?.cooperativa_id
+      ? (coopsMap[userData.cooperativa_id]?.federacao || db.queryEntries<any>(`SELECT FEDERACAO FROM ${TBL('cooperativas')} WHERE id_singular = ? LIMIT 1`, [userData.cooperativa_id])[0]?.FEDERACAO)
+      : null) as string | null;
+
+    // Aplicar filtros baseados no papel do usuário (regras de negócio)
+    const pedidosFiltrados = (pedidosData || []).filter(p => {
+      if (userData.papel === 'admin' || userData.papel === 'confederacao') return true;
+    if (userData.papel === 'operador') {
+        return p.cooperativa_solicitante_id === userData.cooperativa_id || p.cooperativa_responsavel_id === userData.cooperativa_id || p.criado_por_user === userData.email;
       }
-      
-      return podeVer;
+      if (userData.papel === 'federacao') {
+        const fedSolic = coopsMap[p.cooperativa_solicitante_id]?.federacao;
+        const fedResp = coopsMap[p.cooperativa_responsavel_id]?.federacao;
+        return !!userFed && (fedSolic === userFed || fedResp === userFed);
+      }
+      return false;
     });
 
     // Calcular dias restantes para cada pedido
@@ -638,7 +678,21 @@ app.get('/pedidos', requireAuth, async (c) => {
       dias_restantes: computeDiasRestantes(p.prazo_atual),
     }));
 
-    const enriquecidos = await enrichPedidos(pedidosComDias);
+    const enriquecidosBase = await enrichPedidos(pedidosComDias);
+    // Computar ponto_de_vista para o viewer
+    const viewerCoop = userData?.cooperativa_id || null;
+    const enriquecidos = enriquecidosBase.map((p: any) => {
+      let ponto: 'feita' | 'recebida' | 'acompanhamento' | 'interna' = 'acompanhamento';
+      if (viewerCoop) {
+        const isSolic = p.cooperativa_solicitante_id === viewerCoop;
+        const isResp = p.cooperativa_responsavel_id === viewerCoop;
+        if (isSolic && isResp) ponto = 'interna';
+        else if (isSolic) ponto = 'feita';
+        else if (isResp) ponto = 'recebida';
+        else ponto = 'acompanhamento';
+      }
+      return { ...p, ponto_de_vista: ponto };
+    });
     return c.json(enriquecidos);
   } catch (error) {
     console.error('Erro ao buscar pedidos:', error);
@@ -652,12 +706,21 @@ app.post('/pedidos', requireAuth, async (c) => {
     const userData = await getUserData(authUser.id, authUser.email);
     const pedidoData = await c.req.json();
     
+    // Permissão para criar: operador/admin da solicitante, ou confederação (mestre).
+    if (!(userData.papel === 'operador' || userData.papel === 'admin' || userData.papel === 'confederacao')) {
+      return c.json({ error: 'Sem permissão para criar pedidos' }, 403);
+    }
+    
+    const id = `ped_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const novoPedido = {
+      id,
       titulo: pedidoData.titulo,
-      criado_por: userData.id,
+      // Em SQLite, criado_por referencia urede_operadores(id). Mantemos NULL (auth local)
+      criado_por: null as any,
+      criado_por_user: (authUser?.email || null) as any,
       cooperativa_solicitante_id: userData.cooperativa_id,
       cidade_id: pedidoData.cidade_id,
-      especialidades: pedidoData.especialidades,
+      especialidades: Array.isArray(pedidoData.especialidades) ? JSON.stringify(pedidoData.especialidades) : (pedidoData.especialidades || '[]'),
       quantidade: pedidoData.quantidade,
       observacoes: pedidoData.observacoes,
       nivel_atual: 'singular',
@@ -665,18 +728,52 @@ app.post('/pedidos', requireAuth, async (c) => {
       status: 'novo',
       data_criacao: new Date().toISOString(),
       data_ultima_alteracao: new Date().toISOString(),
-      cooperativa_responsavel_id: userData.cooperativa_id,
+      cooperativa_responsavel_id: undefined as any, // será resolvido pela cidade
       prioridade: pedidoData.prioridade || 'media'
     };
 
-    const { data: inserted, error: insertError } = await supabase
-      .from(TBL('pedidos'))
-      .insert([novoPedido])
-      .select('*')
-      .single();
+    // Resolver cooperativa responsável pela cidade
+    try {
+      const row = db.queryEntries<any>(`SELECT ID_SINGULAR FROM ${TBL('cidades')} WHERE CD_MUNICIPIO_7 = ? LIMIT 1`, [novoPedido.cidade_id])[0];
+      console.log('[POST /pedidos] recebido cidade_id =', novoPedido.cidade_id, 'lookup row =', row);
+      if (!row || !row.ID_SINGULAR) {
+        console.warn('[POST /pedidos] cidade não encontrada ou sem ID_SINGULAR:', novoPedido.cidade_id);
+        return c.json({ error: 'Cidade não cadastrada ou sem cooperativa responsável' }, 400);
+      }
+      novoPedido.cooperativa_responsavel_id = row.ID_SINGULAR as string;
+    } catch (e) {
+      console.error('Erro ao resolver cooperativa responsável:', e);
+      return c.json({ error: 'Erro ao determinar cooperativa responsável' }, 500);
+    }
 
-    if (insertError) {
-      console.error('Erro ao inserir pedido na tabela:', insertError);
+    try {
+      // Garantir coluna criado_por_user (idempotente)
+      try { db.query(`ALTER TABLE ${TBL('pedidos')} ADD COLUMN criado_por_user TEXT`); } catch (_) {}
+      db.query(
+        `INSERT INTO ${TBL('pedidos')} 
+          (id, titulo, criado_por, criado_por_user, cooperativa_solicitante_id, cooperativa_responsavel_id, cidade_id, especialidades, quantidade, observacoes, prioridade, nivel_atual, status, data_criacao, data_ultima_alteracao, prazo_atual)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          novoPedido.id,
+          novoPedido.titulo,
+          novoPedido.criado_por,
+          novoPedido.criado_por_user,
+          novoPedido.cooperativa_solicitante_id,
+          novoPedido.cooperativa_responsavel_id,
+          novoPedido.cidade_id,
+          novoPedido.especialidades,
+          novoPedido.quantidade,
+          novoPedido.observacoes || null,
+          novoPedido.prioridade,
+          novoPedido.nivel_atual,
+          novoPedido.status,
+          novoPedido.data_criacao,
+          novoPedido.data_ultima_alteracao,
+          novoPedido.prazo_atual,
+        ]
+      );
+    } catch (e) {
+      console.error('Erro ao inserir pedido na tabela:', e);
       return c.json({ error: 'Erro ao criar pedido' }, 500);
     }
 
@@ -691,17 +788,31 @@ app.post('/pedidos', requireAuth, async (c) => {
       detalhes: `Pedido criado: ${pedidoData.titulo}`
     };
 
-    const { error: auditoriaError } = await supabase
-      .from(TBL('auditoria_logs'))
-      .insert([auditoria]);
-    if (auditoriaError) {
-      console.error('Erro ao salvar auditoria:', auditoriaError);
+    try {
+      db.query(
+        `INSERT INTO ${TBL('auditoria_logs')} (id, pedido_id, usuario_id, usuario_nome, acao, timestamp, detalhes)
+         VALUES (?,?,?,?,?,?,?)`,
+        [
+          auditoria.id,
+          auditoria.pedido_id,
+          auditoria.usuario_id,
+          auditoria.usuario_nome,
+          auditoria.acao,
+          auditoria.timestamp,
+          auditoria.detalhes || null,
+        ]
+      );
+    } catch (e) {
+      console.warn('Erro ao salvar auditoria:', e);
     }
 
     {
       const base = [{
-        ...inserted,
-        dias_restantes: computeDiasRestantes(inserted.prazo_atual),
+        ...novoPedido,
+        especialidades: Array.isArray(pedidoData.especialidades)
+          ? pedidoData.especialidades
+          : (() => { try { return JSON.parse(novoPedido.especialidades || '[]'); } catch { return []; } })(),
+        dias_restantes: computeDiasRestantes(novoPedido.prazo_atual),
       }];
       const [enriched] = await enrichPedidos(base);
       return c.json(enriched || base[0]);
@@ -719,38 +830,58 @@ app.put('/pedidos/:id', requireAuth, async (c) => {
     const userData = await getUserData(c.get('user').id);
     const updateData = await c.req.json();
 
-    const { data: pedido, error: getErr } = await supabase
-      .from(TBL('pedidos'))
-      .select('*')
-      .eq('id', pedidoId)
-      .maybeSingle();
-    if (getErr || !pedido) {
+    const pedido = db.queryEntries<any>(`SELECT * FROM ${TBL('pedidos')} WHERE id = ? LIMIT 1`, [pedidoId])[0];
+    if (!pedido) {
       return c.json({ error: 'Pedido não encontrado' }, 404);
     }
     
-    // Verificar permissões
-    const podeEditar = userData.papel === 'admin' || 
-                      pedido.cooperativa_responsavel_id === userData.cooperativa_id;
+    // Verificar permissões conforme regras
+    let podeEditar = false;
+    if (userData.papel === 'confederacao') {
+      podeEditar = true;
+    } else if (userData.papel === 'admin' && pedido.cooperativa_solicitante_id === userData.cooperativa_id) {
+      // Admin da solicitante pode editar tudo
+      podeEditar = true;
+    } else if (pedido.cooperativa_responsavel_id === userData.cooperativa_id) {
+      // Usuários da responsável podem editar parcialmente
+      podeEditar = true;
+    } else if (userData.papel === 'operador' && pedido.criado_por_user === userData.email) {
+      // Operador que criou pode editar tudo
+      podeEditar = true;
+    }
     
     if (!podeEditar) {
       return c.json({ error: 'Acesso negado para editar este pedido' }, 403);
     }
 
-    // Sanitizar update apenas para colunas conhecidas
+    // Sanitizar update com base no perfil
     const allowed: Record<string, any> = {};
-    const whitelist = [
+    const whitelistAdminSolic = [
       'titulo', 'cooperativa_responsavel_id', 'cidade_id', 'especialidades', 'quantidade',
       'observacoes', 'prioridade', 'nivel_atual', 'status', 'prazo_atual',
     ];
-    for (const k of whitelist) if (k in updateData) allowed[k] = updateData[k];
+    const whitelistResponsavel = [
+      'status', 'observacoes', 'prioridade', 'responsavel_atual_id', 'responsavel_atual_nome', 'prazo_atual'
+    ];
+
+    const effectiveWhitelist = (userData.papel === 'confederacao' || (userData.papel === 'admin' && pedido.cooperativa_solicitante_id === userData.cooperativa_id) || (userData.papel === 'operador' && pedido.criado_por_user === userData.email))
+      ? whitelistAdminSolic
+      : whitelistResponsavel;
+
+    for (const k of effectiveWhitelist) if (k in updateData) allowed[k] = updateData[k];
     allowed.data_ultima_alteracao = new Date().toISOString();
 
-    const { error: upErr } = await supabase
-      .from(TBL('pedidos'))
-      .update(allowed)
-      .eq('id', pedidoId);
-    if (upErr) {
-      console.error('Erro ao atualizar pedido:', upErr);
+    try {
+      // Normalizar campos especiais
+      if (Array.isArray(allowed.especialidades)) {
+        allowed.especialidades = JSON.stringify(allowed.especialidades);
+      }
+      const cols = Object.keys(allowed);
+      const placeholders = cols.map((c) => `${c} = ?`).join(', ');
+      const values = cols.map((c) => (allowed as any)[c]);
+      db.query(`UPDATE ${TBL('pedidos')} SET ${placeholders} WHERE id = ?`, [...values, pedidoId]);
+    } catch (e) {
+      console.error('Erro ao atualizar pedido:', e);
       return c.json({ error: 'Erro ao atualizar pedido' }, 500);
     }
 
@@ -766,17 +897,28 @@ app.put('/pedidos/:id', requireAuth, async (c) => {
     };
 
     try {
-      const { error: audErr } = await supabase
-        .from(TBL('auditoria_logs'))
-        .insert([auditoria]);
-      if (audErr) {
-        console.error('Erro ao salvar auditoria de atualização:', audErr);
-      }
+      db.query(
+        `INSERT INTO ${TBL('auditoria_logs')} (id, pedido_id, usuario_id, usuario_nome, acao, timestamp, detalhes)
+         VALUES (?,?,?,?,?,?,?)`,
+        [
+          auditoria.id,
+          auditoria.pedido_id,
+          auditoria.usuario_id,
+          auditoria.usuario_nome,
+          auditoria.acao,
+          auditoria.timestamp,
+          auditoria.detalhes || null,
+        ]
+      );
     } catch (e) {
       console.warn('Auditoria não registrada (tabela ausente?):', e);
     }
 
-    const updated = { ...pedido, ...allowed };
+    const updated = { ...pedido, ...allowed } as any;
+    // Normalizar especialidades no retorno
+    updated.especialidades = Array.isArray(updated.especialidades)
+      ? updated.especialidades
+      : (() => { try { return JSON.parse(updated.especialidades || '[]'); } catch { return []; } })();
     {
       const base = [{
         ...updated,
@@ -791,19 +933,56 @@ app.put('/pedidos/:id', requireAuth, async (c) => {
   }
 });
 
+// Excluir pedido
+app.delete('/pedidos/:id', requireAuth, async (c) => {
+  try {
+    const pedidoId = c.req.param('id');
+    const userData = await getUserData(c.get('user').id);
+    const pedido = db.queryEntries<any>(`SELECT id, cooperativa_solicitante_id FROM ${TBL('pedidos')} WHERE id = ? LIMIT 1`, [pedidoId])[0];
+    if (!pedido) return c.json({ error: 'Pedido não encontrado' }, 404);
+
+    // Tentar obter quem criou o pedido; em instalações antigas a coluna `criado_por_user`
+    // pode não existir — executar em try/catch para compatibilidade.
+    let createdBy: any = {};
+    try {
+      createdBy = db.queryEntries<any>(`SELECT criado_por_user, cooperativa_solicitante_id FROM ${TBL('pedidos')} WHERE id = ?`, [pedidoId])[0] || {};
+    } catch (e) {
+      console.warn('[deletePedido] coluna criado_por_user ausente ou query falhou, fallback:', e);
+      try {
+        createdBy = db.queryEntries<any>(`SELECT cooperativa_solicitante_id FROM ${TBL('pedidos')} WHERE id = ?`, [pedidoId])[0] || {};
+      } catch (e2) {
+        console.warn('[deletePedido] fallback também falhou:', e2);
+        createdBy = {};
+      }
+    }
+
+    const podeApagar = userData.papel === 'confederacao' ||
+      (userData.papel === 'admin' && pedido.cooperativa_solicitante_id === userData.cooperativa_id) ||
+      (userData.papel === 'operador' && (createdBy?.criado_por_user === userData.email || (!createdBy?.criado_por_user && createdBy?.cooperativa_solicitante_id === userData.cooperativa_id)));
+    if (!podeApagar) return c.json({ error: 'Acesso negado para apagar este pedido' }, 403);
+
+    try {
+      db.query(`DELETE FROM ${TBL('auditoria_logs')} WHERE pedido_id = ?`, [pedidoId]);
+      db.query(`DELETE FROM ${TBL('pedidos')} WHERE id = ?`, [pedidoId]);
+    } catch (e) {
+      console.error('Erro ao excluir pedido:', e);
+      return c.json({ error: 'Erro ao excluir pedido' }, 500);
+    }
+    return c.json({ ok: true });
+  } catch (error) {
+    console.error('Erro no delete de pedido:', error);
+    return c.json({ error: 'Erro ao excluir pedido' }, 500);
+  }
+});
+
 // Buscar auditoria de um pedido
 app.get('/pedidos/:id/auditoria', requireAuth, async (c) => {
   try {
     const pedidoId = c.req.param('id');
-    const { data, error } = await supabase
-      .from(TBL('auditoria_logs'))
-      .select('*')
-      .eq('pedido_id', pedidoId)
-      .order('timestamp', { ascending: false });
-    if (error) {
-      console.error('Erro ao buscar auditoria:', error);
-      return c.json({ error: 'Erro ao buscar auditoria' }, 500);
-    }
+    const data = db.queryEntries<any>(
+      `SELECT * FROM ${TBL('auditoria_logs')} WHERE pedido_id = ? ORDER BY timestamp DESC`,
+      [pedidoId]
+    );
     return c.json(data || []);
   } catch (error) {
     console.error('Erro ao buscar auditoria do pedido:', error);
@@ -817,13 +996,20 @@ app.get('/dashboard/stats', requireAuth, async (c) => {
     const authUser = c.get('user');
     const userData = await getUserData(authUser.id, authUser.email);
     
-    let { data: pedidosData, error } = await supabase
-      .from(TBL('pedidos'))
-      .select('*');
-    if (error) {
-      console.error('Erro ao buscar pedidos para estatísticas:', error);
-      return c.json({ error: 'Erro ao gerar estatísticas' }, 500);
+    const pedidosData = db.queryEntries<any>(`SELECT * FROM ${TBL('pedidos')}`);
+
+    // Preparar mapa de federações por cooperativa
+    const coopIds = Array.from(new Set((pedidosData || []).flatMap(p => [p.cooperativa_solicitante_id, p.cooperativa_responsavel_id]).filter(Boolean)));
+    const coops = coopIds.length
+      ? db.queryEntries<any>(`SELECT id_singular, FEDERACAO FROM ${TBL('cooperativas')} WHERE id_singular IN (${coopIds.map(()=>'?').join(',')})`, coopIds as any)
+      : [];
+    const coopsFed: Record<string, string | null> = {};
+    for (const r of coops) {
+      coopsFed[r.id_singular] = r.FEDERACAO || null;
     }
+    const userFed = userData?.cooperativa_id
+      ? (coopsFed[userData.cooperativa_id] || db.queryEntries<any>(`SELECT FEDERACAO FROM ${TBL('cooperativas')} WHERE id_singular = ? LIMIT 1`, [userData.cooperativa_id])[0]?.FEDERACAO || null)
+      : null;
 
     const agora = new Date();
     let totalPedidos = 0;
@@ -833,23 +1019,17 @@ app.get('/dashboard/stats', requireAuth, async (c) => {
     let slaCumprido = 0;
 
     for (const pedidoData of (pedidosData || [])) {
-      // Aplicar filtros baseados no papel do usuário
+      // Aplicar filtros baseados no papel do usuário (regras atualizadas)
       let podeVer = false;
-      
-      switch (userData.papel) {
-        case 'admin':
-        case 'confederacao':
-          podeVer = true;
-          break;
-        case 'federacao':
-          podeVer = pedidoData.nivel_atual === 'federacao' || 
-                   pedidoData.nivel_atual === 'confederacao' ||
-                   pedidoData.cooperativa_responsavel_id === userData.cooperativa_id;
-          break;
-        case 'operador':
-          podeVer = pedidoData.cooperativa_solicitante_id === userData.cooperativa_id ||
-                   pedidoData.criado_por === userData.id;
-          break;
+      if (userData.papel === 'admin' || userData.papel === 'confederacao') {
+        podeVer = true;
+      } else if (userData.papel === 'operador') {
+        podeVer = pedidoData.cooperativa_solicitante_id === userData.cooperativa_id ||
+                  pedidoData.cooperativa_responsavel_id === userData.cooperativa_id;
+      } else if (userData.papel === 'federacao') {
+        const fedSolic = coopsFed[pedidoData.cooperativa_solicitante_id] || null;
+        const fedResp = coopsFed[pedidoData.cooperativa_responsavel_id] || null;
+        podeVer = !!userFed && (fedSolic === userFed || fedResp === userFed);
       }
       
       if (podeVer) {
@@ -921,7 +1101,7 @@ app.get('/health', (c) => c.json({ status: 'ok', time: new Date().toISOString() 
 app.get('/', (c) => c.json({ status: 'ok', name: 'server', method: 'GET', time: new Date().toISOString() }));
 app.post('/', async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  const isSchedule = c.req.header('x-supabase-schedule') === 'true';
+  const isSchedule = c.req.header('x-cron') === 'true';
   if (isSchedule || body?.task === 'escalar') {
     try {
       await escalarPedidos();
@@ -934,8 +1114,7 @@ app.post('/', async (c) => {
   return c.json({ status: 'ok', name: 'server', method: 'POST', body, time: new Date().toISOString() });
 });
 
-// Remover agendamentos/residentes: Edge Functions são stateless.
-// Usar agendador do Supabase para acionar o job via POST '/'
+// Observação: para jobs cron externos, envie header 'x-cron: true' e body {"task":"escalar"}
 
 export default app.fetch;
 

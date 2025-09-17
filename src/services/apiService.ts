@@ -1,5 +1,5 @@
-import { apiRequest } from '../utils/supabase/client';
-import { serverUrl, getAuthHeaders } from '../utils/supabase/client';
+import { apiRequest } from '../utils/api/client';
+import { serverUrl, getAuthHeaders } from '../utils/api/client';
 import type { 
   Pedido, 
   Cooperativa, 
@@ -81,6 +81,17 @@ class ApiService {
       });
     } catch (error) {
       console.error('Erro ao atualizar pedido:', error);
+      throw error;
+    }
+  }
+
+  async deletePedido(pedidoId: string): Promise<{ ok: boolean }> {
+    try {
+      return await apiRequest(`/pedidos/${pedidoId}`, {
+        method: 'DELETE'
+      });
+    } catch (error) {
+      console.error('Erro ao excluir pedido:', error);
       throw error;
     }
   }

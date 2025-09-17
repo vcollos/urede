@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -18,7 +18,8 @@ import {
   Users
 } from 'lucide-react';
 import { Pedido, AuditoriaLog } from '../types';
-import { mockAuditoria, currentUser } from '../data/mockData';
+import { useAuth } from '../contexts/AuthContext';
+import { apiService } from '../services/apiService';
 
 interface PedidoDetalhesProps {
   pedido: Pedido;
@@ -31,7 +32,25 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
   const [comentario, setComentario] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
 
-  const auditoriaLogs = mockAuditoria.filter(log => log.pedido_id === pedido.id);
+  const { user } = useAuth();
+
+  const [auditoriaLogs, setAuditoriaLogs] = useState<AuditoriaLog[]>([]);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadAuditoria = async () => {
+      try {
+        const data = await apiService.getPedidoAuditoria(pedido.id);
+        if (mounted) setAuditoriaLogs(data);
+      } catch (e) {
+        console.error('Erro ao buscar auditoria do pedido:', e);
+        if (mounted) setAuditoriaLogs([]);
+      }
+    };
+    loadAuditoria();
+    return () => { mounted = false; };
+  }, [pedido.id]);
 
   const getNivelBadgeColor = (nivel: string) => {
     switch (nivel) {
@@ -58,37 +77,75 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
   };
 
   const canUpdateStatus = () => {
-    // Verificar se o usuário pode atualizar o pedido
-    if (currentUser.papel === 'confederacao') return true;
-    if (currentUser.papel === 'federacao' && (pedido.nivel_atual === 'federacao' || pedido.nivel_atual === 'singular')) return true;
-    if (currentUser.papel === 'admin' || currentUser.papel === 'operador') {
-      return pedido.responsavel_atual_id === currentUser.id || 
-             pedido.cooperativa_solicitante_id === currentUser.cooperativa_id;
+    if (!user) return false;
+    if (user.papel === 'confederacao') return true;
+    // Admin da solicitante pode alterar
+    if (user.papel === 'admin' && pedido.cooperativa_solicitante_id === user.cooperativa_id) return true;
+    // Qualquer usuário da responsável pode alterar andamento/observações
+    if (pedido.cooperativa_responsavel_id === user.cooperativa_id) return true;
+    return false;
+  };
+
+  const canDelete = () => {
+    if (!user) return false;
+    if (user.papel === 'confederacao') return true;
+    if (user.papel === 'admin' && pedido.cooperativa_solicitante_id === user.cooperativa_id) return true;
+    if (user.papel === 'operador') {
+      // Operador que criou pode excluir (ou legado sem campo, se da mesma solicitante)
+      const legacySameSolic = (pedido.cooperativa_solicitante_id === user.cooperativa_id) && !(pedido as any).criado_por_user;
+      return (user.email && (pedido as any).criado_por_user === user.email) || legacySameSolic;
     }
     return false;
+  };
+
+  const handleDelete = async () => {
+    if (!canDelete() || isDeleting) return;
+    if (!confirm('Tem certeza que deseja excluir este pedido? Esta ação não pode ser desfeita.')) return;
+    try {
+      setIsDeleting(true);
+      await apiService.deletePedido(pedido.id);
+      try {
+        window.dispatchEvent(new CustomEvent('pedido:deleted', { detail: { id: pedido.id } }));
+      } catch {}
+      onClose();
+    } catch (e) {
+      console.error('Erro ao excluir pedido:', e);
+      alert('Erro ao excluir pedido.');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleUpdateStatus = async () => {
     if (!canUpdateStatus() || isUpdating) return;
 
     setIsUpdating(true);
-    
-    // Simular API call
-    setTimeout(() => {
+    try {
+      // Atualizar status via API
+      await apiService.updatePedido(pedido.id, { status: novoStatus });
       onUpdatePedido(pedido.id, { 
         status: novoStatus as any,
         data_ultima_alteracao: new Date()
       });
-      
-      // Adicionar log de auditoria (mock)
+
+      // Observação: endpoint para criar auditoria não existe; apenas logamos o comentário localmente
       if (comentario.trim()) {
-        // Em um sistema real, isso seria salvo via API
-        console.log('Novo comentário:', comentario);
+        console.log('Comentário (não persistido via API):', comentario);
       }
-      
+
+      // Recarregar auditoria
+      try {
+        const data = await apiService.getPedidoAuditoria(pedido.id);
+        setAuditoriaLogs(data);
+      } catch (e) {
+        console.error('Erro ao recarregar auditoria após update:', e);
+      }
+    } catch (e) {
+      console.error('Erro ao atualizar status do pedido:', e);
+    } finally {
       setIsUpdating(false);
       setComentario('');
-    }, 1000);
+    }
   };
 
   const formatDate = (date: Date) => {
@@ -121,10 +178,24 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
             <p className="text-sm text-gray-500 mt-1">
               ID: {pedido.id} • Criado em {formatDateShort(pedido.data_criacao)}
             </p>
+            <p className="text-xs text-gray-600 mt-1">
+              {pedido.ponto_de_vista === 'feita' && 'Solicitação feita'}
+              {pedido.ponto_de_vista === 'recebida' && 'Solicitação recebida'}
+              {pedido.ponto_de_vista === 'interna' && 'Interna'}
+              {(!pedido.ponto_de_vista || pedido.ponto_de_vista === 'acompanhamento') && 'Acompanhamento'}
+              {pedido.cooperativa_responsavel_nome ? ` • Responsável: ${pedido.cooperativa_responsavel_nome}` : ''}
+            </p>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose}>
-            <X className="w-5 h-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            {canDelete() && (
+              <Button onClick={handleDelete} variant="destructive" disabled={isDeleting}>
+                {isDeleting ? 'Excluindo...' : 'Excluir'}
+              </Button>
+            )}
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
         </div>
 
         {/* Conteúdo */}
@@ -150,6 +221,10 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
                     <div>
                       <label className="text-sm font-medium text-gray-600">Solicitante</label>
                       <p className="font-medium">{pedido.cooperativa_solicitante_nome}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-600">Responsável</label>
+                      <p className="font-medium">{pedido.cooperativa_responsavel_nome || 'A definir'}</p>
                     </div>
                     
                     <div>

@@ -41,8 +41,6 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
         setCooperativas(cooperativasData);
       } catch (err) {
         console.error('Erro ao carregar cooperativas:', err);
-        setError('Erro ao carregar cooperativas');
-        
         // Fallback para dados estáticos em caso de erro
         const cooperativasFallback: Cooperativa[] = [
           {
@@ -86,6 +84,8 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
           }
         ];
         setCooperativas(cooperativasFallback);
+        // Não exibir erro se conseguimos preencher via fallback
+        setError('');
       } finally {
         setIsLoadingCoops(false);
       }

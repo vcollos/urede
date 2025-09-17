@@ -48,7 +48,14 @@ export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps
       }
     };
 
-    if (user) loadPedidos();
+    if (user) {
+      loadPedidos();
+      const handler = () => loadPedidos();
+      window.addEventListener('pedido:deleted', handler as any);
+      return () => {
+        window.removeEventListener('pedido:deleted', handler as any);
+      };
+    }
   }, [user]);
 
   // Filtrar pedidos baseado nos filtros aplicados
@@ -112,6 +119,15 @@ export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps
     return 'border-l-green-500 bg-green-50';
   };
 
+  const labelByPov = (p: Pedido) => {
+    switch (p.ponto_de_vista) {
+      case 'feita': return 'Solicitação feita';
+      case 'recebida': return 'Solicitação recebida';
+      case 'interna': return 'Interna';
+      default: return 'Acompanhamento';
+    }
+  };
+
   const PedidoCard = ({ pedido }: { pedido: Pedido }) => (
     <Card 
       key={pedido.id} 
@@ -120,6 +136,12 @@ export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps
     >
       <CardContent className="p-4">
         <div className="space-y-3">
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            <span className="font-medium">{labelByPov(pedido)}</span>
+            {pedido.cooperativa_responsavel_nome && (
+              <span>Resp.: {pedido.cooperativa_responsavel_nome}</span>
+            )}
+          </div>
           <div className="flex items-start justify-between">
             <h3 className="font-medium text-gray-900 line-clamp-2">
               {pedido.titulo}
