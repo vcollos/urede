@@ -24,7 +24,7 @@ import {
   UserCheck
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { apiRequest } from '../utils/supabase/client';
+import { apiRequest } from '../utils/api/client';
 import type { User } from '../types';
 
 interface SystemSettings {

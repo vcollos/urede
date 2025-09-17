@@ -57,6 +57,7 @@ export interface Pedido {
   criado_por: string; // ID do operador que criou
   cooperativa_solicitante_id: string; // id_singular da cooperativa
   cooperativa_solicitante_nome?: string;
+  cooperativa_responsavel_nome?: string;
   cidade_id: string; // cd_municipio_7
   cidade_nome?: string;
   estado?: string;
@@ -73,6 +74,7 @@ export interface Pedido {
   cooperativa_responsavel_id?: string; // id_singular da cooperativa responsável
   dias_restantes: number;
   prioridade: 'baixa' | 'media' | 'alta' | 'urgente';
+  ponto_de_vista?: 'feita' | 'recebida' | 'acompanhamento' | 'interna';
 }
 
 export interface AuditoriaLog {

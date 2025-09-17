@@ -1,8 +1,0 @@
-[0m[32mDownload[0m https://deno.land/std@0.168.0/http/server.ts
-[0m[32mDownload[0m https://esm.sh/@supabase/supabase-js@2
-[0m[1m[31merror[0m: Import 'https://deno.land/std@0.168.0/http/server.ts' failed.
-    0: error sending request for url (https://deno.land/std@0.168.0/http/server.ts): client error (Connect): dns error: failed to lookup address information: nodename nor servname provided, or not known: failed to lookup address information: nodename nor servname provided, or not known
-    1: client error (Connect)
-    2: dns error: failed to lookup address information: nodename nor servname provided, or not known
-    3: failed to lookup address information: nodename nor servname provided, or not known
-    at [0m[36mfile:///Users/vitor/projetos/urede/supabase/functions/server/index.tsx[0m:[0m[33m1[0m:[0m[33m23[0m

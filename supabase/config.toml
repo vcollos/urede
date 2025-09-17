@@ -1,6 +1,0 @@
-[functions.server]
-# Desabilita a verificação de JWT no nível da Edge Function
-# para permitir rotas públicas como /health e /cooperativas/public.
-# A proteção de rotas autenticadas continua sendo feita no código (requireAuth).
-verify_jwt = false
-

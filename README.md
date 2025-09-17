@@ -1,66 +1,43 @@
 
-  # Credenciamento e Suprimento App
+# Credenciamento e Suprimento App
 
-  This is a code bundle for Credenciamento e Suprimento App. The original project is available at https://www.figma.com/design/PoPiLPmlEQrHsywSlkMLNe/Credenciamento-e-Suprimento-App.
+Este projeto agora está configurado para rodar somente com SQLite local (sem depender de Supabase/Postgres). O backend é uma API em Deno/Hono que acessa um arquivo SQLite, e o frontend (Vite + React) consome essa API via `VITE_API_BASE_URL`.
 
-  ## Running the code
+## Rodar localmente (SQLite)
 
-  Run `npm i` to install the dependencies.
+1) Instale dependências do frontend
+- `npm i`
 
-  Run `npm run dev` to start the development server.
+2) Crie e popule o banco SQLite
+- `bash scripts/create-sqlite-db.sh`
+- `bash scripts/import-csv-sqlite.sh`
 
-  ## Deploy na Vercel
+3) Configure o frontend para apontar para o backend local
+- Arquivo `.env` já contém `VITE_API_BASE_URL=http://127.0.0.1:8000`
 
-  Este projeto é um SPA (Vite + React) que consome uma Edge Function do Supabase. Para publicar na Vercel:
+4) Suba o backend (Deno)
+- `npm run server:dev`
 
-  1) Variáveis de ambiente (Vercel → Project Settings → Environment Variables)
-  - `VITE_SUPABASE_URL` = URL do projeto Supabase (ex.: `https://<project-ref>.supabase.co`)
-  - `VITE_SUPABASE_ANON_KEY` = Anon Key do seu projeto
-  - `VITE_API_BASE_URL` = `https://urede.deno.com`
-  - (opcional) `VITE_APP_ENV` = `production`
+5) Suba o frontend
+- `npm run dev`
 
-  2) Edge Function no Supabase (Backend)
-  - Secrets da função (Dashboard → Project Settings → Functions → Secrets):
-    - `SERVICE_ROLE_KEY` = Service Role Key do projeto (evite prefixo `SUPABASE_`, que é reservado)
-  - Deploy da função `server` (na raiz do repo):
-    ```bash
-    supabase login
-    supabase secrets set --project-ref <project-ref> SERVICE_ROLE_KEY=... 
-    supabase functions deploy server --project-ref <project-ref>
-    ```
-  - A função já está configurada com `verify_jwt = false` (arquivo `supabase/functions/server/supabase.toml`).
-    As rotas sensíveis continuam protegidas pelo middleware de autenticação do próprio código.
+Testes rápidos:
+- Health: `curl http://127.0.0.1:8000/health`
+- Cooperativas públicas: `curl http://127.0.0.1:8000/cooperativas/public`
 
-  2.1) Sem Docker (execução local com Deno)
-  - Crie `supabase/functions/server/.env` a partir de `supabase/functions/server/.env.example`.
-  - Rode localmente: `npm run server:dev`
-  - Aponte o frontend para `http://127.0.0.1:8000` com `VITE_API_BASE_URL` (veja `.env.local.example`).
+Notas:
+- Rotas protegidas usam JWT local (gerado pelo próprio backend em `/auth/register` e `/auth/login`).
+- Tabelas do SQLite usam prefixo `urede_`. Os CSVs em `bases_csv/` alimentam `urede_cooperativas`, `urede_cidades` e `urede_operadores`.
 
-  2.2) Alternativa sem Docker no deploy (Deno Deploy)
-  - Conecte o repositório no Deno Deploy e selecione o entry `supabase/functions/server/index.tsx`.
-  - Configure envs: `SUPABASE_URL`, `SERVICE_ROLE_KEY`.
-  - Após publicar, use a URL do Deno Deploy em `VITE_API_BASE_URL` (ex.: `https://urede.deno.com`).
+## Estrutura relevante
 
-  3) Banco de dados (no Supabase Studio → SQL Editor)
-  - Execute:
-    - `supabase/migrations/001_initial_schema.sql`
-    - `supabase/seed_dev.sql`
+- `scripts/create-sqlite-db.sh`: cria o banco local lendo `db/sqlite_schema.sql`.
+- `scripts/import-csv-sqlite.sh`: importa CSVs de `bases_csv/` para as tabelas `urede_*`.
+- `supabase/functions/server/index.tsx`: API Hono (Deno) acessando SQLite diretamente.
+- `src/utils/api/client.ts`: helper de requests autenticadas (JWT local em `localStorage`).
+- `db/sqlite_schema.sql`: schema das tabelas locais.
 
-  4) Publicar na Vercel
-  - Conecte o repositório na Vercel
-  - O arquivo `vercel.json` já instrui a Vercel a usar `@vercel/static-build` e servir o SPA a partir da pasta `build`
-  - Build Command: `npm run build` (padrão)
-  - Output directory: `build`
+## Observações
 
-  5) Testes rápidos (produção)
-  - Rota pública (não exige login):
-    `curl -i -H "apikey: $VITE_SUPABASE_ANON_KEY" "https://<project-ref>.supabase.co/functions/v1/server/cooperativas/public"`
-  - Aplicação: acesse a URL gerada pela Vercel, faça Registro/Login e verifique a aba Cooperativas.
-
-  Observações
-  - Se preferir JWT obrigatório em produção, mude `verify_jwt = true` e faça o deploy da função. O frontend já envia o token do usuário autenticado.
-  - Para desenvolvimento local do backend sem Docker, use `npm run server:dev` (Deno) e aponte `VITE_API_BASE_URL` para `http://127.0.0.1:8000`.
-  - Para restringir CORS no backend (Deno Deploy ou local), defina `ALLOWED_ORIGINS` como lista separada por vírgulas (ex.: `https://urede.deno.com,https://urede.vercel.app`). Suporta curingas `*.dominio.com`.
-    - Observação: domínios de preview do Vercel (ex.: `https://urede-git-main-<user>.vercel.app`) não são subdomínios de `urede.vercel.app`. Para permitir previews temporariamente, adicione `*.vercel.app` durante os testes e remova depois para restringir.
-  - Arquivos de exemplo de configuração foram adicionados: `.env.local.example` (frontend) e `supabase/functions/server/.env.example` (backend).
-  
+- O projeto não depende mais de serviços externos. Todo acesso é local (SQLite).
+- Para agendamentos, use um scheduler externo que faça POST `/` com header `x-cron: true` e body `{ "task": "escalar" }`.

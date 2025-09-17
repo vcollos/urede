@@ -1,4 +1,4 @@
-import { supabase, apiRequest } from '../utils/supabase/client';
+import { apiRequest, setAuthToken, clearAuthToken, getAuthToken } from '../utils/api/client';
 import type { User } from '../types';
 
 export interface LoginCredentials {
@@ -22,22 +22,21 @@ class AuthService {
   // Login com email e senha
   async login(credentials: LoginCredentials) {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: credentials.email,
-        password: credentials.password,
+      const res = await apiRequest('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          email: credentials.email,
+          password: credentials.password,
+        })
       });
 
-      if (error) {
-        throw new Error(`Erro de login: ${error.message}`);
+      if (!res?.token) {
+        throw new Error('Token não retornado pelo servidor');
       }
 
-      // Buscar dados adicionais do usuário no backend
-      const userData = await this.getCurrentUser();
-      
-      return {
-        session: data.session,
-        user: userData
-      };
+      setAuthToken(res.token);
+      const user = await this.getCurrentUser();
+      return { session: { access_token: res.token }, user };
     } catch (error) {
       console.error('Erro no login:', error);
       throw error;
@@ -51,7 +50,9 @@ class AuthService {
         method: 'POST',
         body: JSON.stringify(registerData),
       });
-
+      if (response?.token) {
+        setAuthToken(response.token);
+      }
       return response;
     } catch (error) {
       console.error('Erro no registro:', error);
@@ -62,10 +63,9 @@ class AuthService {
   // Logout
   async logout() {
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        throw new Error(`Erro ao fazer logout: ${error.message}`);
-      }
+      console.debug('[authService] logout() start');
+      clearAuthToken();
+      console.debug('[authService] logout() token cleared');
     } catch (error) {
       console.error('Erro no logout:', error);
       throw error;
@@ -75,12 +75,8 @@ class AuthService {
   // Obter usuário atual
   async getCurrentUser(): Promise<User | null> {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        return null;
-      }
-
+      const token = getAuthToken();
+      if (!token) return null;
       const userData = await apiRequest('/auth/me');
       return userData.user;
     } catch (error) {
@@ -92,13 +88,8 @@ class AuthService {
   // Verificar se há sessão ativa
   async getSession() {
     try {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      
-      if (error) {
-        throw new Error(`Erro ao obter sessão: ${error.message}`);
-      }
-
-      return session;
+      const token = getAuthToken();
+      return token ? { access_token: token } : null;
     } catch (error) {
       console.error('Erro ao verificar sessão:', error);
       throw error;
@@ -107,7 +98,10 @@ class AuthService {
 
   // Listener para mudanças no estado de autenticação
   onAuthStateChange(callback: (event: string, session: any) => void) {
-    return supabase.auth.onAuthStateChange(callback);
+    // Stub para manter compatível com o AuthContext; dispara apenas eventos manuais
+    const unsubscribe = () => {};
+    // Opcionalmente, poderíamos escutar storage events para multi-aba
+    return { data: { subscription: { unsubscribe } } } as any;
   }
 }
 
