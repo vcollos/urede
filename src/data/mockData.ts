@@ -144,7 +144,7 @@ export const mockOperadores: Operador[] = [
     cargo: 'Coordenador de Credenciamento',
     id_singular: '010',
     ativo: true,
-    data_cadastro: new Date('2023-01-15')
+    data_cadastro: new Date('2023-01-15').toISOString()
   },
   {
     id: '2',
@@ -155,7 +155,7 @@ export const mockOperadores: Operador[] = [
     cargo: 'Gerente de Rede',
     id_singular: '015',
     ativo: true,
-    data_cadastro: new Date('2023-02-20')
+    data_cadastro: new Date('2023-02-20').toISOString()
   },
   {
     id: '3',
@@ -166,7 +166,7 @@ export const mockOperadores: Operador[] = [
     cargo: 'Supervisor Regional',
     id_singular: '801',
     ativo: true,
-    data_cadastro: new Date('2023-03-10')
+    data_cadastro: new Date('2023-03-10').toISOString()
   },
   {
     id: '4',
@@ -177,7 +177,7 @@ export const mockOperadores: Operador[] = [
     cargo: 'Diretora Nacional',
     id_singular: '800',
     ativo: true,
-    data_cadastro: new Date('2023-01-05')
+    data_cadastro: new Date('2023-01-05').toISOString()
   },
   {
     id: '5',
@@ -188,7 +188,7 @@ export const mockOperadores: Operador[] = [
     cargo: 'Analista de Credenciamento',
     id_singular: '020',
     ativo: true,
-    data_cadastro: new Date('2023-04-12')
+    data_cadastro: new Date('2023-04-12').toISOString()
   }
 ];
 
@@ -240,10 +240,10 @@ export const mockPedidos: Pedido[] = [
     quantidade: 2,
     observacoes: 'Necessário credenciamento urgente de ortodontistas na região central do RJ. Demanda crescente de beneficiários.',
     nivel_atual: 'singular',
-    prazo_atual: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000), // 5 dias restantes
+    prazo_atual: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 dias restantes
     status: 'em_andamento',
-    data_criacao: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000), // 25 dias atrás
-    data_ultima_alteracao: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+    data_criacao: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString(), // 25 dias atrás
+    data_ultima_alteracao: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
     responsavel_atual_id: '2',
     responsavel_atual_nome: 'Maria Oliveira Costa',
     cooperativa_responsavel_id: '015',
@@ -263,10 +263,10 @@ export const mockPedidos: Pedido[] = [
     quantidade: 1,
     observacoes: 'Beneficiário necessita de tratamento endodôntico especializado. Região sem cobertura adequada.',
     nivel_atual: 'federacao',
-    prazo_atual: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000), // 15 dias restantes
+    prazo_atual: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString(), // 15 dias restantes
     status: 'em_andamento',
-    data_criacao: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000), // 45 dias atrás
-    data_ultima_alteracao: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
+    data_criacao: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString(), // 45 dias atrás
+    data_ultima_alteracao: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
     responsavel_atual_id: '4',
     responsavel_atual_nome: 'Ana Paula Rodrigues',
     cooperativa_responsavel_id: '800',
@@ -286,10 +286,10 @@ export const mockPedidos: Pedido[] = [
     quantidade: 1,
     observacoes: 'Beneficiário precisa de implante dentário. Cidade com crescimento populacional significativo.',
     nivel_atual: 'singular',
-    prazo_atual: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000), // 20 dias restantes
+    prazo_atual: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString(), // 20 dias restantes
     status: 'em_andamento',
-    data_criacao: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000), // 10 dias atrás
-    data_ultima_alteracao: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+    data_criacao: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(), // 10 dias atrás
+    data_ultima_alteracao: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
     responsavel_atual_id: '5',
     responsavel_atual_nome: 'Roberto Almeida Sousa',
     cooperativa_responsavel_id: '020',
@@ -309,10 +309,10 @@ export const mockPedidos: Pedido[] = [
     quantidade: 3,
     observacoes: 'Necessário aumento da rede de clínicos gerais na região metropolitana. Alta demanda de beneficiários.',
     nivel_atual: 'singular',
-    prazo_atual: new Date(Date.now() + 28 * 24 * 60 * 60 * 1000), // 28 dias restantes
+    prazo_atual: new Date(Date.now() + 28 * 24 * 60 * 60 * 1000).toISOString(), // 28 dias restantes
     status: 'novo',
-    data_criacao: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // 2 dias atrás
-    data_ultima_alteracao: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+    data_criacao: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(), // 2 dias atrás
+    data_ultima_alteracao: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
     responsavel_atual_id: '1',
     responsavel_atual_nome: 'João Silva Santos',
     cooperativa_responsavel_id: '010',
@@ -332,10 +332,10 @@ export const mockPedidos: Pedido[] = [
     quantidade: 2,
     observacoes: 'Necessidade de especialistas em periodontia para atender demanda local.',
     nivel_atual: 'singular',
-    prazo_atual: new Date(Date.now() + 25 * 24 * 60 * 60 * 1000), // 25 dias restantes
+    prazo_atual: new Date(Date.now() + 25 * 24 * 60 * 60 * 1000).toISOString(), // 25 dias restantes
     status: 'novo',
-    data_criacao: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), // 5 dias atrás
-    data_ultima_alteracao: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
+    data_criacao: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 dias atrás
+    data_ultima_alteracao: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
     responsavel_atual_id: '5',
     responsavel_atual_nome: 'Roberto Almeida Sousa',
     cooperativa_responsavel_id: '020',
@@ -351,7 +351,7 @@ export const mockAuditoria: AuditoriaLog[] = [
     usuario_id: '1',
     usuario_nome: 'João Silva',
     acao: 'Pedido criado',
-    timestamp: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000),
+    timestamp: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString(),
     detalhes: 'Pedido criado para credenciamento de ortodontista no RJ'
   },
   {
@@ -360,7 +360,7 @@ export const mockAuditoria: AuditoriaLog[] = [
     usuario_id: '2',
     usuario_nome: 'Maria Santos',
     acao: 'Pedido aceito',
-    timestamp: new Date(Date.now() - 23 * 24 * 60 * 60 * 1000),
+    timestamp: new Date(Date.now() - 23 * 24 * 60 * 60 * 1000).toISOString(),
     detalhes: 'Responsável da Singular aceitou o pedido'
   },
   {
@@ -369,7 +369,7 @@ export const mockAuditoria: AuditoriaLog[] = [
     usuario_id: '3',
     usuario_nome: 'Carlos Ferreira',
     acao: 'Pedido escalado para Federação',
-    timestamp: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000),
+    timestamp: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
     detalhes: 'SLA da Singular expirou, pedido escalado automaticamente'
   },
 ];

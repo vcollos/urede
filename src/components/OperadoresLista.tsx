@@ -22,8 +22,8 @@ import { apiService } from '../services/apiService';
 import { Operador, Cooperativa } from '../types';
 
 interface OperadoresListaProps {
-  onCreateOperador: () => void;
-  onEditOperador: (operador: Operador) => void;
+  onCreateOperador?: () => void;
+  onEditOperador?: (operador: Operador) => void;
 }
 
 export function OperadoresLista({ onCreateOperador, onEditOperador }: OperadoresListaProps) {
@@ -91,8 +91,8 @@ export function OperadoresLista({ onCreateOperador, onEditOperador }: Operadores
     return coop?.uniodonto || 'N/A';
   };
 
-  const formatDate = (date: Date) => {
-    return new Date(date).toLocaleDateString('pt-BR');
+  const formatDate = (value: string | Date) => {
+    return new Date(value).toLocaleDateString('pt-BR');
   };
 
   const formatPhone = (phone: string) => {
@@ -136,11 +136,11 @@ export function OperadoresLista({ onCreateOperador, onEditOperador }: Operadores
           <h1 className="text-2xl font-bold text-gray-900">Operadores</h1>
           <p className="text-gray-600">Gerencie os operadores do sistema</p>
         </div>
-        {isAuthenticated && (
-        <Button onClick={onCreateOperador} className="bg-blue-600 hover:bg-blue-700">
-          <Plus className="w-4 h-4 mr-2" />
-          Novo Operador
-        </Button>
+        {isAuthenticated && onCreateOperador && (
+          <Button onClick={onCreateOperador} className="bg-blue-600 hover:bg-blue-700">
+            <Plus className="w-4 h-4 mr-2" />
+            Novo Operador
+          </Button>
         )}
       </div>
 
@@ -285,7 +285,7 @@ export function OperadoresLista({ onCreateOperador, onEditOperador }: Operadores
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => onEditOperador(operador)}
+                          onClick={() => onEditOperador?.(operador)}
                           className="w-8 h-8"
                         >
                           <Edit className="w-4 h-4" />

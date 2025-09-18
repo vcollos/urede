@@ -8,13 +8,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
 import { X, Plus } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/apiService';
-import { Cidade } from '../types';
+import { Cidade, Pedido } from '../types';
 
 interface NovoPedidoFormProps {
   onClose: () => void;
-  onSubmit?: (pedido: any) => void;
+  onSubmit?: (pedido: Pedido) => void;
 }
 
 const especialidades = [
@@ -31,7 +30,6 @@ const especialidades = [
 ];
 
 export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
-  const { user } = useAuth();
   const [cidades, setCidades] = useState<Cidade[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -105,6 +103,10 @@ export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
       };
 
       const pedidoCriado = await apiService.createPedido(novoPedidoData);
+
+      try {
+        window.dispatchEvent(new CustomEvent('pedido:created', { detail: pedidoCriado }));
+      } catch {}
       
       if (onSubmit) {
         onSubmit(pedidoCriado);

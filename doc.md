@@ -1,0 +1,312 @@
+# Sistema de Gestão de Credenciamento Uniodonto
+## Documentação Técnica – Estado Atual (Build Local com SQLite / Deno)
+
+> **Visão rápida:** O frontend React/Vite já está integrado a uma API Hono rodando em Deno, que lê um banco SQLite local. A essência do produto — gerir pedidos entre Singulares → Federação → Confederação com SLAs e escalonamento automático — está preservada como objetivo final. Esta documentação descreve como executar e evoluir o stack atual, mantendo a rota para o produto completo.
+
+---
+
+## 📋 Índice
+
+- [1. Visão Geral](#1-visão-geral)
+- [2. Arquitetura Técnica](#2-arquitetura-técnica)
+- [3. Stack Tecnológica](#3-stack-tecnológica)
+- [4. Estado Atual vs. Objetivo Final](#4-estado-atual-vs-objetivo-final)
+- [5. Requisitos de Ambiente](#5-requisitos-de-ambiente)
+- [6. Setup Local Passo a Passo](#6-setup-local-passo-a-passo)
+- [7. Variáveis de Ambiente](#7-variáveis-de-ambiente)
+- [8. Scripts e Dados](#8-scripts-e-dados)
+- [9. Estrutura de Pastas](#9-estrutura-de-pastas)
+- [10. Operação e Fluxos](#10-operação-e-fluxos)
+- [11. Roadmap para Produção](#11-roadmap-para-produção)
+- [12. Troubleshooting](#12-troubleshooting)
+
+---
+
+## 1. Visão Geral
+
+### 1.1 Descrição
+Sistema web que centraliza o credenciamento de prestadores da rede Uniodonto. Pedidos nascem na Singular, podem escalar para Federação e Confederação caso o SLA de 30 dias por nível expire. Usuários autenticam via JWT e interagem com dashboard, lista Kanban e modais de detalhes.
+
+### 1.2 Funcionalidades Entregues
+- ✅ Autenticação local com JWT e RBAC (admin, operador, federação, confederação)
+- ✅ Dashboard com cards e atividade recente
+- ✅ Lista de pedidos com filtros e visão Kanban
+- ✅ Detalhamento de pedido com alteração de status e auditoria (via API)
+- ✅ Cadastro de pedidos com modal dedicado
+- ✅ Vistas de cooperativas e operadores com filtros
+- ✅ Backend Hono acessando SQLite, incluindo escalonamento automático
+
+### 1.3 Funcionalidades Planejadas (Essência preservada)
+- ⏳ CRUD completo de operadores no frontend (UI em andamento)
+- ⏳ Configurações administrativas (painel a reimplementar)
+- ⏳ Monitoramento em tempo real / notificações assíncronas
+- ⏳ Deploy gerenciado (Supabase/Postgres ou outro serviço gerenciado) 
+
+---
+
+## 2. Arquitetura Técnica
+
+```
+┌────────────────────┐      ┌────────────────────────┐      ┌───────────────┐
+│ Frontend (React)   │────▶ │ API Hono (Deno)         │────▶│ SQLite local  │
+│ Vite + Tailwind    │      │ supabase/functions/...  │      │ data/urede.db  │
+│ Auth via JWT local │◀─────│ JWT emitido/validado    │◀────│                │
+└────────────────────┘      └────────────────────────┘      └───────────────┘
+```
+
+- **Frontend**: React 18 + Vite + Tailwind (via CSS gerado). Consome `VITE_API_BASE_URL` (default `http://127.0.0.1:8000`).
+- **Backend**: Hono rodando em Deno (`supabase/functions/server/index.tsx`). Disponível via `npm run server:dev`.
+- **Banco**: SQLite (`data/urede.db`). Scripts para criar/importar em `scripts/`.
+- **Autenticação**: JWT local salvo em `localStorage` (`auth_token`).
+- **Comunicação**: Fetch via helper `src/utils/api/client.ts`, com headers automáticos.
+
+---
+
+## 3. Stack Tecnológica
+
+### 3.1 Frontend
+- React 18.3
+- TypeScript
+- Vite 6.3
+- Componentes shadcn/ui
+- Tailwind utilities pré-geradas (arquivo `src/index.css`)
+- lucide-react, react-hook-form, recharts, etc.
+
+### 3.2 Backend (Deno/Hono)
+- Hono 4.4
+- bcrypt para hash
+- SQLite (deno.land/x/sqlite)
+- JWT assinado manualmente (`lib/jwt.ts`)
+
+### 3.3 Scripts
+- `scripts/create-sqlite-db.sh`: cria schema com base em `db/sqlite_schema.sql`
+- `scripts/import-csv-sqlite.sh`: importa CSVs de `bases_csv/`
+- `scripts/write-health.mjs`: gera health/version para build
+
+---
+
+## 4. Estado Atual vs. Objetivo Final
+
+| Área                    | Estado Atual (SQLite/Deno)                                          | Visão Final (Essência)                                           |
+|-------------------------|---------------------------------------------------------------------|------------------------------------------------------------------|
+| Autenticação            | JWT local, usuários em tabela `auth_users` / operadores             | Integração com provedor gerenciado (Supabase Auth / AD / IAM)    |
+| Banco de dados          | SQLite local (`data/urede.db`)                                      | Postgres/Supabase gerenciado, replicação e backups automáticos   |
+| API                     | Deno + Hono, single file                                            | Edge Functions ou Node/Go com observabilidade completa           |
+| Escalonamento           | Função local `escalarPedidos` consultando o SQLite                  | Cron gerenciado + notificações (email/Slack)                     |
+| Monitoramento           | `health.json` gerado no build                                       | Stack de logs/metrics (Grafana, Sentry, etc.)                    |
+| Deploy                  | Manual (scripts + Deno local)                                       | CI/CD com Nginx/Cloudfront ou plataforma serverless              |
+
+A documentação aqui mantém o foco no stack atual, mas cada seção indica como migrar para o alvo quando a infraestrutura gerenciada estiver pronta.
+
+---
+
+## 5. Requisitos de Ambiente
+
+- **Node.js** 18+ (para rodar Vite, scripts e gerar build)
+- **npm** 9+ / **pnpm** 8 (alternativa)
+- **Deno** 1.41+ (para backend Hono)
+- **SQLite3** CLI (para validar banco se desejar)
+- **bash** (para scripts shell)
+
+Verificações rápidas:
+```bash
+node --version
+npm --version
+ deno --version
+ sqlite3 --version
+```
+
+---
+
+## 6. Setup Local Passo a Passo
+
+1. **Instalar dependências Node**
+   ```bash
+   npm install
+   ```
+
+2. **Preparar banco SQLite**
+   ```bash
+   bash scripts/create-sqlite-db.sh
+   bash scripts/import-csv-sqlite.sh
+   ```
+   Isso gera/popula `data/urede.db`. Ajuste os CSVs em `bases_csv/` conforme necessidade.
+
+3. **Configurar variáveis**
+   - Copie `.env.example` → `.env.local` ou `.env`.
+   - Valores padrão apontam para `http://127.0.0.1:8000` (API local).
+
+4. **Rodar backend (Hono/Deno)**
+   ```bash
+   npm run server:dev
+   ```
+   - Depende do arquivo `.env` em `supabase/functions/server/.env` (já versionado com defaults seguros para dev).
+   - API ficará disponível em `http://127.0.0.1:8000`.
+
+5. **Rodar frontend**
+   ```bash
+   npm run dev
+   ```
+   - Interface acessível em `http://localhost:3400` (padrão Vite).
+
+6. **Build** (caso necessário)
+   ```bash
+   npm run build
+   ```
+   - Gera artefatos em `build/`.
+
+---
+
+## 7. Variáveis de Ambiente
+
+### Frontend (`.env`, `.env.local`)
+```bash
+VITE_API_BASE_URL=http://127.0.0.1:8000
+```
+Outros valores poderão ser adicionados conforme integração com serviços externos.
+
+### Backend Deno (`supabase/functions/server/.env`)
+```bash
+JWT_SECRET=dev-secret-change-me
+SQLITE_PATH=./data/urede.db
+TABLE_PREFIX=urede_
+INSECURE_MODE=false
+ALLOWED_ORIGINS=http://localhost:3400
+```
+- `INSECURE_MODE=true` libera autenticação para desenvolvimento.
+- Ajuste `ALLOWED_ORIGINS` para ambientes adicionais (app em produção, etc.).
+
+---
+
+## 8. Scripts e Dados
+
+- `scripts/create-sqlite-db.sh`: cria `data/urede.db` usando `db/sqlite_schema.sql`.
+- `scripts/import-csv-sqlite.sh`: carrega CSVs (`bases_csv/`) nas tabelas `urede_cooperativas`, `urede_cidades`, `urede_operadores`.
+- `public/health.json` e `public/version.txt`: gerados por `npm run prebuild` (executa `scripts/write-health.mjs`).
+
+Para reset completo:
+```bash
+rm -f data/urede.db data/urede.db-shm data/urede.db-wal
+bash scripts/create-sqlite-db.sh
+bash scripts/import-csv-sqlite.sh
+```
+
+---
+
+## 9. Estrutura de Pastas (Simplificada)
+
+```
+.
+├── src/
+│   ├── App.tsx
+│   ├── main.tsx
+│   ├── index.css
+│   ├── components/
+│   │   ├── AuthScreen.tsx
+│   │   ├── Dashboard.tsx
+│   │   ├── Layout.tsx
+│   │   ├── LoginForm.tsx
+│   │   ├── NovoPedidoForm.tsx
+│   │   ├── OperadoresLista.tsx
+│   │   ├── PedidoDetalhes.tsx
+│   │   ├── PedidosLista.tsx
+│   │   ├── RegisterForm.tsx
+│   │   └── ui/...
+│   ├── contexts/AuthContext.tsx
+│   ├── services/{apiService.ts, authService.ts}
+│   ├── types/index.ts
+│   ├── utils/{api/client.ts, pedidoStyles.ts}
+│   └── data/mockData.ts (dados mock usados apenas em Fallbacks/Dev)
+├── supabase/functions/server/
+│   ├── index.tsx (API principal Hono)
+│   ├── index.ts (re-export para Deno)
+│   └── lib/{jwt.ts, sqlite.ts}
+├── data/urede.db (gerado)
+├── bases_csv/ (fontes dos dados)
+├── scripts/
+│   ├── create-sqlite-db.sh
+│   ├── import-csv-sqlite.sh
+│   └── write-health.mjs
+├── package.json
+├── vite.config.ts
+└── README.md
+```
+
+---
+
+## 10. Operação e Fluxos
+
+### 10.1 Autenticação
+1. `LoginForm` chama `authService.login` → `/auth/login`
+2. API valida credenciais em `auth_users` e retorna JWT
+3. Token armazenado em `localStorage` (`auth_token`)
+4. `AuthContext` mantém `user`, `isAuthenticated`, `isLoading`
+
+### 10.2 Pedidos
+- Lista (`PedidosLista`) consulta `/pedidos`
+- Modal (`PedidoDetalhes`) usa `/pedidos/{id}`, `/pedidos/{id}/auditoria`
+- Atualização de status dispara `PATCH` + atualiza contexto
+- Escalonamento: função `escalarPedidos` roda no backend (pode ser acionada via cron manual usando `POST /admin/escalar-pedidos`)
+
+### 10.3 Cooperativas / Operadores
+- `CooperativasView` (componente inline em `App`) -> `/cooperativas`, `/operadores`, `/cidades`
+- `OperadoresLista` -> `/operadores`
+
+### 10.4 Dashboard
+- `/dashboard/stats` + `/pedidos`
+- Eventos custom (`window.dispatchEvent`) garantem sincronia após ações (created/updated/deleted)
+
+---
+
+## 11. Roadmap para Produção
+
+1. **Infraestrutura Gerenciada**
+   - Migrar SQLite → Postgres
+   - Avaliar Supabase/PostgreSQL gerenciado
+   - Configurar backup, migrações e RLS
+
+2. **Autenticação Corporativa**
+   - Integração com provedores (Supabase Auth, AD, etc.)
+   - Fluxos de recuperação de senha e convites
+
+3. **Observabilidade**
+   - Adicionar logs estruturados, métricas, alertas
+   - Integração com Sentry, Grafana, etc.
+
+4. **CI/CD**
+   - Automatizar build/test/deploy (GitHub Actions, etc.)
+   - Scripts de health check e rollback profissionalizados
+
+5. **Funcionalidades Avançadas**
+   - Painel administrativo completo
+   - Notificações (email/Slack)
+   - Relatórios exportáveis
+   - Multi-tenant / customizações por cooperativa
+
+---
+
+## 12. Troubleshooting
+
+| Sintoma                              | Causa Provável                               | Ação                                                                 |
+|-------------------------------------|----------------------------------------------|----------------------------------------------------------------------|
+| Campos de texto lentos              | Re-render pesado em listas grandes            | Debounce, memoização com `useMemo`/`useDeferredValue`                |
+| Login falha / mock aparece          | API Deno não está rodando ou erro de CORS     | Verificar `npm run server:dev`, checar console e `supabase/functions/server/.env` |
+| Build falha (npm)                   | Node/NPM ausentes ou versão incompatível      | Instalar Node 18+ (ex.: `brew install node`)                        |
+| `ECONNREFUSED` nas requisições      | API fora do ar ou `VITE_API_BASE_URL` errado  | Conferir `.env` e porta 8000                                        |
+| Escalonamento não dispara           | Cron não configurado                          | Rodar manual `POST /admin/escalar-pedidos` ou agendar script shell  |
+
+Logs úteis:
+```bash
+# Backend Hono (Deno)
+npm run server:dev
+# Health da API
+curl http://127.0.0.1:8000/health
+# Frontend (Vite dev server)
+npm run dev
+```
+
+---
+
+**📅 Última atualização:** março/2025  
+**🔄 Versão desta doc:** 1.1 (adaptação para backend Deno + SQLite)  
+**✅ Essência preservada:** credenciamento multi-nível com SLAs, escalonamento e governança RBAC continuam como norte do produto.

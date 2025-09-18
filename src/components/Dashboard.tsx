@@ -13,6 +13,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/apiService';
 import { Pedido, DashboardStats } from '../types';
+import { getNivelBadgeClass, getStatusBadgeClass } from '../utils/pedidoStyles';
 
 export function Dashboard() {
   const { user } = useAuth();
@@ -22,6 +23,12 @@ export function Dashboard() {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    let isMounted = true;
+
     const loadDashboardData = async () => {
       try {
         setIsLoading(true);
@@ -29,17 +36,34 @@ export function Dashboard() {
           apiService.getDashboardStats(),
           apiService.getPedidos()
         ]);
+        if (!isMounted) return;
         setDashboardStats(statsData);
         setPedidos(pedidosData);
       } catch (err) {
         console.error('Erro ao carregar dados do dashboard:', err);
-        setError(err instanceof Error ? err.message : 'Erro ao carregar dados');
+        if (isMounted) {
+          setError(err instanceof Error ? err.message : 'Erro ao carregar dados');
+        }
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
-    if (user) loadDashboardData();
+    const handler = () => { loadDashboardData(); };
+
+    loadDashboardData();
+    window.addEventListener('pedido:created', handler);
+    window.addEventListener('pedido:updated', handler);
+    window.addEventListener('pedido:deleted', handler);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener('pedido:created', handler);
+      window.removeEventListener('pedido:updated', handler);
+      window.removeEventListener('pedido:deleted', handler);
+    };
   }, [user]);
 
   if (isLoading) {
@@ -109,24 +133,6 @@ export function Dashboard() {
     }
   ];
 
-  const getNivelBadgeColor = (nivel: string) => {
-    switch (nivel) {
-      case 'singular': return 'bg-green-100 text-green-800 border-green-200';
-      case 'federacao': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'confederacao': return 'bg-red-100 text-red-800 border-red-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
-
-  const getStatusBadgeColor = (status: string) => {
-    switch (status) {
-      case 'novo': return 'bg-blue-100 text-blue-800';
-      case 'em_andamento': return 'bg-yellow-100 text-yellow-800';
-      case 'concluido': return 'bg-green-100 text-green-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
   const getPriorityColor = (diasRestantes: number) => {
     if (diasRestantes <= 3) return 'text-red-600';
     if (diasRestantes <= 7) return 'text-yellow-600';
@@ -187,10 +193,10 @@ export function Dashboard() {
                         {pedido.cidade_nome || 'Cidade'}, {pedido.estado || 'UF'}
                       </p>
                       <div className="flex items-center space-x-2 mt-1">
-                        <Badge variant="outline" className={getNivelBadgeColor(pedido.nivel_atual)}>
+                        <Badge variant="outline" className={getNivelBadgeClass(pedido.nivel_atual)}>
                           {pedido.nivel_atual}
                         </Badge>
-                        <Badge variant="outline" className={getStatusBadgeColor(pedido.status)}>
+                        <Badge variant="outline" className={getStatusBadgeClass(pedido.status)}>
                           {pedido.status.replace('_', ' ')}
                         </Badge>
                       </div>
@@ -276,7 +282,7 @@ export function Dashboard() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <Badge variant="outline" className={getNivelBadgeColor(pedido.nivel_atual)}>
+                  <Badge variant="outline" className={getNivelBadgeClass(pedido.nivel_atual)}>
                     {pedido.nivel_atual}
                   </Badge>
                   <p className="text-xs text-gray-500 mt-1">

@@ -67,7 +67,11 @@ CREATE TABLE IF NOT EXISTS urede_pedidos (
   status                     TEXT NOT NULL DEFAULT 'novo',
   data_criacao               TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
   data_ultima_alteracao      TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-  prazo_atual                TEXT NOT NULL
+  prazo_atual                TEXT NOT NULL,
+  data_conclusao             TEXT,
+  responsavel_atual_id       TEXT,
+  responsavel_atual_nome     TEXT,
+  criado_por_user            TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_pedidos_cidade            ON urede_pedidos(cidade_id);
@@ -99,6 +103,7 @@ CREATE TABLE IF NOT EXISTS urede_auditoria_logs (
   pedido_id TEXT REFERENCES urede_pedidos(id),
   usuario_id TEXT,
   usuario_nome TEXT,
+  usuario_display_nome TEXT,
   acao TEXT NOT NULL,
   detalhes TEXT,
   timestamp TEXT DEFAULT (CURRENT_TIMESTAMP)

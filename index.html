@@ -5,24 +5,6 @@
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       <title>Credenciamento e Suprimento App</title>
-      <script>
-        (function () {
-          try {
-            var ce = window.customElements;
-            if (!ce || !ce.define) return;
-            var _define = ce.define.bind(ce);
-            ce.define = function (name, ctor, options) {
-              try {
-                if (ce.get(name)) return; // ignore duplicate
-                return _define(name, ctor, options);
-              } catch (err) {
-                // some polyfills/extensions throw on duplicates; swallow to avoid breaking the app
-                console && console.warn && console.warn('CE define suppressed for', name, err);
-              }
-            };
-          } catch (e) {}
-        })();
-      </script>
     </head>
 
     <body>

@@ -22,7 +22,6 @@ const DEFAULT_API_BASE = (envApiBaseUrl && envApiBaseUrl.trim())
   : deriveDefaultBase();
 
 export const serverUrl = DEFAULT_API_BASE || '';
-console.debug('[api] serverUrl =', serverUrl);
 
 // Armazenamento do token JWT local
 const TOKEN_KEY = 'auth_token';

@@ -63,9 +63,7 @@ class AuthService {
   // Logout
   async logout() {
     try {
-      console.debug('[authService] logout() start');
       clearAuthToken();
-      console.debug('[authService] logout() token cleared');
     } catch (error) {
       console.error('Erro no logout:', error);
       throw error;
