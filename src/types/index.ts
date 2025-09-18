@@ -11,7 +11,7 @@ export interface User {
   cooperativa_id: string;
   papel: 'admin' | 'operador' | 'federacao' | 'confederacao';
   ativo: boolean;
-  data_cadastro: Date;
+  data_cadastro: string;
 }
 
 export interface Cooperativa {
@@ -48,7 +48,7 @@ export interface Operador {
   cargo: string;
   id_singular: string;
   ativo: boolean;
-  data_cadastro: Date;
+  data_cadastro: string;
 }
 
 export interface Pedido {
@@ -65,14 +65,16 @@ export interface Pedido {
   quantidade: number;
   observacoes: string;
   nivel_atual: 'singular' | 'federacao' | 'confederacao';
-  prazo_atual: Date;
+  prazo_atual: string;
   status: 'novo' | 'em_andamento' | 'concluido' | 'cancelado';
-  data_criacao: Date;
-  data_ultima_alteracao: Date;
+  data_criacao: string;
+  data_ultima_alteracao: string;
   responsavel_atual_id?: string; // ID do operador responsável
   responsavel_atual_nome?: string;
   cooperativa_responsavel_id?: string; // id_singular da cooperativa responsável
   dias_restantes: number;
+  data_conclusao?: string | null;
+  dias_para_concluir?: number;
   prioridade: 'baixa' | 'media' | 'alta' | 'urgente';
   ponto_de_vista?: 'feita' | 'recebida' | 'acompanhamento' | 'interna';
 }
@@ -82,8 +84,9 @@ export interface AuditoriaLog {
   pedido_id: string;
   usuario_id: string;
   usuario_nome: string;
+  usuario_display_nome?: string;
   acao: string;
-  timestamp: Date;
+  timestamp: string;
   detalhes?: string;
 }
 

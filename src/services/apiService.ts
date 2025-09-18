@@ -1,5 +1,4 @@
 import { apiRequest } from '../utils/api/client';
-import { serverUrl, getAuthHeaders } from '../utils/api/client';
 import type { 
   Pedido, 
   Cooperativa, 
@@ -19,20 +18,7 @@ class ApiService {
   // COOPERATIVAS PÚBLICAS (para registro)
   async getCooperativasPublic(): Promise<Cooperativa[]> {
     try {
-      const headers = await getAuthHeaders();
-      const response = await fetch(`${serverUrl}/cooperativas/public`, {
-        method: 'GET',
-        headers: {
-          ...headers,
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
-        throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
-      }
-
-      return response.json();
+      return await apiRequest('/cooperativas/public');
     } catch (error) {
       console.error('Erro ao buscar cooperativas públicas:', error);
       throw error;
@@ -73,7 +59,7 @@ class ApiService {
     }
   }
 
-  async updatePedido(pedidoId: string, updateData: Partial<Pedido>): Promise<Pedido> {
+  async updatePedido(pedidoId: string, updateData: Partial<Pedido> & Record<string, unknown> = {}): Promise<Pedido> {
     try {
       return await apiRequest(`/pedidos/${pedidoId}`, {
         method: 'PUT',

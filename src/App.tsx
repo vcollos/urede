@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card';
 import { Badge } from './components/ui/badge';
 import { Building2, Settings, Users, MapPin } from 'lucide-react';
 import { apiService } from './services/apiService';
-import { Pedido, Operador, Cooperativa, Cidade } from './types';
+import { Pedido, Cooperativa, Cidade, Operador } from './types';
 
 // Componente interno que usa o AuthContext
 function AppContent() {
@@ -19,9 +19,6 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showNovoPedido, setShowNovoPedido] = useState(false);
   const [selectedPedido, setSelectedPedido] = useState<Pedido | null>(null);
-  const [selectedOperador, setSelectedOperador] = useState<Operador | null>(null);
-  const [showNovoOperador, setShowNovoOperador] = useState(false);
-  const [pedidos, setPedidos] = useState<Pedido[]>([]);
 
   // Mostrar loading durante verificação da autenticação
   if (isLoading) {
@@ -40,20 +37,16 @@ function AppContent() {
     return <AuthScreen />;
   }
 
-  const handleCreatePedido = () => {
-    setShowNovoPedido(false);
-    // Força refresh da lista de pedidos
-    setActiveTab('pedidos');
+  const handleUpdatePedido = (pedidoId: string, updates: Partial<Pedido>) => {
+    setSelectedPedido(prev => {
+      if (!prev || prev.id !== pedidoId) return prev;
+      return { ...prev, ...updates };
+    });
   };
 
-  const handleUpdatePedido = (pedidoId: string, updates: Partial<Pedido>) => {
-    setPedidos(pedidos.map(p => 
-      p.id === pedidoId 
-        ? { ...p, ...updates }
-        : p
-    ));
-    // Em um sistema real, isso faria uma chamada API
-    console.log('Pedido atualizado:', pedidoId, updates);
+  const handlePedidoCreated = (_pedido: Pedido) => {
+    setActiveTab('pedidos');
+    setSelectedPedido(null);
   };
 
   const CooperativasView = () => {
@@ -237,12 +230,7 @@ function AppContent() {
       case 'cooperativas':
         return <CooperativasView />;
       case 'operadores':
-        return (
-          <OperadoresLista
-            onCreateOperador={() => setShowNovoOperador(true)}
-            onEditOperador={(operador) => setSelectedOperador(operador)}
-          />
-        );
+        return <OperadoresLista />;
       case 'configuracoes':
         return <ConfiguracoesView />;
       default:
@@ -261,6 +249,7 @@ function AppContent() {
       {showNovoPedido && (
         <NovoPedidoForm
           onClose={() => setShowNovoPedido(false)}
+          onSubmit={handlePedidoCreated}
         />
       )}
 

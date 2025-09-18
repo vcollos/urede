@@ -18,8 +18,10 @@ import {
   Users
 } from 'lucide-react';
 import { Pedido, AuditoriaLog } from '../types';
+import { getNivelBadgeClass, getStatusBadgeClass } from '../utils/pedidoStyles';
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/apiService';
+import { renderMarkdown } from '../utils/markdown';
 
 interface PedidoDetalhesProps {
   pedido: Pedido;
@@ -27,10 +29,21 @@ interface PedidoDetalhesProps {
   onUpdatePedido: (pedidoId: string, updates: Partial<Pedido>) => void;
 }
 
+const comentarioRegex = /\(\d{2}\/\d{2}\/\d{4}.*\):/;
+
+const extractInitialJustificativa = (conteudo: string) => {
+  const lines = conteudo.split('\n');
+  const cutoff = lines.findIndex((line) => comentarioRegex.test(line));
+  if (cutoff === -1) return conteudo.trim();
+  return lines.slice(0, cutoff).join('\n').trim();
+};
+
 export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalhesProps) {
   const [novoStatus, setNovoStatus] = useState(pedido.status);
   const [comentario, setComentario] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isAssumindo, setIsAssumindo] = useState(false);
+  const [isLiberando, setIsLiberando] = useState(false);
 
   const { user } = useAuth();
 
@@ -52,21 +65,31 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
     return () => { mounted = false; };
   }, [pedido.id]);
 
-  const getNivelBadgeColor = (nivel: string) => {
-    switch (nivel) {
-      case 'singular': return 'bg-green-100 text-green-800 border-green-200';
-      case 'federacao': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'confederacao': return 'bg-red-100 text-red-800 border-red-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
+  useEffect(() => {
+    setNovoStatus(pedido.status);
+  }, [pedido.status]);
 
-  const getStatusBadgeColor = (status: string) => {
-    switch (status) {
-      case 'novo': return 'bg-blue-100 text-blue-800';
-      case 'em_andamento': return 'bg-yellow-100 text-yellow-800';
-      case 'concluido': return 'bg-green-100 text-green-800';
-      default: return 'bg-gray-100 text-gray-800';
+  const applyUpdatedPedido = async (updated: Pedido, options?: { resetComment?: boolean }) => {
+    onUpdatePedido(pedido.id, updated);
+    try {
+      window.dispatchEvent(new CustomEvent('pedido:updated', {
+        detail: {
+          id: pedido.id,
+          updates: updated,
+        },
+      }));
+    } catch {}
+
+    try {
+      const data = await apiService.getPedidoAuditoria(pedido.id);
+      setAuditoriaLogs(data);
+    } catch (e) {
+      console.error('Erro ao recarregar auditoria após update:', e);
+    }
+
+    setNovoStatus(updated.status);
+    if (options?.resetComment) {
+      setComentario('');
     }
   };
 
@@ -117,39 +140,77 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
   };
 
   const handleUpdateStatus = async () => {
-    if (!canUpdateStatus() || isUpdating) return;
+    const trimmedComment = comentario.trim();
+    if (!canUpdateStatus() || isUpdating || (!trimmedComment && novoStatus === pedido.status)) return;
 
     setIsUpdating(true);
     try {
-      // Atualizar status via API
-      await apiService.updatePedido(pedido.id, { status: novoStatus });
-      onUpdatePedido(pedido.id, { 
-        status: novoStatus as any,
-        data_ultima_alteracao: new Date()
-      });
+      const updates: (Partial<Pedido> & { comentario_atual?: string }) = {};
 
-      // Observação: endpoint para criar auditoria não existe; apenas logamos o comentário localmente
-      if (comentario.trim()) {
-        console.log('Comentário (não persistido via API):', comentario);
+      if (novoStatus !== pedido.status) {
+        updates.status = novoStatus as Pedido['status'];
       }
 
-      // Recarregar auditoria
-      try {
-        const data = await apiService.getPedidoAuditoria(pedido.id);
-        setAuditoriaLogs(data);
-      } catch (e) {
-        console.error('Erro ao recarregar auditoria após update:', e);
+      const userName = user?.display_name || user?.nome || 'Responsável';
+
+      if (novoStatus === 'em_andamento' && user) {
+        updates.responsavel_atual_id = user.id;
+        updates.responsavel_atual_nome = userName;
       }
+
+      if (trimmedComment) {
+        const existingObservacoes = pedido.observacoes ? pedido.observacoes.trimEnd() : '';
+        const prefix = existingObservacoes ? `${existingObservacoes}\n` : '';
+        updates.observacoes = `${prefix}${userName} (${new Date().toLocaleString('pt-BR')}): ${trimmedComment}`;
+        updates.comentario_atual = trimmedComment;
+      }
+
+      const updatedPedido = await apiService.updatePedido(pedido.id, updates);
+
+      await applyUpdatedPedido(updatedPedido, { resetComment: true });
     } catch (e) {
       console.error('Erro ao atualizar status do pedido:', e);
     } finally {
       setIsUpdating(false);
-      setComentario('');
     }
   };
 
-  const formatDate = (date: Date) => {
-    return new Date(date).toLocaleDateString('pt-BR', {
+  const handleAssumirPedido = async () => {
+    if (!user || isAssumindo) return;
+    setIsAssumindo(true);
+    try {
+      const updates: Partial<Pedido> = {
+        responsavel_atual_id: user.id,
+        responsavel_atual_nome: user.display_name || user.nome || user.email,
+      };
+      const updatedPedido = await apiService.updatePedido(pedido.id, updates);
+      await applyUpdatedPedido(updatedPedido);
+    } catch (e) {
+      console.error('Erro ao assumir pedido:', e);
+    } finally {
+      setIsAssumindo(false);
+    }
+  };
+
+  const handleLiberarPedido = async () => {
+    if (isLiberando) return;
+    setIsLiberando(true);
+    try {
+      const updates = {
+        responsavel_atual_id: null,
+        responsavel_atual_nome: null,
+      } as Partial<Pedido>;
+      const updatedPedido = await apiService.updatePedido(pedido.id, updates);
+      await applyUpdatedPedido(updatedPedido);
+    } catch (e) {
+      console.error('Erro ao liberar pedido:', e);
+    } finally {
+      setIsLiberando(false);
+    }
+  };
+
+  const formatDate = (value: string | Date) => {
+    return new Date(value).toLocaleDateString('pt-BR', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
@@ -158,13 +219,23 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
     });
   };
 
-  const formatDateShort = (date: Date) => {
-    return new Date(date).toLocaleDateString('pt-BR', {
+  const formatDateShort = (value: string | Date) => {
+    return new Date(value).toLocaleDateString('pt-BR', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric'
     });
   };
+
+  const hasComment = comentario.trim().length > 0;
+  const sameCooperativaResponsavel = user && pedido.cooperativa_responsavel_id === user.cooperativa_id;
+  const isResponsavelAtual = user && pedido.responsavel_atual_id === user.id;
+  const canAssumir = canUpdateStatus() && user && sameCooperativaResponsavel && !isResponsavelAtual;
+  const canLiberar = canUpdateStatus() && !!pedido.responsavel_atual_id;
+
+  const justificativaInicial = pedido.observacoes
+    ? extractInitialJustificativa(pedido.observacoes)
+    : '';
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -183,7 +254,9 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
               {pedido.ponto_de_vista === 'recebida' && 'Solicitação recebida'}
               {pedido.ponto_de_vista === 'interna' && 'Interna'}
               {(!pedido.ponto_de_vista || pedido.ponto_de_vista === 'acompanhamento') && 'Acompanhamento'}
-              {pedido.cooperativa_responsavel_nome ? ` • Responsável: ${pedido.cooperativa_responsavel_nome}` : ''}
+              {(pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome)
+                ? ` • Responsável: ${pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome}`
+                : ''}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -265,7 +338,7 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
                     <div>
                       <label className="text-sm font-medium text-gray-600">Status Atual</label>
                       <div className="mt-1">
-                        <Badge className={getStatusBadgeColor(pedido.status)}>
+                        <Badge className={getStatusBadgeClass(pedido.status)}>
                           {pedido.status.replace('_', ' ')}
                         </Badge>
                       </div>
@@ -274,7 +347,7 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
                     <div>
                       <label className="text-sm font-medium text-gray-600">Nível Atual</label>
                       <div className="mt-1">
-                        <Badge variant="outline" className={getNivelBadgeColor(pedido.nivel_atual)}>
+                        <Badge variant="outline" className={getNivelBadgeClass(pedido.nivel_atual)}>
                           {pedido.nivel_atual}
                         </Badge>
                       </div>
@@ -289,17 +362,53 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
                     
                     <div>
                       <label className="text-sm font-medium text-gray-600">Prazo</label>
-                      <div className="flex items-center mt-1">
-                        {getPriorityIcon(pedido.dias_restantes)}
-                        <span className={`ml-2 font-medium ${
-                          pedido.dias_restantes <= 7 ? 'text-red-600' : 'text-gray-900'
-                        }`}>
-                          {pedido.dias_restantes} dias restantes
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-500">
-                        Vencimento: {formatDateShort(pedido.prazo_atual)}
-                      </p>
+                      {pedido.status === 'concluido' && pedido.data_conclusao ? (
+                        <div className="mt-1">
+                          <p className="font-medium text-green-700">
+                            Concluído em <span className="font-semibold">{pedido.dias_para_concluir ?? 0}</span> dia(s)
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            Data de conclusão: {formatDateShort(pedido.data_conclusao)}
+                          </p>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="flex items-center mt-1">
+                            {getPriorityIcon(pedido.dias_restantes)}
+                            <span className={`ml-2 font-medium ${
+                              pedido.dias_restantes <= 7 ? 'text-red-600' : 'text-gray-900'
+                            }`}>
+                              {pedido.dias_restantes} dias restantes
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-500">
+                            Vencimento: {formatDateShort(pedido.prazo_atual)}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 pt-2">
+                      {canAssumir && (
+                        <Button
+                          size="sm"
+                          onClick={handleAssumirPedido}
+                          disabled={isAssumindo}
+                          className="bg-blue-600 hover:bg-blue-700"
+                        >
+                          {isAssumindo ? 'Assumindo...' : 'Assumir pedido'}
+                        </Button>
+                      )}
+                      {canLiberar && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleLiberarPedido}
+                          disabled={isLiberando}
+                        >
+                          {isLiberando ? 'Liberando...' : 'Liberar responsabilidade'}
+                        </Button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -310,13 +419,18 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
                 <CardHeader>
                   <CardTitle className="flex items-center">
                     <MessageSquare className="w-5 h-5 mr-2" />
-                    Observações
+                    Justificativa
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-gray-700 whitespace-pre-wrap">
-                    {pedido.observacoes || 'Nenhuma observação adicional.'}
-                  </p>
+                  {justificativaInicial ? (
+                    <div
+                      className="prose prose-sm max-w-none text-gray-700"
+                      dangerouslySetInnerHTML={{ __html: renderMarkdown(justificativaInicial) }}
+                    />
+                  ) : (
+                    <p className="text-gray-500">Nenhuma justificativa cadastrada.</p>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -347,21 +461,27 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
                       </Select>
                     </div>
                     
-                    <div>
-                      <label className="text-sm font-medium text-gray-600 mb-2 block">
-                        Comentário (opcional)
-                      </label>
-                      <Textarea
-                        value={comentario}
-                        onChange={(e) => setComentario(e.target.value)}
-                        placeholder="Adicione detalhes sobre a atualização..."
-                        rows={3}
-                      />
-                    </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-600 mb-2 block">
+                      Comentário (Markdown opcional)
+                    </label>
+                    <Textarea
+                      value={comentario}
+                      onChange={(e) => setComentario(e.target.value)}
+                      placeholder="Use markdown, ex.: **importante**, _texto_, - lista"
+                      rows={4}
+                    />
+                    {comentario.trim() && (
+                      <div className="mt-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+                        <h4 className="mb-2 text-xs uppercase tracking-wide text-gray-500">Pré-visualização</h4>
+                        <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: renderMarkdown(comentario) }} />
+                      </div>
+                    )}
+                  </div>
                     
                     <Button 
                       onClick={handleUpdateStatus}
-                      disabled={isUpdating || novoStatus === pedido.status}
+                      disabled={isUpdating || (!hasComment && novoStatus === pedido.status)}
                       className="bg-blue-600 hover:bg-blue-700"
                     >
                       {isUpdating ? 'Atualizando...' : 'Atualizar Pedido'}
@@ -394,21 +514,48 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
                         Nenhuma atividade registrada
                       </p>
                     ) : (
-                      auditoriaLogs.map((log) => (
-                        <div key={log.id} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
-                          <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-gray-900">{log.acao}</p>
-                            <p className="text-sm text-gray-600">por {log.usuario_nome}</p>
-                            {log.detalhes && (
-                              <p className="text-sm text-gray-700 mt-1">{log.detalhes}</p>
-                            )}
-                            <p className="text-xs text-gray-500 mt-1">
-                              {formatDate(log.timestamp)}
-                            </p>
+                      auditoriaLogs.map((log) => {
+                        const detalhes = (log.detalhes || '')
+                          .split('|')
+                          .map((item) => item.trim())
+                          .filter(Boolean);
+
+                        return (
+                          <div
+                            key={log.id}
+                            className="relative flex items-start space-x-3 rounded-lg bg-gray-50 p-3"
+                          >
+                            <span
+                              className="absolute right-3 top-3 rounded-full text-xs font-medium"
+                              style={{ backgroundColor: '#01CABE', color: '#00FFF0', padding: '5px 10px' }}
+                            >
+                              por {log.usuario_display_nome || log.usuario_nome}
+                            </span>
+                            <div className="mt-2 h-2 w-2 flex-shrink-0 rounded-full bg-blue-500" />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-gray-900">{log.acao}</p>
+                              {detalhes.map((item, index) => {
+                                const isComentario = item.toLowerCase().startsWith('comentário:');
+                                const content = isComentario
+                                  ? item.replace(/^Comentário:\s*/i, '')
+                                  : item;
+                                return isComentario ? (
+                                  <div
+                                    key={index}
+                                    className="mt-2 rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-700"
+                                    dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
+                                  />
+                                ) : (
+                                  <p key={index} className="mt-1 text-sm text-gray-700">
+                                    {item}
+                                  </p>
+                                );
+                              })}
+                              <p className="mt-1 text-xs text-gray-500">{formatDate(log.timestamp)}</p>
+                            </div>
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </CardContent>

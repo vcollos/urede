@@ -17,6 +17,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/apiService';
 import { Pedido } from '../types';
+import { getNivelBadgeClass, getStatusBadgeClass, getStatusCardColors } from '../utils/pedidoStyles';
 
 interface PedidosListaProps {
   onCreatePedido: () => void;
@@ -48,14 +49,22 @@ export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps
       }
     };
 
-    if (user) {
-      loadPedidos();
-      const handler = () => loadPedidos();
-      window.addEventListener('pedido:deleted', handler as any);
-      return () => {
-        window.removeEventListener('pedido:deleted', handler as any);
-      };
+    if (!user) {
+      return;
     }
+
+    loadPedidos();
+    const handler = () => { loadPedidos(); };
+
+    window.addEventListener('pedido:deleted', handler);
+    window.addEventListener('pedido:created', handler);
+    window.addEventListener('pedido:updated', handler);
+
+    return () => {
+      window.removeEventListener('pedido:deleted', handler);
+      window.removeEventListener('pedido:created', handler);
+      window.removeEventListener('pedido:updated', handler);
+    };
   }, [user]);
 
   // Filtrar pedidos baseado nos filtros aplicados
@@ -85,40 +94,6 @@ export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps
 
   const pedidosFiltrados = getFilteredPedidos();
 
-  // Função para atualizar a lista após criar um pedido
-  const handlePedidoCriado = async () => {
-    try {
-      const pedidosData = await apiService.getPedidos();
-      setPedidos(pedidosData);
-    } catch (err) {
-      console.error('Erro ao recarregar pedidos:', err);
-    }
-  };
-
-  const getNivelBadgeColor = (nivel: string) => {
-    switch (nivel) {
-      case 'singular': return 'bg-green-100 text-green-800 border-green-200';
-      case 'federacao': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'confederacao': return 'bg-red-100 text-red-800 border-red-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
-
-  const getStatusBadgeColor = (status: string) => {
-    switch (status) {
-      case 'novo': return 'bg-blue-100 text-blue-800';
-      case 'em_andamento': return 'bg-yellow-100 text-yellow-800';
-      case 'concluido': return 'bg-green-100 text-green-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getPriorityColor = (diasRestantes: number) => {
-    if (diasRestantes <= 3) return 'border-l-red-500 bg-red-50';
-    if (diasRestantes <= 7) return 'border-l-yellow-500 bg-yellow-50';
-    return 'border-l-green-500 bg-green-50';
-  };
-
   const labelByPov = (p: Pedido) => {
     switch (p.ponto_de_vista) {
       case 'feita': return 'Solicitação feita';
@@ -128,18 +103,27 @@ export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps
     }
   };
 
-  const PedidoCard = ({ pedido }: { pedido: Pedido }) => (
-    <Card 
-      key={pedido.id} 
-      className={`cursor-pointer hover:shadow-md transition-shadow border-l-4 ${getPriorityColor(pedido.dias_restantes)}`}
-      onClick={() => onViewPedido(pedido)}
-    >
-      <CardContent className="p-4">
-        <div className="space-y-3">
+  const PedidoCard = ({ pedido }: { pedido: Pedido }) => {
+    const { borderClass, backgroundClass, borderColor, backgroundColor } = getStatusCardColors(pedido.status);
+
+    return (
+      <Card 
+        key={pedido.id} 
+        className={`cursor-pointer hover:shadow-md transition-shadow border-l-4 ${borderClass} ${backgroundClass}`}
+        style={{
+          borderLeftColor: borderColor,
+          backgroundColor,
+        }}
+        onClick={() => onViewPedido(pedido)}
+      >
+        <CardContent className="p-4">
+          <div className="space-y-3">
           <div className="flex items-center justify-between text-xs text-gray-500">
             <span className="font-medium">{labelByPov(pedido)}</span>
-            {pedido.cooperativa_responsavel_nome && (
-              <span>Resp.: {pedido.cooperativa_responsavel_nome}</span>
+            {(pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome) && (
+              <span>
+                Resp.: {pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome}
+              </span>
             )}
           </div>
           <div className="flex items-start justify-between">
@@ -171,10 +155,10 @@ export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps
           
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
-              <Badge variant="outline" className={getNivelBadgeColor(pedido.nivel_atual)}>
+              <Badge variant="outline" className={getNivelBadgeClass(pedido.nivel_atual)}>
                 {pedido.nivel_atual}
               </Badge>
-              <Badge className={getStatusBadgeColor(pedido.status)}>
+              <Badge className={getStatusBadgeClass(pedido.status)}>
                 {pedido.status.replace('_', ' ')}
               </Badge>
             </div>
@@ -186,9 +170,10 @@ export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps
             </div>
           </div>
         </div>
-      </CardContent>
-    </Card>
-  );
+        </CardContent>
+      </Card>
+    );
+  };
 
   const KanbanView = () => {
     const colunas = [

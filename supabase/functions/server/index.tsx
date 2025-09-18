@@ -97,15 +97,55 @@ const mapOperador = (row: any) => ({
 });
 
 const computeDiasRestantes = (prazoIso: string) => {
-  const agora = new Date();
   const prazo = new Date(prazoIso);
-  const diffTime = prazo.getTime() - agora.getTime();
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const agora = new Date();
+  if (Number.isNaN(prazo.getTime())) return 0;
+
+  const msPorDia = 24 * 60 * 60 * 1000;
+  const inicioHoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+  const inicioPrazo = new Date(prazo.getFullYear(), prazo.getMonth(), prazo.getDate());
+  const diffTime = inicioPrazo.getTime() - inicioHoje.getTime();
+
+  return Math.max(0, Math.floor(diffTime / msPorDia));
 };
 
 // Carrega nomes de cidade e cooperativa para um conjunto de pedidos
 console.log(`[sqlite] abrindo banco em: ${SQLITE_PATH}`);
 const db = getDb(SQLITE_PATH);
+
+const ensurePedidoSchema = () => {
+  const alters = [
+    `ALTER TABLE ${TBL('pedidos')} ADD COLUMN responsavel_atual_id TEXT`,
+    `ALTER TABLE ${TBL('pedidos')} ADD COLUMN responsavel_atual_nome TEXT`,
+    `ALTER TABLE ${TBL('pedidos')} ADD COLUMN criado_por_user TEXT`,
+    `ALTER TABLE ${TBL('pedidos')} ADD COLUMN data_conclusao TEXT`
+  ];
+  for (const stmt of alters) {
+    try {
+      db.query(stmt);
+    } catch (e) {
+      const message = (e && typeof e.message === 'string') ? e.message : String(e);
+      if (!/duplicate column name/i.test(message)) {
+        console.warn('[schema] alteração falhou:', message);
+      }
+    }
+  }
+};
+
+ensurePedidoSchema();
+
+const ensureAuditoriaSchema = () => {
+  try {
+    db.query(`ALTER TABLE ${TBL('auditoria_logs')} ADD COLUMN usuario_display_nome TEXT`);
+  } catch (e) {
+    const message = (e && typeof e.message === 'string') ? e.message : String(e);
+    if (!/duplicate column name/i.test(message)) {
+      console.warn('[schema] auditoria alter falhou:', message);
+    }
+  }
+};
+
+ensureAuditoriaSchema();
 
 const enrichPedidos = async (pedidos: any[]) => {
   if (!pedidos || pedidos.length === 0) return [] as any[];
@@ -341,8 +381,8 @@ const escalarPedidos = async () => {
         // Registrar auditoria com autor como criador do pedido para evitar FK inválida
         try {
           const id = `audit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-          db.query(`INSERT INTO ${TBL('auditoria_logs')} (id, pedido_id, usuario_id, usuario_nome, acao, timestamp, detalhes) VALUES (?,?,?,?,?,?,?)`,
-            [id, pedido.id, pedido.criado_por, 'Sistema Automático', `Escalamento automático para ${novoNivel}`, agora, `Pedido escalado automaticamente por vencimento de prazo. Novo prazo: ${novoPrazo}`]
+          db.query(`INSERT INTO ${TBL('auditoria_logs')} (id, pedido_id, usuario_id, usuario_nome, usuario_display_nome, acao, timestamp, detalhes) VALUES (?,?,?,?,?,?,?,?)`,
+            [id, pedido.id, pedido.criado_por, 'Sistema Automático', 'Sistema Automático', `Escalamento automático para ${novoNivel}`, agora, `Pedido escalado automaticamente por vencimento de prazo. Novo prazo: ${novoPrazo}`]
           );
         } catch (e) {
           console.error('Erro ao registrar auditoria de escalonamento:', e);
@@ -747,8 +787,6 @@ app.post('/pedidos', requireAuth, async (c) => {
     }
 
     try {
-      // Garantir coluna criado_por_user (idempotente)
-      try { db.query(`ALTER TABLE ${TBL('pedidos')} ADD COLUMN criado_por_user TEXT`); } catch (_) {}
       db.query(
         `INSERT INTO ${TBL('pedidos')} 
           (id, titulo, criado_por, criado_por_user, cooperativa_solicitante_id, cooperativa_responsavel_id, cidade_id, especialidades, quantidade, observacoes, prioridade, nivel_atual, status, data_criacao, data_ultima_alteracao, prazo_atual)
@@ -783,6 +821,7 @@ app.post('/pedidos', requireAuth, async (c) => {
       pedido_id: novoPedido.id,
       usuario_id: userData.id,
       usuario_nome: userData.nome,
+      usuario_display_nome: userData.display_name || userData.nome,
       acao: 'Criação do pedido',
       timestamp: new Date().toISOString(),
       detalhes: `Pedido criado: ${pedidoData.titulo}`
@@ -790,13 +829,14 @@ app.post('/pedidos', requireAuth, async (c) => {
 
     try {
       db.query(
-        `INSERT INTO ${TBL('auditoria_logs')} (id, pedido_id, usuario_id, usuario_nome, acao, timestamp, detalhes)
-         VALUES (?,?,?,?,?,?,?)`,
+        `INSERT INTO ${TBL('auditoria_logs')} (id, pedido_id, usuario_id, usuario_nome, usuario_display_nome, acao, timestamp, detalhes)
+         VALUES (?,?,?,?,?,?,?,?)`,
         [
           auditoria.id,
           auditoria.pedido_id,
           auditoria.usuario_id,
           auditoria.usuario_nome,
+          auditoria.usuario_display_nome,
           auditoria.acao,
           auditoria.timestamp,
           auditoria.detalhes || null,
@@ -827,8 +867,13 @@ app.post('/pedidos', requireAuth, async (c) => {
 app.put('/pedidos/:id', requireAuth, async (c) => {
   try {
     const pedidoId = c.req.param('id');
-    const userData = await getUserData(c.get('user').id);
+    const authUser = c.get('user');
+    const userData = await getUserData(authUser.id, authUser.email);
     const updateData = await c.req.json();
+    const comentarioAtual = typeof updateData.comentario_atual === 'string'
+      ? updateData.comentario_atual.trim()
+      : '';
+    delete updateData.comentario_atual;
 
     const pedido = db.queryEntries<any>(`SELECT * FROM ${TBL('pedidos')} WHERE id = ? LIMIT 1`, [pedidoId])[0];
     if (!pedido) {
@@ -886,25 +931,79 @@ app.put('/pedidos/:id', requireAuth, async (c) => {
     }
 
     // Registrar auditoria
+    const camposAlterados = Object.keys(allowed).filter((k) => k !== 'data_ultima_alteracao');
+    const detalhesPartes: string[] = [];
+
+    const toHumanLabel = (key: string) => {
+      switch (key) {
+        case 'status':
+          return `Status: ${String(allowed.status || '').replace(/_/g, ' ')}`;
+        case 'prioridade':
+          return `Prioridade: ${allowed.prioridade}`;
+        case 'nivel_atual':
+          return `Nível atual: ${allowed.nivel_atual}`;
+        case 'cooperativa_responsavel_id':
+          return `Cooperativa responsável: ${allowed.cooperativa_responsavel_id}`;
+        case 'responsavel_atual_nome':
+          return 'responsavel_atual_nome';
+        case 'observacoes':
+          return comentarioAtual ? '' : 'Observações atualizadas';
+        case 'responsavel_atual_id':
+          return '';
+        default:
+          return '';
+      }
+    };
+
+    for (const key of camposAlterados) {
+      const label = toHumanLabel(key);
+      if (label && label !== 'responsavel_atual_nome') {
+        detalhesPartes.push(label);
+      }
+    }
+
+    if ('responsavel_atual_nome' in allowed) {
+      let responsavelLabel = 'Responsável liberado';
+      if (allowed.responsavel_atual_nome) {
+        let coopNome = '';
+        if (userData.cooperativa_id) {
+          try {
+            const coopRow = db.queryEntries<any>(`SELECT UNIODONTO FROM ${TBL('cooperativas')} WHERE id_singular = ? LIMIT 1`, [userData.cooperativa_id])[0];
+            coopNome = coopRow?.UNIODONTO || '';
+          } catch (e) {
+            console.warn('[auditoria] falha ao buscar nome da cooperativa do responsável:', e);
+          }
+        }
+        responsavelLabel = `Responsável atual: ${allowed.responsavel_atual_nome}${coopNome ? `, ${coopNome}` : ''}`;
+      }
+      detalhesPartes.push(responsavelLabel);
+    }
+
+    if (comentarioAtual) {
+      detalhesPartes.push(`Comentário: ${comentarioAtual}`);
+    }
+
     const auditoria = {
       id: `audit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       pedido_id: pedidoId,
       usuario_id: userData.id,
       usuario_nome: userData.nome,
+      usuario_display_nome: userData.display_name || userData.nome,
       acao: 'Atualização do pedido',
       timestamp: new Date().toISOString(),
-      detalhes: `Campos atualizados: ${Object.keys(updateData).join(', ')}`
+      detalhes: detalhesPartes.join(' | ') || null
     };
 
     try {
       db.query(
-        `INSERT INTO ${TBL('auditoria_logs')} (id, pedido_id, usuario_id, usuario_nome, acao, timestamp, detalhes)
-         VALUES (?,?,?,?,?,?,?)`,
+        `INSERT INTO ${TBL('auditoria_logs')} (id, pedido_id, usuario_id, usuario_nome, usuario_display_nome, acao, timestamp, detalhes)
+         VALUES (?,?,?,?,?,?,?,?)`,
         [
           auditoria.id,
           auditoria.pedido_id,
           auditoria.usuario_id,
           auditoria.usuario_nome,
+          auditoria.usuario_display_nome,
           auditoria.acao,
           auditoria.timestamp,
           auditoria.detalhes || null,
@@ -914,7 +1013,20 @@ app.put('/pedidos/:id', requireAuth, async (c) => {
       console.warn('Auditoria não registrada (tabela ausente?):', e);
     }
 
-    const updated = { ...pedido, ...allowed } as any;
+  let dataConclusao = pedido.data_conclusao as string | null | undefined;
+
+  const statusOriginal = pedido.status as Pedido['status'];
+  const statusAtualizado = (allowed.status ?? pedido.status) as Pedido['status'];
+
+  if (statusOriginal !== 'concluido' && statusAtualizado === 'concluido') {
+    dataConclusao = new Date().toISOString();
+    allowed.data_conclusao = dataConclusao;
+  } else if (statusOriginal === 'concluido' && statusAtualizado !== 'concluido') {
+    dataConclusao = null;
+    allowed.data_conclusao = null;
+  }
+
+  const updated = { ...pedido, ...allowed, data_conclusao: dataConclusao } as any;
     // Normalizar especialidades no retorno
     updated.especialidades = Array.isArray(updated.especialidades)
       ? updated.especialidades
@@ -925,7 +1037,17 @@ app.put('/pedidos/:id', requireAuth, async (c) => {
         dias_restantes: computeDiasRestantes(updated.prazo_atual),
       }];
       const [enriched] = await enrichPedidos(base);
-      return c.json(enriched || base[0]);
+      const result = enriched || base[0];
+      if (result && dataConclusao) {
+        result.data_conclusao = dataConclusao;
+        const dataInicio = result.data_criacao ? new Date(result.data_criacao) : null;
+        const dataFinal = new Date(dataConclusao);
+        if (dataInicio && !Number.isNaN(dataInicio.getTime())) {
+          const diff = dataFinal.getTime() - dataInicio.getTime();
+          (result as any).dias_para_concluir = Math.max(0, Math.round(diff / (1000 * 60 * 60 * 24)));
+        }
+      }
+      return c.json(result);
     }
   } catch (error) {
     console.error('Erro ao atualizar pedido:', error);
@@ -937,7 +1059,8 @@ app.put('/pedidos/:id', requireAuth, async (c) => {
 app.delete('/pedidos/:id', requireAuth, async (c) => {
   try {
     const pedidoId = c.req.param('id');
-    const userData = await getUserData(c.get('user').id);
+    const authUser = c.get('user');
+    const userData = await getUserData(authUser.id, authUser.email);
     const pedido = db.queryEntries<any>(`SELECT id, cooperativa_solicitante_id FROM ${TBL('pedidos')} WHERE id = ? LIMIT 1`, [pedidoId])[0];
     if (!pedido) return c.json({ error: 'Pedido não encontrado' }, 404);
 
