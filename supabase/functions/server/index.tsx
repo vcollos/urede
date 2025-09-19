@@ -97,6 +97,22 @@ const mapOperador = (row: any) => ({
   papel: row.auth_papel ?? row.papel ?? 'operador',
 });
 
+const mapCoberturaLog = (row: any) => ({
+  id: row.id,
+  cidade_id: row.cidade_id,
+  cidade_nome: row.cidade_nome ?? row.NM_CIDADE ?? null,
+  cidade_uf: row.cidade_uf ?? row.UF_MUNICIPIO ?? null,
+  cooperativa_origem: row.cooperativa_origem ?? null,
+  cooperativa_origem_nome: row.cooperativa_origem_nome ?? null,
+  cooperativa_destino: row.cooperativa_destino ?? null,
+  cooperativa_destino_nome: row.cooperativa_destino_nome ?? null,
+  usuario_email: row.usuario_email ?? '',
+  usuario_nome: row.usuario_nome ?? '',
+  usuario_papel: row.usuario_papel ?? '',
+  detalhes: row.detalhes ?? null,
+  timestamp: row.timestamp ?? null,
+});
+
 const computeDiasRestantes = (prazoIso: string) => {
   const prazo = new Date(prazoIso);
   const agora = new Date();
@@ -147,6 +163,36 @@ const ensureAuditoriaSchema = () => {
 };
 
 ensureAuditoriaSchema();
+
+const ensureCoberturaSchema = () => {
+  try {
+    db.query(`CREATE TABLE IF NOT EXISTS ${TBL('cobertura_logs')} (
+      id TEXT PRIMARY KEY,
+      cidade_id TEXT NOT NULL,
+      cooperativa_origem TEXT,
+      cooperativa_destino TEXT,
+      usuario_email TEXT,
+      usuario_nome TEXT,
+      usuario_papel TEXT,
+      detalhes TEXT,
+      timestamp TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+    )`);
+  } catch (e) {
+    console.warn('[schema] criacao de cobertura_logs falhou:', e);
+  }
+
+  try { db.query(`CREATE INDEX IF NOT EXISTS idx_${TBL('cobertura_logs').replace('.', '_')}_cidade ON ${TBL('cobertura_logs')}(cidade_id)`); } catch (e) {
+    console.warn('[schema] indice cobertura cidade falhou:', e);
+  }
+  try { db.query(`CREATE INDEX IF NOT EXISTS idx_${TBL('cobertura_logs').replace('.', '_')}_origem ON ${TBL('cobertura_logs')}(cooperativa_origem)`); } catch (e) {
+    console.warn('[schema] indice cobertura origem falhou:', e);
+  }
+  try { db.query(`CREATE INDEX IF NOT EXISTS idx_${TBL('cobertura_logs').replace('.', '_')}_destino ON ${TBL('cobertura_logs')}(cooperativa_destino)`); } catch (e) {
+    console.warn('[schema] indice cobertura destino falhou:', e);
+  }
+};
+
+ensureCoberturaSchema();
 
 const getCooperativaInfo = (id?: string | null) => {
   if (!id) return null;
@@ -202,6 +248,73 @@ const isCooperativaVisible = (userData: any, cooperativaId: string) => {
   const visible = getVisibleCooperativas(userData);
   if (visible === null) return true;
   return visible.has(cooperativaId);
+};
+
+type CoberturaScope = {
+  level: 'none' | 'singular' | 'federacao' | 'confederacao';
+  manageable: Set<string> | null;
+};
+
+const resolveCoberturaScope = (userData: any): CoberturaScope => {
+  if (!userData) return { level: 'none', manageable: new Set() };
+  if (INSECURE_MODE) return { level: 'confederacao', manageable: null };
+
+  const papel = (userData.papel || '').toLowerCase();
+  const cooperativaInfo = getCooperativaInfo(userData.cooperativa_id);
+  const tipo = cooperativaInfo?.tipo;
+
+  if (papel === 'confederacao' || tipo === 'CONFEDERACAO') {
+    return { level: 'confederacao', manageable: null };
+  }
+
+  if (papel === 'federacao' || tipo === 'FEDERAÇÃO') {
+    const ids = collectSingularesDaFederacao(userData.cooperativa_id);
+    return { level: 'federacao', manageable: new Set(ids.filter(Boolean)) };
+  }
+
+  if (papel === 'admin' && tipo === 'SINGULAR' && userData.cooperativa_id) {
+    return { level: 'singular', manageable: new Set([userData.cooperativa_id]) };
+  }
+
+  return { level: 'none', manageable: new Set() };
+};
+
+const canManageCobertura = (scope: CoberturaScope, cooperativaId: string) => {
+  if (scope.level === 'confederacao') return true;
+  if (scope.level === 'none') return false;
+  return scope.manageable?.has(cooperativaId) ?? false;
+};
+
+const safeRandomId = (prefix: string) => {
+  try {
+    if (typeof crypto?.randomUUID === 'function') {
+      return `${prefix}_${crypto.randomUUID()}`;
+    }
+  } catch {}
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const registrarLogCobertura = (
+  cidadeId: string,
+  origem: string | null,
+  destino: string | null,
+  userData: { email?: string; nome?: string; display_name?: string; papel?: string },
+  detalhes?: string,
+) => {
+  try {
+    const id = safeRandomId('cov');
+    const email = userData.email || '';
+    const nome = userData.nome || userData.display_name || email;
+    const papel = userData.papel || '';
+    const timestamp = new Date().toISOString();
+    db.query(
+      `INSERT INTO ${TBL('cobertura_logs')} (id, cidade_id, cooperativa_origem, cooperativa_destino, usuario_email, usuario_nome, usuario_papel, detalhes, timestamp)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      [id, cidadeId, origem, destino, email, nome, papel, detalhes ?? null, timestamp],
+    );
+  } catch (e) {
+    console.warn('[cobertura] falha ao registrar log:', e);
+  }
 };
 
 const ensureOperatorRecord = (user: {
@@ -679,6 +792,173 @@ app.get('/cooperativas', requireAuth, async (c) => {
   } catch (error) {
     console.error('Erro ao buscar cooperativas:', error);
     return c.json({ error: 'Erro ao buscar cooperativas' }, 500);
+  }
+});
+
+app.get('/cooperativas/:id/cobertura/historico', requireAuth, async (c) => {
+  try {
+    const cooperativaId = c.req.param('id');
+    const authUser = c.get('user');
+    const userData = await getUserData(authUser.id, authUser.email);
+
+    if (!userData) {
+      return c.json({ error: 'Usuário não autenticado' }, 401);
+    }
+
+    if (!isCooperativaVisible(userData, cooperativaId) && resolveCoberturaScope(userData).level === 'none') {
+      return c.json({ error: 'Acesso negado' }, 403);
+    }
+
+    const limitParam = Number(c.req.query('limit') || '200');
+    const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 500) : 200;
+
+    const rows = db.queryEntries<any>(
+      `SELECT l.*, ci.NM_CIDADE AS cidade_nome, ci.UF_MUNICIPIO AS cidade_uf,
+              co.UNIODONTO AS cooperativa_origem_nome,
+              cd.UNIODONTO AS cooperativa_destino_nome
+         FROM ${TBL('cobertura_logs')} l
+    LEFT JOIN ${TBL('cidades')} ci ON ci.CD_MUNICIPIO_7 = l.cidade_id
+    LEFT JOIN ${TBL('cooperativas')} co ON co.id_singular = l.cooperativa_origem
+    LEFT JOIN ${TBL('cooperativas')} cd ON cd.id_singular = l.cooperativa_destino
+        WHERE l.cooperativa_origem = ? OR l.cooperativa_destino = ?
+        ORDER BY datetime(l.timestamp) DESC
+        LIMIT ?`,
+      [cooperativaId, cooperativaId, limit] as any,
+    ) || [];
+
+    const mapped = rows.map(mapCoberturaLog);
+    return c.json({ logs: mapped });
+  } catch (error) {
+    console.error('Erro ao buscar histórico de cobertura:', error);
+    return c.json({ error: 'Erro ao buscar histórico de cobertura' }, 500);
+  }
+});
+
+app.put('/cooperativas/:id/cobertura', requireAuth, async (c) => {
+  try {
+    const cooperativaId = c.req.param('id');
+    const authUser = c.get('user');
+    const userData = await getUserData(authUser.id, authUser.email);
+
+    if (!userData) {
+      return c.json({ error: 'Usuário não autenticado' }, 401);
+    }
+
+    const scope = resolveCoberturaScope(userData);
+    if (!canManageCobertura(scope, cooperativaId)) {
+      return c.json({ error: 'Acesso negado para gerenciar cobertura desta cooperativa' }, 403);
+    }
+
+    let body: any;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'JSON inválido' }, 400);
+    }
+
+    if (!body || !Array.isArray(body.cidade_ids)) {
+      return c.json({ error: 'Envie cidade_ids como array' }, 400);
+    }
+
+    const cidadeIds = Array.from(new Set(
+      body.cidade_ids
+        .map((id: any) => (typeof id === 'number' ? id.toString() : (id || '').toString().trim()))
+        .filter((id: string) => id.length > 0),
+    ));
+
+    const currentRows = db.queryEntries<any>(
+      `SELECT CD_MUNICIPIO_7 FROM ${TBL('cidades')} WHERE ID_SINGULAR = ?`,
+      [cooperativaId],
+    ) || [];
+    const currentSet = new Set(currentRows.map((row) => row.CD_MUNICIPIO_7));
+    const desiredSet = new Set(cidadeIds);
+
+    const toAssign = cidadeIds.filter((id) => !currentSet.has(id));
+    const toRemove = Array.from(currentSet).filter((id) => !desiredSet.has(id));
+
+    if (!toAssign.length && !toRemove.length) {
+      return c.json({ message: 'Nenhuma alteração necessária', updated: [] });
+    }
+
+    const manageableSet = scope.manageable;
+    const invalid: string[] = [];
+    const additions: Array<{ cidadeId: string; origem: string | null }> = [];
+    const missing: string[] = [];
+
+    if (toAssign.length) {
+      const placeholders = toAssign.map(() => '?').join(',');
+      const rows = db.queryEntries<any>(
+        `SELECT CD_MUNICIPIO_7, ID_SINGULAR FROM ${TBL('cidades')} WHERE CD_MUNICIPIO_7 IN (${placeholders})`,
+        toAssign as any,
+      ) || [];
+      const info = new Map(rows.map((row) => [row.CD_MUNICIPIO_7, row.ID_SINGULAR ?? null]));
+
+      for (const cidadeId of toAssign) {
+        if (!info.has(cidadeId)) {
+          missing.push(cidadeId);
+          continue;
+        }
+        const atual = info.get(cidadeId) || null;
+        if (scope.level === 'singular' && atual && atual !== cooperativaId) {
+          invalid.push(cidadeId);
+          continue;
+        }
+        if (scope.level === 'federacao' && atual && manageableSet && !manageableSet.has(atual)) {
+          invalid.push(cidadeId);
+          continue;
+        }
+        additions.push({ cidadeId, origem: atual });
+      }
+    }
+
+    if (missing.length) {
+      return c.json({ error: 'Algumas cidades não foram encontradas', cidades: missing }, 404);
+    }
+
+    if (invalid.length) {
+      return c.json({ error: 'Cidades já atribuídas a cooperativas fora do seu alcance', cidades: invalid }, 409);
+    }
+
+    const removals = toRemove.map((cidadeId) => ({ cidadeId }));
+    const alteredIds = new Set<string>();
+
+    try {
+      db.execute('BEGIN');
+
+      for (const addition of additions) {
+        db.query(`UPDATE ${TBL('cidades')} SET id_singular = ? WHERE CD_MUNICIPIO_7 = ?`, [cooperativaId, addition.cidadeId]);
+        registrarLogCobertura(addition.cidadeId, addition.origem, cooperativaId, userData, 'assign');
+        alteredIds.add(addition.cidadeId);
+      }
+
+      for (const removal of removals) {
+        db.query(`UPDATE ${TBL('cidades')} SET id_singular = NULL WHERE CD_MUNICIPIO_7 = ? AND id_singular = ?`, [removal.cidadeId, cooperativaId]);
+        registrarLogCobertura(removal.cidadeId, cooperativaId, null, userData, 'unassign');
+        alteredIds.add(removal.cidadeId);
+      }
+
+      db.execute('COMMIT');
+    } catch (e) {
+      try { db.execute('ROLLBACK'); } catch {}
+      console.error('Erro ao atualizar cobertura:', e);
+      return c.json({ error: 'Erro ao atualizar cobertura' }, 500);
+    }
+
+    const changedIds = Array.from(alteredIds);
+    let updated: any[] = [];
+    if (changedIds.length) {
+      const placeholders = changedIds.map(() => '?').join(',');
+      const rows = db.queryEntries<any>(
+        `SELECT * FROM ${TBL('cidades')} WHERE CD_MUNICIPIO_7 IN (${placeholders})`,
+        changedIds as any,
+      ) || [];
+      updated = rows.map(mapCidade);
+    }
+
+    return c.json({ message: 'Cobertura atualizada com sucesso', updated });
+  } catch (error) {
+    console.error('Erro ao atualizar cobertura:', error);
+    return c.json({ error: 'Erro ao atualizar cobertura' }, 500);
   }
 });
 

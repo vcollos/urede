@@ -98,3 +98,19 @@ export interface DashboardStats {
   pedidos_concluidos: number;
   sla_cumprido: number;
 }
+
+export interface CoberturaLog {
+  id: string;
+  cidade_id: string;
+  cidade_nome: string | null;
+  cidade_uf: string | null;
+  cooperativa_origem: string | null;
+  cooperativa_origem_nome: string | null;
+  cooperativa_destino: string | null;
+  cooperativa_destino_nome: string | null;
+  usuario_email: string;
+  usuario_nome: string;
+  usuario_papel: string;
+  detalhes?: string | null;
+  timestamp: string;
+}

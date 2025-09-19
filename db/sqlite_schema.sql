@@ -97,6 +97,23 @@ CREATE TABLE IF NOT EXISTS auth_users (
   data_cadastro TEXT DEFAULT (CURRENT_TIMESTAMP)
 );
 
+-- Logs de cobertura de cidades por cooperativa
+CREATE TABLE IF NOT EXISTS urede_cobertura_logs (
+  id TEXT PRIMARY KEY,
+  cidade_id TEXT NOT NULL,
+  cooperativa_origem TEXT,
+  cooperativa_destino TEXT,
+  usuario_email TEXT,
+  usuario_nome TEXT,
+  usuario_papel TEXT,
+  detalhes TEXT,
+  timestamp TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cobertura_logs_cidade ON urede_cobertura_logs(cidade_id);
+CREATE INDEX IF NOT EXISTS idx_cobertura_logs_origem ON urede_cobertura_logs(cooperativa_origem);
+CREATE INDEX IF NOT EXISTS idx_cobertura_logs_destino ON urede_cobertura_logs(cooperativa_destino);
+
 -- urede_auditoria_logs (auditoria local)
 CREATE TABLE IF NOT EXISTS urede_auditoria_logs (
   id TEXT PRIMARY KEY,
