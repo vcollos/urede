@@ -22,9 +22,12 @@ import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/apiService';
 import { Operador, Cooperativa } from '../types';
 
-interface OperadoresListaProps {}
+interface OperadoresListaProps {
+  onRequestEdit?: (operador: Operador) => void;
+  onEditOperador?: (operador: Operador) => void;
+}
 
-export function OperadoresLista(_props: OperadoresListaProps = {}) {
+export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresListaProps = {}) {
   const { user, isAuthenticated } = useAuth();
   const [operadores, setOperadores] = useState<Operador[]>([]);
   const [cooperativas, setCooperativas] = useState<Cooperativa[]>([]);
@@ -477,7 +480,12 @@ export function OperadoresLista(_props: OperadoresListaProps = {}) {
         </CardContent>
       </Card>
 
-      <Dialog open={isEditOpen} onOpenChange={(open) => (open ? setIsEditOpen(true) : handleCloseEdit())}>
+      <Dialog
+        open={isEditOpen}
+        onOpenChange={(open) => {
+          if (!open) handleCloseEdit();
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Editar operador</DialogTitle>
@@ -581,7 +589,12 @@ export function OperadoresLista(_props: OperadoresListaProps = {}) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isCreateOpen} onOpenChange={(open) => (open ? setIsCreateOpen(true) : handleCloseCreate())}>
+      <Dialog
+        open={isCreateOpen}
+        onOpenChange={(open) => {
+          if (!open) handleCloseCreate();
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Novo operador</DialogTitle>
