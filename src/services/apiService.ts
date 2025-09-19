@@ -35,6 +35,37 @@ class ApiService {
     return await apiRequest('/operadores');
   }
 
+  async createOperador(data: {
+    nome: string;
+    email: string;
+    cargo?: string;
+    telefone?: string;
+    whatsapp?: string;
+    id_singular: string;
+  }): Promise<Operador> {
+    try {
+      return await apiRequest('/operadores', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    } catch (error) {
+      console.error('Erro ao criar operador:', error);
+      throw error;
+    }
+  }
+
+  async updateOperador(operadorId: string, updateData: Partial<Operador>): Promise<Operador> {
+    try {
+      return await apiRequest(`/operadores/${operadorId}`, {
+        method: 'PUT',
+        body: JSON.stringify(updateData),
+      });
+    } catch (error) {
+      console.error('Erro ao atualizar operador:', error);
+      throw error;
+    }
+  }
+
   // PEDIDOS
   async getPedidos(): Promise<Pedido[]> {
     return await apiRequest('/pedidos');

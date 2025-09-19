@@ -94,6 +94,7 @@ const mapOperador = (row: any) => ({
   id_singular: row.id_singular ?? '',
   ativo: (row.status ?? true) as boolean,
   data_cadastro: row.created_at ?? new Date().toISOString(),
+  papel: row.auth_papel ?? row.papel ?? 'operador',
 });
 
 const computeDiasRestantes = (prazoIso: string) => {
@@ -146,6 +147,104 @@ const ensureAuditoriaSchema = () => {
 };
 
 ensureAuditoriaSchema();
+
+const getCooperativaInfo = (id?: string | null) => {
+  if (!id) return null;
+  try {
+    const row = db.queryEntries<any>(`SELECT * FROM ${TBL('cooperativas')} WHERE id_singular = ? LIMIT 1`, [id])[0];
+    return row ? mapCooperativa(row) : null;
+  } catch (e) {
+    console.warn('[cooperativas] falha ao buscar cooperativa:', e);
+    return null;
+  }
+};
+
+const collectSingularesDaFederacao = (federacaoId?: string | null) => {
+  if (!federacaoId) return [] as string[];
+  try {
+    const federacaoInfo = getCooperativaInfo(federacaoId);
+    if (!federacaoInfo) return [federacaoId];
+    if (federacaoInfo.tipo === 'CONFEDERACAO') {
+      const todas = db.queryEntries<any>(`SELECT id_singular FROM ${TBL('cooperativas')}`) || [];
+      return todas.map((row) => row.id_singular).filter(Boolean);
+    }
+    const nomeFederacao = federacaoInfo.uniodonto;
+    if (!nomeFederacao) return [federacaoId];
+    const singulares = db.queryEntries<any>(`SELECT id_singular FROM ${TBL('cooperativas')} WHERE FEDERACAO = ?`, [nomeFederacao]) || [];
+    const ids = singulares.map((row) => row.id_singular).filter(Boolean);
+    ids.push(federacaoId);
+    return Array.from(new Set(ids));
+  } catch (e) {
+    console.warn('[cooperativas] falha ao coletar singulares da federacao:', e);
+    return [federacaoId];
+  }
+};
+
+const getVisibleCooperativas = (userData: any): Set<string> | null => {
+  if (!userData) return new Set();
+  if (userData.papel === 'confederacao') return null;
+
+  const cooperativaInfo = getCooperativaInfo(userData.cooperativa_id);
+  const tipo = cooperativaInfo?.tipo;
+
+  if (tipo === 'CONFEDERACAO') return null;
+
+  if (tipo === 'FEDERAÇÃO' || userData.papel === 'federacao') {
+    const ids = collectSingularesDaFederacao(userData.cooperativa_id);
+    return new Set(ids);
+  }
+
+  const id = userData.cooperativa_id ? [userData.cooperativa_id] : [];
+  return new Set(id);
+};
+
+const isCooperativaVisible = (userData: any, cooperativaId: string) => {
+  const visible = getVisibleCooperativas(userData);
+  if (visible === null) return true;
+  return visible.has(cooperativaId);
+};
+
+const ensureOperatorRecord = (user: {
+  id: string;
+  nome: string;
+  display_name?: string;
+  email: string;
+  telefone?: string;
+  whatsapp?: string;
+  cargo?: string;
+  cooperativa_id?: string;
+}) => {
+  if (!user?.email || !user.cooperativa_id) return;
+  try {
+    const existing = db.queryEntries<any>(`SELECT id FROM ${TBL('operadores')} WHERE email = ? LIMIT 1`, [user.email])[0];
+    if (existing) return;
+    const now = new Date().toISOString();
+    db.query(
+      `INSERT INTO ${TBL('operadores')} (nome, id_singular, email, telefone, whatsapp, cargo, status, created_at)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [
+        user.display_name || user.nome || user.email,
+        user.cooperativa_id,
+        user.email,
+        user.telefone || '',
+        user.whatsapp || '',
+        user.cargo || '',
+        1,
+        now,
+      ]
+    );
+    try {
+      db.query(
+        `UPDATE auth_users SET cooperativa_id = COALESCE(?, cooperativa_id), papel = COALESCE(papel, ?) WHERE email = ?`,
+        [user.cooperativa_id, user.papel || 'operador', user.email],
+      );
+    } catch (e) {
+      console.warn('[operadores] não foi possível sincronizar papel/cooperativa em auth_users:', e);
+    }
+  } catch (e) {
+    console.warn('[operadores] não foi possível inserir registro automático:', e);
+  }
+};
 
 const enrichPedidos = async (pedidos: any[]) => {
   if (!pedidos || pedidos.length === 0) return [] as any[];
@@ -267,7 +366,7 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
             cargo: string | null; cooperativa_id: string | null; papel: string | null; ativo: number | null; data_cadastro: string | null;
           }>(`SELECT email, nome, COALESCE(display_name, nome) as display_name, telefone, whatsapp, cargo, cooperativa_id, papel, COALESCE(ativo,1) as ativo, COALESCE(data_cadastro, CURRENT_TIMESTAMP) as data_cadastro FROM auth_users WHERE email = ?`, [userEmail])[0];
           if (row) {
-            return {
+            const user = {
               id: userEmail,
               nome: row.nome || 'Usuário',
               display_name: row.display_name || 'Usuário',
@@ -280,6 +379,8 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
               ativo: !!row.ativo,
               data_cadastro: row.data_cadastro,
             } as any;
+            ensureOperatorRecord(user);
+            return user;
           }
         }
       } catch (e) {
@@ -292,12 +393,23 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
       const byEmail = db.queryEntries(`SELECT * FROM ${TBL('operadores')} WHERE email = ? LIMIT 1`, [userEmail])[0];
       if (byEmail) {
         const o = mapOperador(byEmail);
-        return { ...o, cooperativa_id: o.id_singular, papel: 'operador' } as any;
+        const user = { ...o, cooperativa_id: o.id_singular, papel: 'operador' } as any;
+        ensureOperatorRecord({
+          id: user.id,
+          nome: user.nome,
+          display_name: user.nome,
+          email: user.email,
+          telefone: user.telefone,
+          whatsapp: user.whatsapp,
+          cargo: user.cargo,
+          cooperativa_id: user.cooperativa_id,
+        });
+        return user;
       }
     }
 
     // Fallback básico
-    return {
+    const fallback = {
       id: userId,
       nome: 'Usuário',
       display_name: 'Usuário',
@@ -310,6 +422,8 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
       ativo: true,
       data_cadastro: new Date().toISOString(),
     };
+    ensureOperatorRecord(fallback as any);
+    return fallback;
   } catch (error) {
     console.error('Erro ao obter dados do usuário:', error);
     return null;
@@ -595,7 +709,30 @@ app.get('/cidades/public', async (c) => {
 // ROTAS DE OPERADORES
 app.get('/operadores', requireAuth, async (c) => {
   try {
-    const rows = db.queryEntries(`SELECT * FROM ${TBL('operadores')}`);
+    const authUser = c.get('user');
+    const userData = await getUserData(authUser.id, authUser.email);
+
+    if (!userData) {
+      return c.json({ error: 'Usuário não autenticado' }, 401);
+    }
+
+    const baseQuery = `SELECT op.*, au.papel AS auth_papel FROM ${TBL('operadores')} op LEFT JOIN auth_users au ON au.email = op.email`;
+    const visible = getVisibleCooperativas(userData);
+    let rows: any[] = [];
+
+    if (visible === null) {
+      rows = db.queryEntries<any>(baseQuery) || [];
+    } else {
+      const ids = Array.from(visible);
+      if (!ids.length) {
+        return c.json([]);
+      }
+      rows = db.queryEntries<any>(
+        `${baseQuery} WHERE op.id_singular IN (${ids.map(() => '?').join(',')})`,
+        ids as any,
+      ) || [];
+    }
+
     const mapped = (rows || []).map(mapOperador);
     return c.json(mapped);
   } catch (error) {
@@ -604,10 +741,86 @@ app.get('/operadores', requireAuth, async (c) => {
   }
 });
 
+app.post('/operadores', requireAuth, async (c) => {
+  try {
+    const authUser = c.get('user');
+    const userData = await getUserData(authUser.id, authUser.email);
+    if (!userData) {
+      return c.json({ error: 'Usuário não autenticado' }, 401);
+    }
+
+    const cooperativaInfo = getCooperativaInfo(userData.cooperativa_id);
+    const tipoCooperativa = cooperativaInfo?.tipo;
+    const isConfAdmin = userData.papel === 'confederacao' || (userData.papel === 'admin' && tipoCooperativa === 'CONFEDERACAO');
+    const isFederacaoAdmin = userData.papel === 'federacao' || (userData.papel === 'admin' && tipoCooperativa === 'FEDERAÇÃO');
+    const isSingularAdmin = userData.papel === 'admin' && tipoCooperativa === 'SINGULAR';
+
+    if (!(isConfAdmin || isFederacaoAdmin || isSingularAdmin)) {
+      return c.json({ error: 'Acesso negado para criar operadores' }, 403);
+    }
+
+    const body = await c.req.json();
+    const nome = (body.nome || '').trim();
+    const emailRaw = (body.email || '').trim();
+    const email = emailRaw.toLowerCase();
+    const cargo = (body.cargo || '').trim();
+    const telefone = (body.telefone || '').trim();
+    const whatsapp = (body.whatsapp || '').trim();
+    let idSingular = (body.id_singular || body.cooperativa_id || userData.cooperativa_id || '').trim();
+
+    if (!nome || !email) {
+      return c.json({ error: 'Nome e email são obrigatórios' }, 400);
+    }
+
+    if (!idSingular) {
+      return c.json({ error: 'Cooperativa não informada' }, 400);
+    }
+
+    if (!isCooperativaVisible(userData, idSingular)) {
+      return c.json({ error: 'Acesso negado para cadastrar nesta cooperativa' }, 403);
+    }
+
+    const existing = db.queryEntries<any>(`SELECT id FROM ${TBL('operadores')} WHERE email = ? LIMIT 1`, [email])[0];
+    if (existing) {
+      return c.json({ error: 'Operador já cadastrado' }, 409);
+    }
+
+    const now = new Date().toISOString();
+    try {
+      db.query(
+        `INSERT INTO ${TBL('operadores')} (nome, id_singular, email, telefone, whatsapp, cargo, status, created_at)
+         VALUES (?,?,?,?,?,?,?,?)`,
+        [nome, idSingular, email, telefone, whatsapp, cargo, 1, now],
+      );
+    } catch (e) {
+      console.error('Erro ao inserir operador:', e);
+      return c.json({ error: 'Erro ao criar operador' }, 500);
+    }
+
+    try {
+      db.query(
+        `UPDATE auth_users SET cooperativa_id = COALESCE(?, cooperativa_id), papel = COALESCE(papel, 'operador') WHERE email = ?`,
+        [idSingular, email],
+      );
+    } catch (e) {
+      console.warn('[operadores] sincronização com auth_users falhou:', e);
+    }
+
+    const inserted = db.queryEntries<any>(
+      `SELECT op.*, au.papel AS auth_papel FROM ${TBL('operadores')} op LEFT JOIN auth_users au ON au.email = op.email WHERE op.email = ? LIMIT 1`,
+      [email],
+    )[0];
+    return c.json(mapOperador(inserted));
+  } catch (error) {
+    console.error('Erro ao criar operador:', error);
+    return c.json({ error: 'Erro ao criar operador' }, 500);
+  }
+});
+
 // ROTA PÚBLICA DE OPERADORES (campos restritos, sem contatos)
 app.get('/operadores/public', async (c) => {
   try {
-    const rows = db.queryEntries(`SELECT id, nome, cargo, id_singular, status, created_at FROM ${TBL('operadores')}`);
+    const rows = db.queryEntries(`SELECT op.*, au.papel AS auth_papel FROM ${TBL('operadores')} op LEFT JOIN auth_users au ON au.email = op.email`);
     const mapped = (rows || []).map(mapOperador).map(o => ({
       id: o.id,
       nome: o.nome,
@@ -615,11 +828,116 @@ app.get('/operadores/public', async (c) => {
       id_singular: o.id_singular,
       ativo: o.ativo,
       data_cadastro: o.data_cadastro,
+      papel: o.papel,
     }));
     return c.json(mapped);
   } catch (error) {
     console.error('Erro ao buscar operadores públicos:', error);
     return c.json({ error: 'Erro ao buscar operadores' }, 500);
+  }
+});
+
+app.put('/operadores/:id', requireAuth, async (c) => {
+  try {
+    const operadorId = c.req.param('id');
+    const authUser = c.get('user');
+    const userData = await getUserData(authUser.id, authUser.email);
+
+    if (!userData) {
+      return c.json({ error: 'Usuário não autenticado' }, 401);
+    }
+
+    const row = db.queryEntries<any>(`SELECT * FROM ${TBL('operadores')} WHERE id = ? LIMIT 1`, [operadorId])[0];
+    if (!row) {
+      return c.json({ error: 'Operador não encontrado' }, 404);
+    }
+
+    const operador = mapOperador(row);
+    const isSelf = operador.email === userData.email;
+    const visible = isCooperativaVisible(userData, operador.id_singular);
+    const cooperativaInfo = getCooperativaInfo(userData.cooperativa_id);
+    const tipoCooperativa = cooperativaInfo?.tipo;
+
+    const isConfAdmin = userData.papel === 'confederacao' || (userData.papel === 'admin' && tipoCooperativa === 'CONFEDERACAO');
+    const isFederacaoAdmin = (userData.papel === 'admin' && tipoCooperativa === 'FEDERAÇÃO') || userData.papel === 'federacao';
+    const isSingularAdmin = (userData.papel === 'admin' && tipoCooperativa === 'SINGULAR');
+
+    const canEdit =
+      isSelf ||
+      isConfAdmin ||
+      (isFederacaoAdmin && visible) ||
+      (isSingularAdmin && operador.id_singular === userData.cooperativa_id);
+
+    if (!canEdit) {
+      return c.json({ error: 'Acesso negado para editar este operador' }, 403);
+    }
+
+    const body = await c.req.json();
+    const allowed: Record<string, any> = {};
+    const whitelist = ['nome', 'telefone', 'whatsapp', 'cargo', 'ativo'];
+    const canEditRole = isConfAdmin || userData.papel === 'admin';
+    if (canEditRole) {
+      whitelist.push('papel');
+    }
+
+    for (const key of whitelist) {
+      if (key in body) {
+        allowed[key] = body[key];
+      }
+    }
+
+    if ('ativo' in allowed) {
+      allowed.status = allowed.ativo ? 1 : 0;
+      delete allowed.ativo;
+    }
+
+    if ('nome' in allowed && typeof allowed.nome === 'string') {
+      allowed.nome = allowed.nome.trim();
+    }
+    if ('cargo' in allowed && typeof allowed.cargo === 'string') {
+      allowed.cargo = allowed.cargo.trim();
+    }
+    if ('telefone' in allowed && typeof allowed.telefone === 'string') {
+      allowed.telefone = allowed.telefone.trim();
+    }
+    if ('whatsapp' in allowed && typeof allowed.whatsapp === 'string') {
+      allowed.whatsapp = allowed.whatsapp.trim();
+    }
+    if ('papel' in allowed && !canEditRole) {
+      delete allowed.papel;
+    }
+
+    if (Object.keys(allowed).length === 0) {
+      const refreshed = mapOperador(db.queryEntries<any>(`SELECT * FROM ${TBL('operadores')} WHERE id = ? LIMIT 1`, [operadorId])[0]);
+      return c.json(refreshed);
+    }
+
+    try {
+      const cols = Object.keys(allowed).filter((c) => c !== 'papel');
+      if (cols.length > 0) {
+        const placeholders = cols.map((c) => `${c} = ?`).join(', ');
+        const values = cols.map((c) => (allowed as any)[c]);
+        db.query(`UPDATE ${TBL('operadores')} SET ${placeholders} WHERE id = ?`, [...values, operadorId]);
+      }
+    } catch (e) {
+      console.error('Erro ao atualizar operador:', e);
+      return c.json({ error: 'Erro ao atualizar operador' }, 500);
+    }
+
+    if (allowed.papel) {
+      try {
+        db.query(`UPDATE auth_users SET papel = ? WHERE email = ?`, [allowed.papel, operador.email]);
+      } catch (e) {
+        console.warn('[operadores] não foi possível atualizar papel em auth_users:', e);
+      }
+    }
+
+    const updatedRow = db.queryEntries<any>(`SELECT * FROM ${TBL('operadores')} WHERE id = ? LIMIT 1`, [operadorId])[0];
+    const updatedOperador = mapOperador(updatedRow);
+    return c.json(updatedOperador);
+  } catch (error) {
+    console.error('Erro ao atualizar operador:', error);
+    return c.json({ error: 'Erro ao atualizar operador' }, 500);
   }
 });
 

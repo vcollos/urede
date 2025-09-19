@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -6,27 +6,25 @@ import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Avatar, AvatarFallback } from './ui/avatar';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
+import { Label } from './ui/label';
+import { Switch } from './ui/switch';
 import { 
   Search, 
   Plus, 
   Phone,
   MessageSquare,
-  Mail,
   Building,
   User,
   Edit,
-  MoreHorizontal
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/apiService';
 import { Operador, Cooperativa } from '../types';
 
-interface OperadoresListaProps {
-  onCreateOperador?: () => void;
-  onEditOperador?: (operador: Operador) => void;
-}
+interface OperadoresListaProps {}
 
-export function OperadoresLista({ onCreateOperador, onEditOperador }: OperadoresListaProps) {
+export function OperadoresLista(_props: OperadoresListaProps = {}) {
   const { user, isAuthenticated } = useAuth();
   const [operadores, setOperadores] = useState<Operador[]>([]);
   const [cooperativas, setCooperativas] = useState<Cooperativa[]>([]);
@@ -35,6 +33,29 @@ export function OperadoresLista({ onCreateOperador, onEditOperador }: Operadores
   const [statusFilter, setStatusFilter] = useState('todos');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingOperador, setEditingOperador] = useState<Operador | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [editForm, setEditForm] = useState({
+    nome: '',
+    cargo: '',
+    telefone: '',
+    whatsapp: '',
+    ativo: true,
+    papel: 'operador' as Operador['papel'],
+  });
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [createForm, setCreateForm] = useState({
+    nome: '',
+    email: '',
+    cargo: '',
+    telefone: '',
+    whatsapp: '',
+    id_singular: '',
+  });
 
   // Carregar dados
   useEffect(() => {
@@ -68,7 +89,8 @@ export function OperadoresLista({ onCreateOperador, onEditOperador }: Operadores
       operadoresFiltrados = operadoresFiltrados.filter(op => 
         (op.nome || '').toLowerCase().includes(q) ||
         (op.email || '').toLowerCase().includes(q) ||
-        (op.cargo || '').toLowerCase().includes(q)
+        (op.cargo || '').toLowerCase().includes(q) ||
+        (op.papel || '').toLowerCase().includes(q)
       );
     }
 
@@ -97,6 +119,147 @@ export function OperadoresLista({ onCreateOperador, onEditOperador }: Operadores
 
   const formatPhone = (phone: string) => {
     return phone || 'N/A';
+  };
+
+  const currentCooperativa = cooperativas.find((c) => c.id_singular === user?.cooperativa_id);
+  const isConfUser = !!user && (user.papel === 'confederacao' || currentCooperativa?.tipo === 'CONFEDERACAO');
+  const isFederacaoUser = !!user && (user.papel === 'federacao' || currentCooperativa?.tipo === 'FEDERAÇÃO');
+  const canCreate = !!user && (user.papel === 'admin' || isConfUser || isFederacaoUser);
+  const canManageRoles = !!user && (user.papel === 'admin' || isConfUser);
+
+  const availableCooperativas = (() => {
+    if (!user) return cooperativas;
+    if (isConfUser) return cooperativas;
+    if (isFederacaoUser && currentCooperativa) {
+      return cooperativas.filter(
+        (c) => c.id_singular === currentCooperativa.id_singular || c.federacao === currentCooperativa.uniodonto
+      );
+    }
+    if (currentCooperativa) {
+      return cooperativas.filter((c) => c.id_singular === currentCooperativa.id_singular);
+    }
+    return cooperativas;
+  })();
+
+  const roleOptions = [
+    { value: 'operador', label: 'Operador' },
+    { value: 'admin', label: 'Administrador' },
+  ];
+  if (isConfUser) {
+    roleOptions.push({ value: 'federacao', label: 'Federação' }, { value: 'confederacao', label: 'Confederação' });
+  } else if (isFederacaoUser) {
+    roleOptions.push({ value: 'federacao', label: 'Federação' });
+  }
+
+  const handleOpenEdit = (operador: Operador) => {
+    setEditingOperador(operador);
+    setEditForm({
+      nome: operador.nome,
+      cargo: operador.cargo,
+      telefone: operador.telefone || '',
+      whatsapp: operador.whatsapp || '',
+      ativo: operador.ativo,
+      papel: operador.papel || 'operador',
+    });
+    setSaveError('');
+    setIsEditOpen(true);
+  };
+
+  const handleCloseEdit = () => {
+    if (isSaving) return;
+    setIsEditOpen(false);
+    setEditingOperador(null);
+    setSaveError('');
+  };
+
+  const handleEditSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingOperador) return;
+    setIsSaving(true);
+    setSaveError('');
+
+    try {
+      const payload: any = {
+        nome: editForm.nome.trim(),
+        cargo: editForm.cargo.trim(),
+        telefone: editForm.telefone.trim(),
+        whatsapp: editForm.whatsapp.trim(),
+        ativo: editForm.ativo,
+      };
+
+      if (canManageRoles) {
+        payload.papel = editForm.papel;
+      }
+
+      const updated = await apiService.updateOperador(editingOperador.id, payload);
+      setOperadores((prev) => prev.map((op) => (op.id === updated.id ? updated : op)));
+      setIsEditOpen(false);
+      setEditingOperador(null);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Erro ao atualizar operador');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleOpenCreate = () => {
+    const defaultSingular = user?.cooperativa_id || availableCooperativas[0]?.id_singular || '';
+    setCreateForm({
+      nome: '',
+      email: '',
+      cargo: '',
+      telefone: '',
+      whatsapp: '',
+      id_singular: defaultSingular,
+    });
+    setCreateError('');
+    setIsCreateOpen(true);
+  };
+
+  const handleCloseCreate = () => {
+    if (isCreating) return;
+    setIsCreateOpen(false);
+    setCreateError('');
+    setCreateForm((prev) => ({ ...prev, nome: '', email: '', cargo: '', telefone: '', whatsapp: '' }));
+  };
+
+  const handleCreateSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsCreating(true);
+    setCreateError('');
+
+    try {
+      const payload = {
+        nome: createForm.nome.trim(),
+        email: createForm.email.trim().toLowerCase(),
+        cargo: createForm.cargo.trim(),
+        telefone: createForm.telefone.trim(),
+        whatsapp: createForm.whatsapp.trim(),
+        id_singular: createForm.id_singular,
+      };
+
+      if (!payload.id_singular) {
+        setCreateError('Selecione a cooperativa do operador.');
+        setIsCreating(false);
+        return;
+      }
+
+      const novo = await apiService.createOperador(payload);
+      setOperadores((prev) => [...prev, novo]);
+      setIsCreateOpen(false);
+      setCreateForm({
+        nome: '',
+        email: '',
+        cargo: '',
+        telefone: '',
+        whatsapp: '',
+        id_singular: payload.id_singular,
+      });
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : 'Erro ao criar operador');
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   if (isLoading) {
@@ -136,8 +299,12 @@ export function OperadoresLista({ onCreateOperador, onEditOperador }: Operadores
           <h1 className="text-2xl font-bold text-gray-900">Operadores</h1>
           <p className="text-gray-600">Gerencie os operadores do sistema</p>
         </div>
-        {isAuthenticated && onCreateOperador && (
-          <Button onClick={onCreateOperador} className="bg-blue-600 hover:bg-blue-700">
+        {isAuthenticated && canCreate && (
+          <Button
+            onClick={handleOpenCreate}
+            className="bg-blue-600 hover:bg-blue-700"
+            disabled={availableCooperativas.length === 0}
+          >
             <Plus className="w-4 h-4 mr-2" />
             Novo Operador
           </Button>
@@ -208,6 +375,7 @@ export function OperadoresLista({ onCreateOperador, onEditOperador }: Operadores
                   <TableHead>Operador</TableHead>
                   <TableHead>Cooperativa</TableHead>
                   <TableHead>Cargo</TableHead>
+                  <TableHead>Acesso</TableHead>
                   <TableHead>Contato</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Data Cadastro</TableHead>
@@ -217,7 +385,7 @@ export function OperadoresLista({ onCreateOperador, onEditOperador }: Operadores
               <TableBody>
                 {operadoresFiltrados.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                    <TableCell colSpan={8} className="text-center py-8 text-gray-500">
                       Nenhum operador encontrado
                     </TableCell>
                   </TableRow>
@@ -248,6 +416,11 @@ export function OperadoresLista({ onCreateOperador, onEditOperador }: Operadores
                       <TableCell>
                         <Badge variant="secondary" className="text-xs">
                           {operador.cargo}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs capitalize">
+                          {operador.papel || 'operador'}
                         </Badge>
                       </TableCell>
                       
@@ -285,7 +458,11 @@ export function OperadoresLista({ onCreateOperador, onEditOperador }: Operadores
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => onEditOperador?.(operador)}
+                          onClick={() => {
+                            if (onRequestEdit) return onRequestEdit(operador);
+                            if (onEditOperador) return onEditOperador(operador);
+                            handleOpenEdit(operador);
+                          }}
                           className="w-8 h-8"
                         >
                           <Edit className="w-4 h-4" />
@@ -299,6 +476,206 @@ export function OperadoresLista({ onCreateOperador, onEditOperador }: Operadores
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={isEditOpen} onOpenChange={(open) => (open ? setIsEditOpen(true) : handleCloseEdit())}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar operador</DialogTitle>
+            <DialogDescription>
+              Atualize as informações do operador. Algumas alterações dependem da sua permissão.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditSubmit} className="space-y-4">
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="operador-nome">Nome</Label>
+                <Input
+                  id="operador-nome"
+                  value={editForm.nome}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, nome: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input value={editingOperador?.email || ''} disabled readOnly />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="operador-cargo">Cargo</Label>
+                <Input
+                  id="operador-cargo"
+                  value={editForm.cargo}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, cargo: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="operador-telefone">Telefone</Label>
+                  <Input
+                    id="operador-telefone"
+                    value={editForm.telefone}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, telefone: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="operador-whatsapp">WhatsApp</Label>
+                  <Input
+                    id="operador-whatsapp"
+                    value={editForm.whatsapp}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, whatsapp: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              {canManageRoles ? (
+                <div className="space-y-2">
+                  <Label htmlFor="operador-papel">Tipo de acesso</Label>
+                  <Select
+                    value={editForm.papel || 'operador'}
+                    onValueChange={(value) => setEditForm((prev) => ({ ...prev, papel: value as Operador['papel'] }))}
+                  >
+                    <SelectTrigger id="operador-papel">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {roleOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label>Tipo de acesso</Label>
+                  <Input value={editingOperador?.papel || 'operador'} disabled readOnly />
+                </div>
+              )}
+
+              <div className="flex items-center justify-between rounded-lg border border-gray-200 p-3">
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Operador ativo</p>
+                  <p className="text-xs text-gray-500">Desative para suspender temporariamente o acesso.</p>
+                </div>
+                <Switch
+                  checked={editForm.ativo}
+                  onCheckedChange={(value) => setEditForm((prev) => ({ ...prev, ativo: value }))}
+                />
+              </div>
+            </div>
+
+            {saveError && (
+              <p className="text-sm text-red-600">{saveError}</p>
+            )}
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={handleCloseEdit} disabled={isSaving}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={isSaving}>
+                {isSaving ? 'Salvando...' : 'Salvar alterações'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isCreateOpen} onOpenChange={(open) => (open ? setIsCreateOpen(true) : handleCloseCreate())}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Novo operador</DialogTitle>
+            <DialogDescription>
+              Preencha os campos abaixo para convidar um novo operador para sua cooperativa.
+              O acesso inicial é de operador; níveis superiores podem ser atribuídos posteriormente.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleCreateSubmit} className="space-y-4">
+            <div className="space-y-3">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="novo-nome">Nome</Label>
+                  <Input
+                    id="novo-nome"
+                    value={createForm.nome}
+                    onChange={(e) => setCreateForm((prev) => ({ ...prev, nome: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="novo-email">Email</Label>
+                  <Input
+                    id="novo-email"
+                    type="email"
+                    value={createForm.email}
+                    onChange={(e) => setCreateForm((prev) => ({ ...prev, email: e.target.value }))}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="novo-cargo">Cargo</Label>
+                <Input
+                  id="novo-cargo"
+                  value={createForm.cargo}
+                  onChange={(e) => setCreateForm((prev) => ({ ...prev, cargo: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="novo-telefone">Telefone</Label>
+                  <Input
+                    id="novo-telefone"
+                    value={createForm.telefone}
+                    onChange={(e) => setCreateForm((prev) => ({ ...prev, telefone: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="novo-whatsapp">WhatsApp</Label>
+                  <Input
+                    id="novo-whatsapp"
+                    value={createForm.whatsapp}
+                    onChange={(e) => setCreateForm((prev) => ({ ...prev, whatsapp: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="novo-cooperativa">Cooperativa</Label>
+                <Select
+                  value={createForm.id_singular}
+                  onValueChange={(value) => setCreateForm((prev) => ({ ...prev, id_singular: value }))}
+                  disabled={availableCooperativas.length <= 1}
+                >
+                  <SelectTrigger id="novo-cooperativa">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableCooperativas.map((coop) => (
+                      <SelectItem key={coop.id_singular} value={coop.id_singular}>
+                        {coop.uniodonto}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500">
+                  O operador inicia com acesso padrão. Administradores podem ampliar o nível posteriormente.
+                </p>
+              </div>
+            </div>
+
+            {createError && <p className="text-sm text-red-600">{createError}</p>}
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={handleCloseCreate} disabled={isCreating}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={isCreating}>
+                {isCreating ? 'Cadastrando...' : 'Cadastrar operador'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
