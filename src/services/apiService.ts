@@ -5,7 +5,8 @@ import type {
   Cidade, 
   Operador, 
   AuditoriaLog,
-  DashboardStats 
+  DashboardStats,
+  CoberturaLog
 } from '../types';
 
 class ApiService {
@@ -13,6 +14,20 @@ class ApiService {
   async getCooperativas(): Promise<Cooperativa[]> {
     // rota protegida
     return await apiRequest('/cooperativas');
+  }
+
+  async updateCooperativaCobertura(cooperativaId: string, cidadeIds: string[]): Promise<{ message?: string; updated: Cidade[] }>
+  {
+    return await apiRequest(`/cooperativas/${cooperativaId}/cobertura`, {
+      method: 'PUT',
+      body: JSON.stringify({ cidade_ids: cidadeIds })
+    });
+  }
+
+  async getCooperativaCoberturaHistorico(cooperativaId: string, limit = 200): Promise<CoberturaLog[]>
+  {
+    const result = await apiRequest(`/cooperativas/${cooperativaId}/cobertura/historico?limit=${limit}`);
+    return result?.logs ?? [];
   }
 
   // COOPERATIVAS PÚBLICAS (para registro)
