@@ -49,6 +49,7 @@ export interface Operador {
   id_singular: string;
   ativo: boolean;
   data_cadastro: string;
+  papel?: 'operador' | 'admin' | 'federacao' | 'confederacao';
 }
 
 export interface Pedido {
