@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -63,6 +63,25 @@ export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
 
     loadCidades();
   }, []);
+
+  const cidadeOptions = useMemo(() => {
+    if (!cidades.length) return [] as JSX.Element[];
+    return cidades.map((cidade) => (
+      <SelectItem key={cidade.cd_municipio_7} value={cidade.cd_municipio_7}>
+        {cidade.nm_cidade}, {cidade.uf_municipio} ({cidade.nm_regiao})
+      </SelectItem>
+    ));
+  }, [cidades]);
+
+  const especialidadeOptions = useMemo(() => (
+    especialidades
+      .filter((especialidade) => !formData.especialidades_selecionadas.includes(especialidade))
+      .map((especialidade) => (
+        <SelectItem key={especialidade} value={especialidade}>
+          {especialidade}
+        </SelectItem>
+      ))
+  ), [formData.especialidades_selecionadas]);
 
   const handleAddEspecialidade = () => {
     if (novaEspecialidade && !formData.especialidades_selecionadas.includes(novaEspecialidade)) {
@@ -165,11 +184,7 @@ export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
                     <SelectValue placeholder={isLoading ? "Carregando cidades..." : "Selecione a cidade"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {cidades.map((cidade) => (
-                      <SelectItem key={cidade.cd_municipio_7} value={cidade.cd_municipio_7}>
-                        {cidade.nm_cidade}, {cidade.uf_municipio} ({cidade.nm_regiao})
-                      </SelectItem>
-                    ))}
+                    {cidadeOptions}
                   </SelectContent>
                 </Select>
               </div>
@@ -188,13 +203,7 @@ export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
                       <SelectValue placeholder="Selecione uma especialidade" />
                     </SelectTrigger>
                     <SelectContent>
-                      {especialidades
-                        .filter(e => !formData.especialidades_selecionadas.includes(e))
-                        .map((especialidade) => (
-                          <SelectItem key={especialidade} value={especialidade}>
-                            {especialidade}
-                          </SelectItem>
-                        ))}
+                      {especialidadeOptions}
                     </SelectContent>
                   </Select>
                   <Button 
