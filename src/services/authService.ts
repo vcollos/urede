@@ -83,6 +83,31 @@ class AuthService {
     }
   }
 
+  async updateProfile(data: Partial<Pick<User, 'nome' | 'display_name' | 'telefone' | 'whatsapp' | 'cargo'>>): Promise<User | null> {
+    try {
+      const response = await apiRequest('/auth/me', {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      });
+      return response?.user ?? null;
+    } catch (error) {
+      console.error('Erro ao atualizar perfil:', error);
+      throw error;
+    }
+  }
+
+  async changePassword(data: { current_password?: string; new_password: string }): Promise<void> {
+    try {
+      await apiRequest('/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    } catch (error) {
+      console.error('Erro ao alterar senha:', error);
+      throw error;
+    }
+  }
+
   // Verificar se há sessão ativa
   async getSession() {
     try {

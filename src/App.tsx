@@ -7,10 +7,9 @@ import { PedidosLista } from './components/PedidosLista';
 import { OperadoresLista } from './components/OperadoresLista';
 import { NovoPedidoForm } from './components/NovoPedidoForm';
 import { PedidoDetalhes } from './components/PedidoDetalhes';
-import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card';
-import { Settings } from 'lucide-react';
 import { Pedido } from './types';
 import { CooperativasView } from './components/CooperativasView';
+import { ConfiguracoesView } from './components/ConfiguracoesView';
 
 // Componente interno que usa o AuthContext
 function AppContent() {
@@ -47,29 +46,6 @@ function AppContent() {
     setActiveTab('pedidos');
     setSelectedPedido(null);
   };
-
-  const ConfiguracoesView = () => (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Configurações</h1>
-        <p className="text-gray-600">Configure o sistema</p>
-      </div>
-      
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Settings className="w-5 h-5 mr-2" />
-            Configurações do Sistema
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-gray-600">
-            As configurações do sistema serão implementadas em versões futuras.
-          </p>
-        </CardContent>
-      </Card>
-    </div>
-  );
 
   const renderContent = () => {
     switch (activeTab) {

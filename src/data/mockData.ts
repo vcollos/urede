@@ -64,7 +64,7 @@ export const mockCooperativas: Cooperativa[] = [
     codigo_ans: '305421',
     federacao: 'BRASIL',
     software: 'OBJETIVA',
-    tipo: 'FEDERAÇÃO',
+    tipo: 'FEDERACAO',
     op_pr: 'Operadora'
   },
   {
@@ -77,7 +77,7 @@ export const mockCooperativas: Cooperativa[] = [
     codigo_ans: '344583',
     federacao: 'BRASIL',
     software: 'ODONTOSFERA',
-    tipo: 'FEDERAÇÃO',
+    tipo: 'FEDERACAO',
     op_pr: 'Operadora'
   },
   {
@@ -90,7 +90,7 @@ export const mockCooperativas: Cooperativa[] = [
     codigo_ans: '',
     federacao: 'BRASIL',
     software: '',
-    tipo: 'FEDERAÇÃO',
+    tipo: 'FEDERACAO',
     op_pr: 'Institucional'
   },
   {

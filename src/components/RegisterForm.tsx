@@ -66,7 +66,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
             codigo_ans: 'ANS-SP-FED',
             federacao: 'Uniodonto São Paulo',
             software: 'Sistema Integrado',
-            tipo: 'FEDERAÇÃO',
+            tipo: 'FEDERACAO',
             op_pr: 'Institucional'
           },
           {

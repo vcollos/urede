@@ -126,7 +126,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
 
   const currentCooperativa = cooperativas.find((c) => c.id_singular === user?.cooperativa_id);
   const isConfUser = !!user && (user.papel === 'confederacao' || currentCooperativa?.tipo === 'CONFEDERACAO');
-  const isFederacaoUser = !!user && (user.papel === 'federacao' || currentCooperativa?.tipo === 'FEDERAÇÃO');
+  const isFederacaoUser = !!user && (user.papel === 'federacao' || currentCooperativa?.tipo === 'FEDERACAO');
   const canCreate = !!user && (user.papel === 'admin' || isConfUser || isFederacaoUser);
   const canManageRoles = !!user && (user.papel === 'admin' || isConfUser);
 
