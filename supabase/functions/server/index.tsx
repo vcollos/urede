@@ -59,19 +59,40 @@ const INSECURE_MODE = (Deno.env.get('INSECURE_MODE') || '').toLowerCase() === 't
 // Operação 100% local (SQLite)
 
 // Helpers de mapeamento para o formato esperado pelo frontend
-const mapCooperativa = (row: any) => ({
-  id_singular: row.id_singular ?? row.ID_SINGULAR,
-  uniodonto: row.UNIODONTO ?? row.uniodonto ?? '',
-  cnpj: row.CNPJ ?? row.cnpj ?? '',
-  cro_operadora: row.CRO_OPERAORA ?? row.CRO_OPERADORA ?? row.cro_operadora ?? '',
-  data_fundacao: row.DATA_FUNDACAO ?? row.data_fundacao ?? '',
-  raz_social: row.RAZ_SOCIAL ?? row.raz_social ?? '',
-  codigo_ans: row.CODIGO_ANS ?? row.codigo_ans ?? '',
-  federacao: row.FEDERACAO ?? row.federacao ?? '',
-  software: row.SOFTWARE ?? row.software ?? '',
-  tipo: row.TIPO ?? row.tipo ?? '',
-  op_pr: row.OP_PR ?? row.op_pr ?? '',
-});
+const normalizeCooperativaTipo = (value: unknown) => {
+  const raw = (value ?? '').toString().trim();
+  if (!raw) return 'SINGULAR';
+  const normalized = raw
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase();
+  if (normalized.includes('CONFEDER')) return 'CONFEDERACAO';
+  if (normalized.includes('FEDER')) return 'FEDERACAO';
+  return 'SINGULAR';
+};
+
+const mapCooperativa = (row: any) => {
+  const tipoOriginal = row.TIPO ?? row.tipo ?? '';
+  const tipo = normalizeCooperativaTipo(tipoOriginal);
+  return {
+    id_singular: row.id_singular ?? row.ID_SINGULAR,
+    uniodonto: row.UNIODONTO ?? row.uniodonto ?? '',
+    cnpj: row.CNPJ ?? row.cnpj ?? '',
+    cro_operadora: row.CRO_OPERAORA ?? row.CRO_OPERADORA ?? row.cro_operadora ?? '',
+    data_fundacao: row.DATA_FUNDACAO ?? row.data_fundacao ?? '',
+    raz_social: row.RAZ_SOCIAL ?? row.raz_social ?? '',
+    codigo_ans: row.CODIGO_ANS ?? row.codigo_ans ?? '',
+    federacao: row.FEDERACAO ?? row.federacao ?? '',
+    software: row.SOFTWARE ?? row.software ?? '',
+    tipo,
+    tipo_label: tipo === 'CONFEDERACAO'
+      ? 'Confederação'
+      : tipo === 'FEDERACAO'
+        ? 'Federação'
+        : 'Singular',
+    op_pr: row.OP_PR ?? row.op_pr ?? '',
+  };
+};
 
 const mapCidade = (row: any) => ({
   cd_municipio_7: row.CD_MUNICIPIO_7 ?? row.cd_municipio_7,
@@ -235,7 +256,7 @@ const getVisibleCooperativas = (userData: any): Set<string> | null => {
 
   if (tipo === 'CONFEDERACAO') return null;
 
-  if (tipo === 'FEDERAÇÃO' || userData.papel === 'federacao') {
+  if (tipo === 'FEDERACAO' || userData.papel === 'federacao') {
     const ids = collectSingularesDaFederacao(userData.cooperativa_id);
     return new Set(ids);
   }
@@ -267,7 +288,7 @@ const resolveCoberturaScope = (userData: any): CoberturaScope => {
     return { level: 'confederacao', manageable: null };
   }
 
-  if (papel === 'federacao' || tipo === 'FEDERAÇÃO') {
+  if (papel === 'federacao' || tipo === 'FEDERACAO') {
     const ids = collectSingularesDaFederacao(userData.cooperativa_id);
     return { level: 'federacao', manageable: new Set(ids.filter(Boolean)) };
   }
@@ -577,14 +598,14 @@ const escalarPedidos = async () => {
         const coopSolic = db.queryEntries<any>(`SELECT FEDERACAO FROM ${TBL('cooperativas')} WHERE id_singular = ? LIMIT 1`, [pedido.cooperativa_solicitante_id])[0];
         const federacaoNome = coopSolic?.FEDERACAO;
         if (federacaoNome) {
-          const fed = db.queryEntries<any>(`SELECT id_singular FROM ${TBL('cooperativas')} WHERE TIPO = 'FEDERAÇÃO' AND FEDERACAO = ? LIMIT 1`, [federacaoNome])[0];
+        const fed = db.queryEntries<any>(`SELECT id_singular FROM ${TBL('cooperativas')} WHERE TIPO LIKE 'FEDER%' AND FEDERACAO = ? LIMIT 1`, [federacaoNome])[0];
           if (fed) {
             novoNivel = 'federacao';
             novaCooperativaResponsavel = fed.id_singular as string;
           }
         }
       } else if (pedido.nivel_atual === 'federacao') {
-        const conf = db.queryEntries<any>(`SELECT id_singular FROM ${TBL('cooperativas')} WHERE TIPO = 'CONFEDERACAO' LIMIT 1`)[0];
+        const conf = db.queryEntries<any>(`SELECT id_singular FROM ${TBL('cooperativas')} WHERE TIPO LIKE 'CONFEDER%' LIMIT 1`)[0];
         if (conf) {
           novoNivel = 'confederacao';
           novaCooperativaResponsavel = conf.id_singular as string;
@@ -768,6 +789,143 @@ app.get('/auth/me', requireAuth, async (c) => {
   } catch (error) {
     console.error('Erro ao obter dados do usuário:', error);
     return c.json({ error: 'Erro ao obter dados do usuário' }, 500);
+  }
+});
+
+app.put('/auth/me', requireAuth, async (c) => {
+  try {
+    const authUser = c.get('user');
+    const userEmail = authUser.email || authUser?.claims?.email;
+    if (!userEmail) {
+      return c.json({ error: 'Usuário não encontrado' }, 404);
+    }
+
+    let body: any = {};
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'JSON inválido' }, 400);
+    }
+
+    const updatableFields = ['nome', 'display_name', 'telefone', 'whatsapp', 'cargo'] as const;
+    const updates: Record<string, string> = {};
+    for (const field of updatableFields) {
+      if (field in body && typeof body[field] === 'string') {
+        updates[field] = body[field].trim();
+      }
+    }
+
+    if (Object.keys(updates).length === 0) {
+      const current = await getUserData(authUser.id, userEmail);
+      return c.json({ user: current, message: 'Nenhuma alteração aplicada' });
+    }
+
+    const setClauses: string[] = [];
+    const values: string[] = [];
+    for (const [key, value] of Object.entries(updates)) {
+      setClauses.push(`${key} = ?`);
+      values.push(value);
+    }
+
+    try {
+      db.query(
+        `UPDATE auth_users SET ${setClauses.join(', ')} WHERE email = ?`,
+        [...values, userEmail],
+      );
+    } catch (error) {
+      console.error('[auth] falha ao atualizar auth_users:', error);
+      return c.json({ error: 'Não foi possível atualizar o perfil' }, 500);
+    }
+
+    try {
+      const operatorUpdates: string[] = [];
+      const operatorValues: string[] = [];
+      if ('nome' in updates) {
+        operatorUpdates.push('nome = ?');
+        operatorValues.push(updates.nome);
+      }
+      if ('telefone' in updates) {
+        operatorUpdates.push('telefone = ?');
+        operatorValues.push(updates.telefone);
+      }
+      if ('whatsapp' in updates) {
+        operatorUpdates.push('whatsapp = ?');
+        operatorValues.push(updates.whatsapp);
+      }
+      if ('cargo' in updates) {
+        operatorUpdates.push('cargo = ?');
+        operatorValues.push(updates.cargo);
+      }
+      if (operatorUpdates.length > 0) {
+        db.query(
+          `UPDATE ${TBL('operadores')} SET ${operatorUpdates.join(', ')} WHERE email = ?`,
+          [...operatorValues, userEmail],
+        );
+      }
+    } catch (error) {
+      console.warn('[auth] falha ao sincronizar dados em operadores:', error);
+    }
+
+    const updatedUser = await getUserData(authUser.id, userEmail);
+    return c.json({ user: updatedUser });
+  } catch (error) {
+    console.error('Erro ao atualizar perfil do usuário:', error);
+    return c.json({ error: 'Erro ao atualizar perfil' }, 500);
+  }
+});
+
+app.post('/auth/change-password', requireAuth, async (c) => {
+  try {
+    const authUser = c.get('user');
+    const userEmail = authUser.email || authUser?.claims?.email;
+    if (!userEmail) {
+      return c.json({ error: 'Usuário não encontrado' }, 404);
+    }
+
+    let body: any;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'JSON inválido' }, 400);
+    }
+
+    const currentPassword = typeof body.current_password === 'string' ? body.current_password : '';
+    const newPassword = typeof body.new_password === 'string' ? body.new_password : '';
+
+    if (!INSECURE_MODE && (!currentPassword || !newPassword)) {
+      return c.json({ error: 'Senha atual e nova senha são obrigatórias' }, 400);
+    }
+
+    if (newPassword && newPassword.length < 8) {
+      return c.json({ error: 'A nova senha deve ter pelo menos 8 caracteres' }, 400);
+    }
+
+    const row = db.queryEntries<{ password_hash: string }>(
+      'SELECT password_hash FROM auth_users WHERE email = ? LIMIT 1',
+      [userEmail],
+    )[0];
+    if (!row) {
+      return c.json({ error: 'Usuário não encontrado' }, 404);
+    }
+
+    if (!INSECURE_MODE) {
+      const matches = await bcrypt.compare(currentPassword, row.password_hash);
+      if (!matches) {
+        return c.json({ error: 'Senha atual incorreta' }, 400);
+      }
+    }
+
+    if (!newPassword) {
+      return c.json({ error: 'Nova senha inválida' }, 400);
+    }
+
+    const newHash = await bcrypt.hash(newPassword);
+    db.query('UPDATE auth_users SET password_hash = ? WHERE email = ?', [newHash, userEmail]);
+
+    return c.json({ message: 'Senha atualizada com sucesso' });
+  } catch (error) {
+    console.error('Erro ao atualizar senha:', error);
+    return c.json({ error: 'Erro ao atualizar senha' }, 500);
   }
 });
 
@@ -1032,7 +1190,7 @@ app.post('/operadores', requireAuth, async (c) => {
     const cooperativaInfo = getCooperativaInfo(userData.cooperativa_id);
     const tipoCooperativa = cooperativaInfo?.tipo;
     const isConfAdmin = userData.papel === 'confederacao' || (userData.papel === 'admin' && tipoCooperativa === 'CONFEDERACAO');
-    const isFederacaoAdmin = userData.papel === 'federacao' || (userData.papel === 'admin' && tipoCooperativa === 'FEDERAÇÃO');
+    const isFederacaoAdmin = userData.papel === 'federacao' || (userData.papel === 'admin' && tipoCooperativa === 'FEDERACAO');
     const isSingularAdmin = userData.papel === 'admin' && tipoCooperativa === 'SINGULAR';
 
     if (!(isConfAdmin || isFederacaoAdmin || isSingularAdmin)) {
@@ -1139,7 +1297,7 @@ app.put('/operadores/:id', requireAuth, async (c) => {
     const tipoCooperativa = cooperativaInfo?.tipo;
 
     const isConfAdmin = userData.papel === 'confederacao' || (userData.papel === 'admin' && tipoCooperativa === 'CONFEDERACAO');
-    const isFederacaoAdmin = (userData.papel === 'admin' && tipoCooperativa === 'FEDERAÇÃO') || userData.papel === 'federacao';
+    const isFederacaoAdmin = (userData.papel === 'admin' && tipoCooperativa === 'FEDERACAO') || userData.papel === 'federacao';
     const isSingularAdmin = (userData.papel === 'admin' && tipoCooperativa === 'SINGULAR');
 
     const canEdit =

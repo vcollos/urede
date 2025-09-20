@@ -19,6 +19,9 @@ interface AuthContextType {
     cooperativa_id: string;
     papel: 'admin' | 'operador' | 'federacao' | 'confederacao';
   }) => Promise<void>;
+  updateProfile: (data: Partial<Pick<User, 'nome' | 'display_name' | 'telefone' | 'whatsapp' | 'cargo'>>) => Promise<User | null>;
+  changePassword: (data: { current_password?: string; new_password: string }) => Promise<void>;
+  refreshUser: () => Promise<User | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -131,6 +134,39 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const updateProfile = async (data: Partial<Pick<User, 'nome' | 'display_name' | 'telefone' | 'whatsapp' | 'cargo'>>) => {
+    try {
+      const updated = await authService.updateProfile(data);
+      if (updated) {
+        setUser(updated);
+      }
+      return updated ?? null;
+    } catch (error) {
+      console.error('Erro ao atualizar perfil:', error);
+      throw error;
+    }
+  };
+
+  const changePassword = async (data: { current_password?: string; new_password: string }) => {
+    try {
+      await authService.changePassword(data);
+    } catch (error) {
+      console.error('Erro ao alterar senha:', error);
+      throw error;
+    }
+  };
+
+  const refreshUser = async () => {
+    try {
+      const current = await authService.getCurrentUser();
+      setUser(current);
+      return current;
+    } catch (error) {
+      console.error('Erro ao atualizar sessão:', error);
+      throw error;
+    }
+  };
+
   const value = {
     user,
     isLoading,
@@ -138,6 +174,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     login,
     logout,
     register,
+    updateProfile,
+    changePassword,
+    refreshUser,
   };
 
   return (

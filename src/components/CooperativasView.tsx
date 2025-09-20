@@ -32,7 +32,7 @@ const resolveScope = (userPapel: string | undefined, userCooperativaId: string |
     return { level: 'confederacao', manageable: null };
   }
 
-  if (papel === 'federacao' || tipo === 'FEDERAÇÃO') {
+  if (papel === 'federacao' || tipo === 'FEDERACAO') {
     const federacaoNome = userCoop?.uniodonto;
     const ids = new Set<string>();
     if (userCooperativaId) ids.add(userCooperativaId);
@@ -60,7 +60,7 @@ const canManageSelected = (scope: CoberturaScope, cooperativaId: string | undefi
 
 const formatCooperativaTipo = (tipo: string) => {
   if (tipo === 'CONFEDERACAO') return 'Confederação';
-  if (tipo === 'FEDERAÇÃO') return 'Federação';
+  if (tipo === 'FEDERACAO') return 'Federação';
   if (tipo === 'SINGULAR') return 'Singular';
   return tipo || '—';
 };
@@ -93,6 +93,9 @@ export function CooperativasView() {
   const [isSavingCoverage, setIsSavingCoverage] = useState(false);
   const [availableFilter, setAvailableFilter] = useState('');
   const [assignedFilter, setAssignedFilter] = useState('');
+  const [globalCoverageFilter, setGlobalCoverageFilter] = useState('');
+  const [assignedPage, setAssignedPage] = useState(0);
+  const [availablePage, setAvailablePage] = useState(0);
 
   const [history, setHistory] = useState<CoberturaLog[]>([]);
   const [historyLoadedFor, setHistoryLoadedFor] = useState<string | null>(null);
@@ -189,21 +192,40 @@ export function CooperativasView() {
 
   const canEditSelected = selectedCoop ? canManageSelected(scope, selectedCoop.id_singular) : false;
 
+  const normalizeText = (value: string) =>
+    value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+
+  const matchesQuery = (texto: string, query: string) => {
+    if (!query) return true;
+    const normalizedText = normalizeText(texto);
+    const normalizedQuery = normalizeText(query);
+    return normalizedQuery
+      .split(/\s+/)
+      .filter(Boolean)
+      .every((parte) => normalizedText.includes(parte));
+  };
+
+  const assignedQueryRaw = assignedFilter || globalCoverageFilter;
+  const assignedQuery = assignedQueryRaw.trim();
   const assignedCities = useMemo(() => {
     const result = coverageDraft
       .map((id) => cidadeMap.get(id))
       .filter((cidade): cidade is Cidade => Boolean(cidade))
       .sort((a, b) => a.nm_cidade.localeCompare(b.nm_cidade, 'pt-BR'));
-    if (!assignedFilter) return result;
-    const query = assignedFilter.toLowerCase();
+    if (!assignedQuery) return result;
     return result.filter((cidade) =>
-      cidade.nm_cidade.toLowerCase().includes(query) ||
-      (cidade.cd_municipio_7 || '').toLowerCase().includes(query)
+      matchesQuery(`${cidade.nm_cidade} ${cidade.cd_municipio_7}`, assignedQuery)
     );
-  }, [coverageDraft, cidadeMap, assignedFilter]);
+  }, [coverageDraft, cidadeMap, assignedQuery]);
 
+  const availableQueryRaw = availableFilter || globalCoverageFilter;
+  const availableQuery = availableQueryRaw.trim();
+  const hasAvailableSearch = availableQuery.length >= 2;
   const availableCities = useMemo(() => {
-    if (!selectedCoop) return [] as Cidade[];
+    if (!selectedCoop || !hasAvailableSearch) return [] as Cidade[];
     const lista = cidades.filter((cidade) => {
       if (draftSet.has(cidade.cd_municipio_7)) return false;
       if (!canEditSelected) return false;
@@ -225,15 +247,16 @@ export function CooperativasView() {
     });
 
     const sorted = lista.sort((a, b) => a.nm_cidade.localeCompare(b.nm_cidade, 'pt-BR'));
-    if (!availableFilter) return sorted.slice(0, 100);
-    const query = availableFilter.toLowerCase();
-    return sorted
-      .filter((cidade) =>
-        cidade.nm_cidade.toLowerCase().includes(query) ||
-        (cidade.cd_municipio_7 || '').toLowerCase().includes(query)
-      )
-      .slice(0, 100);
-  }, [cidades, draftSet, selectedCoop, scope, canEditSelected, availableFilter]);
+    return sorted.filter((cidade) =>
+      matchesQuery(`${cidade.nm_cidade} ${cidade.cd_municipio_7}`, availableQuery)
+    );
+  }, [cidades, draftSet, selectedCoop, scope, canEditSelected, availableQuery, hasAvailableSearch]);
+
+  const PAGE_SIZE = 10;
+  const totalAssignedPages = Math.ceil(assignedCities.length / PAGE_SIZE);
+  const totalAvailablePages = Math.ceil(availableCities.length / PAGE_SIZE);
+  const assignedSlice = assignedCities.slice(assignedPage * PAGE_SIZE, assignedPage * PAGE_SIZE + PAGE_SIZE);
+  const availableSlice = availableCities.slice(availablePage * PAGE_SIZE, availablePage * PAGE_SIZE + PAGE_SIZE);
 
   const handleOpenDetails = (coop: Cooperativa) => {
     setSelectedCoop(coop);
@@ -245,6 +268,9 @@ export function CooperativasView() {
     setCoverageSuccess('');
     setAssignedFilter('');
     setAvailableFilter('');
+    setGlobalCoverageFilter('');
+    setAssignedPage(0);
+    setAvailablePage(0);
     setDetailTab('overview');
     setHistory([]);
     setHistoryError('');
@@ -324,6 +350,26 @@ export function CooperativasView() {
       ensureHistory(selectedCoop.id_singular);
     }
   }, [detailTab, selectedCoop]);
+
+  useEffect(() => {
+    setAssignedPage(0);
+  }, [assignedFilter, globalCoverageFilter, coverageDraft.length]);
+
+  useEffect(() => {
+    setAvailablePage(0);
+  }, [availableFilter, globalCoverageFilter, coverageDraft.length, selectedCoop?.id_singular]);
+
+  useEffect(() => {
+    if (assignedPage > totalAssignedPages - 1) {
+      setAssignedPage(0);
+    }
+  }, [assignedPage, totalAssignedPages]);
+
+  useEffect(() => {
+    if (availablePage > totalAvailablePages - 1) {
+      setAvailablePage(0);
+    }
+  }, [availablePage, totalAvailablePages]);
 
   if (isLoading) {
     return (
@@ -424,11 +470,11 @@ export function CooperativasView() {
                             className={cn(
                               'text-xs capitalize',
                               coop.tipo === 'SINGULAR' && 'bg-green-100 text-green-800 border-green-200',
-                              coop.tipo === 'FEDERAÇÃO' && 'bg-blue-100 text-blue-800 border-blue-200',
+                              coop.tipo === 'FEDERACAO' && 'bg-blue-100 text-blue-800 border-blue-200',
                               coop.tipo === 'CONFEDERACAO' && 'bg-red-100 text-red-800 border-red-200'
                             )}
                           >
-                            {formatCooperativaTipo(coop.tipo)}
+                            {coop.tipo_label ?? formatCooperativaTipo(coop.tipo)}
                           </Badge>
                         </TableCell>
                         <TableCell className="hidden md:table-cell">
@@ -465,14 +511,14 @@ export function CooperativasView() {
       </Card>
 
       <Dialog open={isDetailOpen} onOpenChange={(open) => (open ? setIsDetailOpen(true) : handleCloseDetails())}>
-        <DialogContent className="w-[80vw] max-w-[80vw] max-h-[90dvh] p-0 overflow-hidden">
+        <DialogContent className="w-[80vw] max-w-[80vw] h-[80vh] max-h-[80vh] p-0 overflow-hidden">
           {selectedCoop && (
             <Tabs
               value={detailTab}
               onValueChange={(value) => setDetailTab(value as typeof detailTab)}
-              className="flex h-[90dvh] flex-col"
+              className="flex h-full min-h-0 flex-col"
             >
-              <div className="shrink-0 p-6">
+              <div className="shrink-0 border-b border-gray-100 bg-white p-6">
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2 text-xl">
                     <Building2 className="w-5 h-5" />
@@ -491,7 +537,7 @@ export function CooperativasView() {
               </div>
 
               <ScrollArea className="flex-1 min-h-0">
-                <div className="p-6">
+                <div className="p-6 space-y-6">
                 <TabsContent value="overview" className="mt-0">
                   <div className="space-y-4">
                     <div className="grid gap-4 sm:grid-cols-2">
@@ -522,7 +568,7 @@ export function CooperativasView() {
                         <CardContent className="space-y-2 text-sm">
                           <div>
                             <span className="text-gray-500">Tipo</span>
-                            <p className="font-medium text-gray-900">{formatCooperativaTipo(selectedCoop.tipo)}</p>
+                            <p className="font-medium text-gray-900">{selectedCoop.tipo_label ?? formatCooperativaTipo(selectedCoop.tipo)}</p>
                           </div>
                           <div>
                             <span className="text-gray-500">Federação</span>
@@ -559,12 +605,33 @@ export function CooperativasView() {
                 </TabsContent>
 
                 <TabsContent value="coverage" className="mt-0">
-                  <div className="space-y-4">
+                  <div className="space-y-4 pb-28">
                     {!canEditSelected && (
                       <div className="p-3 bg-amber-50 border border-amber-200 rounded-md text-sm text-amber-700">
                         Você não possui permissão para alterar a cobertura desta cooperativa.
                       </div>
                     )}
+
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h3 className="text-sm font-semibold text-gray-900">Gerenciar cobertura</h3>
+                        <p className="text-xs text-gray-500">Pesquise por nome ou código IBGE para localizar uma cidade rapidamente.</p>
+                      </div>
+                      <div className="relative w-full sm:w-80">
+                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <Input
+                          value={globalCoverageFilter}
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            setGlobalCoverageFilter(value);
+                            setAssignedFilter(value);
+                            setAvailableFilter(value);
+                          }}
+                          placeholder="Buscar em todas as listas..."
+                          className="pl-10 h-9"
+                        />
+                      </div>
+                    </div>
 
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-3">
@@ -581,14 +648,14 @@ export function CooperativasView() {
                             />
                           </div>
                         </div>
-                        <ScrollArea className="h-64 border border-gray-200 rounded-md">
+                        <ScrollArea className="h-[24rem] border border-gray-200 rounded-md">
                           <div className="p-2 space-y-2">
-                            {assignedCities.length === 0 ? (
+                            {assignedSlice.length === 0 ? (
                               <p className="text-sm text-gray-500 text-center py-8">
                                 Nenhuma cidade atribuída
                               </p>
                             ) : (
-                              assignedCities.map((cidade) => (
+                              assignedSlice.map((cidade) => (
                                 <div
                                   key={cidade.cd_municipio_7}
                                   className="flex items-center justify-between gap-3 rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-sm"
@@ -613,6 +680,34 @@ export function CooperativasView() {
                             )}
                           </div>
                         </ScrollArea>
+                        {assignedCities.length > PAGE_SIZE && (
+                          <div className="flex items-center justify-between pt-2 text-xs text-gray-500">
+                            <span>
+                              Exibindo {Math.min(PAGE_SIZE, Math.max(0, assignedCities.length - assignedPage * PAGE_SIZE))} de {assignedCities.length}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={assignedPage === 0}
+                                onClick={() => setAssignedPage((prev) => Math.max(0, prev - 1))}
+                              >
+                                Anterior
+                              </Button>
+                              <span>
+                                {assignedPage + 1}/{Math.max(1, totalAssignedPages)}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={assignedPage >= totalAssignedPages - 1}
+                                onClick={() => setAssignedPage((prev) => Math.min(totalAssignedPages - 1, prev + 1))}
+                              >
+                                Próxima
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       <div className="space-y-3">
@@ -629,18 +724,22 @@ export function CooperativasView() {
                             />
                           </div>
                         </div>
-                        <ScrollArea className="h-64 border border-gray-200 rounded-md">
+                        <ScrollArea className="h-[24rem] border border-gray-200 rounded-md">
                           <div className="p-2 space-y-2">
                             {!canEditSelected ? (
                               <p className="text-sm text-gray-500 text-center py-8">
                                 Sem permissão para alterar cobertura.
                               </p>
-                            ) : availableCities.length === 0 ? (
+                            ) : !hasAvailableSearch ? (
+                              <p className="text-sm text-gray-500 text-center py-8">
+                                Digite pelo menos 2 caracteres para localizar cidades.
+                              </p>
+                            ) : availableSlice.length === 0 ? (
                               <p className="text-sm text-gray-500 text-center py-8">
                                 Nenhuma cidade disponível ou correspondendo ao filtro.
                               </p>
                             ) : (
-                              availableCities.map((cidade) => (
+                              availableSlice.map((cidade) => (
                                 <div
                                   key={cidade.cd_municipio_7}
                                   className="flex items-center justify-between gap-3 rounded-md border border-gray-100 px-3 py-2 text-sm"
@@ -672,43 +771,70 @@ export function CooperativasView() {
                             )}
                           </div>
                         </ScrollArea>
+                        {hasAvailableSearch && availableCities.length > PAGE_SIZE && (
+                          <div className="flex items-center justify-between pt-2 text-xs text-gray-500">
+                            <span>
+                              Exibindo {Math.min(PAGE_SIZE, Math.max(0, availableCities.length - availablePage * PAGE_SIZE))} de {availableCities.length}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={availablePage === 0}
+                                onClick={() => setAvailablePage((prev) => Math.max(0, prev - 1))}
+                              >
+                                Anterior
+                              </Button>
+                              <span>
+                                {availablePage + 1}/{Math.max(1, totalAvailablePages)}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={availablePage >= totalAvailablePages - 1}
+                                onClick={() => setAvailablePage((prev) => Math.min(totalAvailablePages - 1, prev + 1))}
+                              >
+                                Próxima
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
 
                     <Separator />
-
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                      <div className="text-sm text-gray-600">
-                        <p>
-                          {hasCoverageChanges
-                            ? 'Existem alterações não salvas na cobertura.'
-                            : 'Nenhuma alteração pendente.'}
-                        </p>
-                        {coverageError && <p className="text-red-600 mt-1">{coverageError}</p>}
-                        {coverageSuccess && <p className="text-green-600 mt-1">{coverageSuccess}</p>}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          onClick={() => {
-                            if (!selectedCoop) return;
-                            const baseline = Array.from(currentCoverageSet);
-                            setCoverageDraft(baseline);
-                            setCoverageError('');
-                            setCoverageSuccess('');
-                          }}
-                          disabled={!hasCoverageChanges || isSavingCoverage}
-                        >
-                          Descartar alterações
-                        </Button>
-                        <Button
-                          onClick={handleSaveCoverage}
-                          disabled={!hasCoverageChanges || !canEditSelected || isSavingCoverage}
-                        >
-                          {isSavingCoverage && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                          Salvar cobertura
-                        </Button>
-                      </div>
+                  </div>
+                  <div className="sticky bottom-0 left-0 right-0 mt-4 flex flex-col gap-3 border-t border-gray-200 bg-white/95 p-4 backdrop-blur">
+                    <div className="text-sm text-gray-600">
+                      <p>
+                        {hasCoverageChanges
+                          ? 'Existem alterações não salvas na cobertura.'
+                          : 'Nenhuma alteração pendente.'}
+                      </p>
+                      {coverageError && <p className="text-red-600 mt-1">{coverageError}</p>}
+                      {coverageSuccess && <p className="text-green-600 mt-1">{coverageSuccess}</p>}
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          if (!selectedCoop) return;
+                          const baseline = Array.from(currentCoverageSet);
+                          setCoverageDraft(baseline);
+                          setCoverageError('');
+                          setCoverageSuccess('');
+                        }}
+                        disabled={!hasCoverageChanges || isSavingCoverage}
+                      >
+                        Descartar alterações
+                      </Button>
+                      <Button
+                        onClick={handleSaveCoverage}
+                        disabled={!hasCoverageChanges || !canEditSelected || isSavingCoverage}
+                      >
+                        {isSavingCoverage && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        Salvar cobertura
+                      </Button>
                     </div>
                   </div>
                 </TabsContent>

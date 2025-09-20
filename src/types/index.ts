@@ -24,7 +24,8 @@ export interface Cooperativa {
   codigo_ans: string;
   federacao: string;
   software: string;
-  tipo: 'SINGULAR' | 'FEDERAÇÃO' | 'CONFEDERACAO';
+  tipo: 'SINGULAR' | 'FEDERACAO' | 'CONFEDERACAO';
+  tipo_label?: string;
   op_pr: 'Operadora' | 'Institucional';
 }
 
