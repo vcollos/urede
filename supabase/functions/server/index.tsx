@@ -103,6 +103,7 @@ const mapCidade = (row: any) => ({
   nm_regiao: row.NM_REGIAO ?? row.nm_regiao,
   cidades_habitantes: row.CIDADES_HABITANTES ?? row.cidades_habitantes,
   id_singular: row.ID_SINGULAR ?? row.id_singular,
+  nm_singular: row.NM_SINGULAR ?? row.nm_singular ?? null,
 });
 
 const mapOperador = (row: any) => ({
@@ -214,6 +215,85 @@ const ensureCoberturaSchema = () => {
 };
 
 ensureCoberturaSchema();
+
+const ensureSettingsSchema = () => {
+  try {
+    db.query(`CREATE TABLE IF NOT EXISTS ${TBL('settings')} (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+    )`);
+  } catch (e) {
+    console.warn('[schema] criacao de settings falhou:', e);
+  }
+};
+
+ensureSettingsSchema();
+
+type SystemSettings = {
+  theme: 'light' | 'dark' | 'system';
+  deadlines: {
+    singularToFederacao: number;
+    federacaoToConfederacao: number;
+  };
+  requireApproval: boolean;
+  autoNotifyManagers: boolean;
+  enableSelfRegistration: boolean;
+};
+
+const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
+  theme: 'light',
+  deadlines: {
+    singularToFederacao: 30,
+    federacaoToConfederacao: 30,
+  },
+  requireApproval: true,
+  autoNotifyManagers: true,
+  enableSelfRegistration: true,
+};
+
+const SETTINGS_KEY_SYSTEM = 'system_preferences';
+
+const readSystemSettings = (): SystemSettings => {
+  try {
+    const row = db.queryEntries<{ value: string }>(`SELECT value FROM ${TBL('settings')} WHERE key = ? LIMIT 1`, [SETTINGS_KEY_SYSTEM])[0];
+    if (row?.value) {
+      const parsed = JSON.parse(row.value);
+      return {
+        ...DEFAULT_SYSTEM_SETTINGS,
+        ...parsed,
+        deadlines: {
+          ...DEFAULT_SYSTEM_SETTINGS.deadlines,
+          ...(parsed?.deadlines ?? {}),
+        },
+      };
+    }
+  } catch (error) {
+    console.warn('[settings] falha ao ler configurações:', error);
+  }
+  return { ...DEFAULT_SYSTEM_SETTINGS };
+};
+
+const persistSystemSettings = (settings: SystemSettings) => {
+  const payload = JSON.stringify(settings);
+  try {
+    db.query(
+      `INSERT INTO ${TBL('settings')} (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      [SETTINGS_KEY_SYSTEM, payload],
+    );
+  } catch (error) {
+    console.error('[settings] falha ao salvar configurações:', error);
+    throw error;
+  }
+};
+
+// Garante que haja um registro padrão
+try {
+  persistSystemSettings(readSystemSettings());
+} catch (error) {
+  console.warn('[settings] não foi possível inicializar configurações:', error);
+}
 
 const getCooperativaInfo = (id?: string | null) => {
   if (!id) return null;
@@ -792,6 +872,64 @@ app.get('/auth/me', requireAuth, async (c) => {
   }
 });
 
+app.get('/configuracoes/sistema', requireAuth, async (c) => {
+  try {
+    const settings = readSystemSettings();
+    return c.json({ settings });
+  } catch (error) {
+    console.error('[settings] erro ao ler configurações:', error);
+    return c.json({ error: 'Erro ao carregar configurações' }, 500);
+  }
+});
+
+app.put('/configuracoes/sistema', requireAuth, async (c) => {
+  const authUser = c.get('user');
+  const userData = await getUserData(authUser.id, authUser.email || authUser?.claims?.email);
+  if (!userData) return c.json({ error: 'Usuário não encontrado' }, 401);
+
+  const papel = (userData.papel || '').toLowerCase();
+  if (!['confederacao', 'admin', 'federacao'].includes(papel)) {
+    return c.json({ error: 'Acesso negado' }, 403);
+  }
+
+  let payload: any;
+  try {
+    payload = await c.req.json();
+  } catch {
+    return c.json({ error: 'JSON inválido' }, 400);
+  }
+
+  const theme = ['light', 'dark', 'system'].includes(payload?.theme) ? payload.theme : DEFAULT_SYSTEM_SETTINGS.theme;
+  const deadlinesPayload = payload?.deadlines ?? {};
+  const singularToFederacao = Math.max(
+    1,
+    Number(deadlinesPayload.singularToFederacao ?? DEFAULT_SYSTEM_SETTINGS.deadlines.singularToFederacao) || DEFAULT_SYSTEM_SETTINGS.deadlines.singularToFederacao,
+  );
+  const federacaoToConfederacao = Math.max(
+    1,
+    Number(deadlinesPayload.federacaoToConfederacao ?? DEFAULT_SYSTEM_SETTINGS.deadlines.federacaoToConfederacao) || DEFAULT_SYSTEM_SETTINGS.deadlines.federacaoToConfederacao,
+  );
+
+  const settings: SystemSettings = {
+    theme,
+    deadlines: {
+      singularToFederacao,
+      federacaoToConfederacao,
+    },
+    requireApproval: Boolean(payload?.requireApproval ?? DEFAULT_SYSTEM_SETTINGS.requireApproval),
+    autoNotifyManagers: Boolean(payload?.autoNotifyManagers ?? DEFAULT_SYSTEM_SETTINGS.autoNotifyManagers),
+    enableSelfRegistration: Boolean(payload?.enableSelfRegistration ?? DEFAULT_SYSTEM_SETTINGS.enableSelfRegistration),
+  };
+
+  try {
+    persistSystemSettings(settings);
+    return c.json({ settings });
+  } catch (error) {
+    console.error('[settings] erro ao salvar configurações:', error);
+    return c.json({ error: 'Falha ao salvar configurações' }, 500);
+  }
+});
+
 app.put('/auth/me', requireAuth, async (c) => {
   try {
     const authUser = c.get('user');
@@ -1123,7 +1261,11 @@ app.put('/cooperativas/:id/cobertura', requireAuth, async (c) => {
 // ROTAS DE CIDADES
 app.get('/cidades', requireAuth, async (c) => {
   try {
-    const rows = db.queryEntries(`SELECT * FROM ${TBL('cidades')}`);
+    const rows = db.queryEntries(
+      `SELECT c.*, coop.UNIODONTO AS NM_SINGULAR
+       FROM ${TBL('cidades')} c
+       LEFT JOIN ${TBL('cooperativas')} coop ON coop.id_singular = c.ID_SINGULAR`
+    );
     const mapped = (rows || []).map(mapCidade);
     return c.json(mapped);
   } catch (error) {
@@ -1135,7 +1277,11 @@ app.get('/cidades', requireAuth, async (c) => {
 // ROTA PÚBLICA DE CIDADES (apenas leitura)
 app.get('/cidades/public', async (c) => {
   try {
-    const rows = db.queryEntries(`SELECT * FROM ${TBL('cidades')}`);
+    const rows = db.queryEntries(
+      `SELECT c.*, coop.UNIODONTO AS NM_SINGULAR
+       FROM ${TBL('cidades')} c
+       LEFT JOIN ${TBL('cooperativas')} coop ON coop.id_singular = c.ID_SINGULAR`
+    );
     const mapped = (rows || []).map(mapCidade);
     return c.json(mapped);
   } catch (error) {

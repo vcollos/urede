@@ -222,13 +222,13 @@ export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps
   return (
     <div className="space-y-6">
       {/* Header com ações */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
           <h1 className="text-2xl font-bold text-gray-900">Pedidos de Credenciamento</h1>
           <p className="text-gray-600">Gerencie pedidos de credenciamento e suprimento da rede</p>
         </div>
         {isAuthenticated && (
-        <Button onClick={() => { onCreatePedido(); }} className="bg-blue-600 hover:bg-blue-700">
+        <Button onClick={() => { onCreatePedido(); }} className="bg-blue-600 hover:bg-blue-700 self-start sm:self-auto">
           <Plus className="w-4 h-4 mr-2" />
           Novo Pedido
         </Button>

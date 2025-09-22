@@ -38,6 +38,7 @@ export interface Cidade {
   nm_regiao: string;
   cidades_habitantes: number;
   id_singular: string;
+  nm_singular?: string | null;
 }
 
 export interface Operador {
@@ -114,4 +115,15 @@ export interface CoberturaLog {
   usuario_papel: string;
   detalhes?: string | null;
   timestamp: string;
+}
+
+export interface SystemSettings {
+  theme: 'light' | 'dark' | 'system';
+  deadlines: {
+    singularToFederacao: number;
+    federacaoToConfederacao: number;
+  };
+  requireApproval: boolean;
+  autoNotifyManagers: boolean;
+  enableSelfRegistration: boolean;
 }

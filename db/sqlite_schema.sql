@@ -128,3 +128,10 @@ CREATE TABLE IF NOT EXISTS urede_auditoria_logs (
 
 CREATE INDEX IF NOT EXISTS idx_auditoria_pedido ON urede_auditoria_logs(pedido_id);
 CREATE INDEX IF NOT EXISTS idx_auditoria_usuario ON urede_auditoria_logs(usuario_id);
+
+-- Configurações gerais do sistema
+CREATE TABLE IF NOT EXISTS urede_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);

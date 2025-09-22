@@ -141,9 +141,9 @@ export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <Card className="border-0 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-lg w-full max-w-[min(720px,calc(100dvw-2rem))] max-h-[min(90dvh,calc(100dvh-2rem))] overflow-y-auto shadow-2xl">
+        <Card className="border-0 shadow-none">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
             <CardTitle>Novo Pedido de Credenciamento</CardTitle>
             <Button variant="ghost" size="icon" onClick={onClose} disabled={isSubmitting}>

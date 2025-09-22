@@ -376,12 +376,12 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
               <TableHeader>
                 <TableRow>
                   <TableHead>Operador</TableHead>
-                  <TableHead>Cooperativa</TableHead>
-                  <TableHead>Cargo</TableHead>
-                  <TableHead>Acesso</TableHead>
-                  <TableHead>Contato</TableHead>
+                  <TableHead className="hidden md:table-cell">Cooperativa</TableHead>
+                  <TableHead className="hidden lg:table-cell">Cargo</TableHead>
+                  <TableHead className="hidden lg:table-cell">Acesso</TableHead>
+                  <TableHead className="hidden xl:table-cell">Contato</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Data Cadastro</TableHead>
+                  <TableHead className="hidden lg:table-cell">Data Cadastro</TableHead>
                   <TableHead className="w-12">Ações</TableHead>
                 </TableRow>
               </TableHeader>
@@ -409,25 +409,25 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
                         </div>
                       </TableCell>
                       
-                      <TableCell>
+                      <TableCell className="hidden md:table-cell">
                         <div className="flex items-center space-x-2">
                           <Building className="w-4 h-4 text-gray-400" />
                           <span className="text-sm">{getCooperativaNome(operador.id_singular)}</span>
                         </div>
                       </TableCell>
-                      
-                      <TableCell>
+
+                      <TableCell className="hidden lg:table-cell">
                         <Badge variant="secondary" className="text-xs">
                           {operador.cargo}
                         </Badge>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden lg:table-cell">
                         <Badge variant="outline" className="text-xs capitalize">
                           {operador.papel || 'operador'}
                         </Badge>
                       </TableCell>
-                      
-                      <TableCell>
+
+                      <TableCell className="hidden xl:table-cell">
                         <div className="space-y-1">
                           <div className="flex items-center space-x-2 text-sm text-gray-600">
                             <Phone className="w-3 h-3" />
@@ -453,7 +453,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
                         </Badge>
                       </TableCell>
                       
-                      <TableCell className="text-sm text-gray-600">
+                      <TableCell className="hidden lg:table-cell text-sm text-gray-600">
                         {formatDate(operador.data_cadastro)}
                       </TableCell>
                       
@@ -486,7 +486,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
           if (!open) handleCloseEdit();
         }}
       >
-        <DialogContent>
+        <DialogContent className="w-full max-w-[min(520px,calc(100dvw-2rem))] max-h-[min(90dvh,calc(100dvh-2rem))] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Editar operador</DialogTitle>
             <DialogDescription>
@@ -595,7 +595,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
           if (!open) handleCloseCreate();
         }}
       >
-        <DialogContent>
+        <DialogContent className="w-full max-w-[min(520px,calc(100dvw-2rem))] max-h-[min(90dvh,calc(100dvh-2rem))] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Novo operador</DialogTitle>
             <DialogDescription>

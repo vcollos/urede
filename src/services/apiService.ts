@@ -6,7 +6,8 @@ import type {
   Operador, 
   AuditoriaLog,
   DashboardStats,
-  CoberturaLog
+  CoberturaLog,
+  SystemSettings
 } from '../types';
 
 class ApiService {
@@ -157,6 +158,20 @@ class ApiService {
       console.error('Erro ao executar escalonamento:', error);
       throw error;
     }
+  }
+
+  // CONFIGURAÇÕES
+  async getSystemSettings(): Promise<SystemSettings> {
+    const response = await apiRequest('/configuracoes/sistema');
+    return response?.settings ?? null;
+  }
+
+  async updateSystemSettings(settings: SystemSettings): Promise<SystemSettings> {
+    const response = await apiRequest('/configuracoes/sistema', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    });
+    return response?.settings ?? settings;
   }
 }
 
