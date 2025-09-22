@@ -238,8 +238,8 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
     : '';
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-lg w-full max-w-[min(960px,calc(100dvw-2rem))] max-h-[min(90dvh,calc(100dvh-2rem))] overflow-hidden flex flex-col shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b">
           <div className="flex-1 min-w-0">

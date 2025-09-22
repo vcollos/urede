@@ -1,18 +1,22 @@
-import { ReactNode } from 'react';
-import { 
-  Building2, 
-  FileText, 
-  BarChart3, 
-  Settings, 
+import { ReactNode, useEffect, useState } from 'react';
+import {
+  Building2,
+  FileText,
+  BarChart3,
+  Settings,
   LogOut,
   Bell,
-  User
+  User,
+  Menu,
+  Map
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Avatar, AvatarFallback } from './ui/avatar';
 import { useAuth } from '../contexts/AuthContext';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from './ui/dropdown-menu';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { UserProfileDialog } from './UserProfileDialog';
 
 interface LayoutProps {
   children: ReactNode;
@@ -22,6 +26,8 @@ interface LayoutProps {
 
 export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
   const { user, logout } = useAuth();
+  const [isMobileNavOpen, setMobileNavOpen] = useState(false);
+  const [isProfileDialogOpen, setProfileDialogOpen] = useState(false);
 
   if (!user) return null;
   const menuItems = [
@@ -29,6 +35,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
     { id: 'pedidos', label: 'Pedidos', icon: FileText },
     { id: 'cooperativas', label: 'Cooperativas', icon: Building2 },
     { id: 'operadores', label: 'Operadores', icon: User },
+    { id: 'cidades', label: 'Cidades', icon: Map },
     { id: 'configuracoes', label: 'Configurações', icon: Settings },
   ];
 
@@ -51,11 +58,14 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50 flex">
-      {/* Sidebar */}
-      <div className="w-64 bg-white shadow-sm border-r border-gray-200 flex flex-col">
-        {/* Header */}
+  const handleTabChange = (tab: string) => {
+    onTabChange(tab);
+    setMobileNavOpen(false);
+  };
+
+  const SidebarNav = (
+    <div className="flex flex-col h-full">
+      {/* Header */}
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
@@ -96,17 +106,17 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
             {menuItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
-              
+
               return (
                 <Button
                   key={item.id}
-                  variant={isActive ? "default" : "ghost"}
+                  variant={isActive ? 'default' : 'ghost'}
                   className={`w-full justify-start ${
-                    isActive 
-                      ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                    isActive
+                      ? 'bg-blue-600 text-white hover:bg-blue-700'
                       : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
                   }`}
-                  onClick={() => onTabChange(item.id)}
+                  onClick={() => handleTabChange(item.id)}
                 >
                   <Icon className="w-4 h-4 mr-3" />
                   {item.label}
@@ -116,10 +126,10 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
           </div>
         </nav>
 
-        {/* Footer */}
+      {/* Footer */}
         <div className="p-4 border-t border-gray-200">
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             className="w-full justify-start text-gray-700"
             onClick={logout}
           >
@@ -128,20 +138,38 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
           </Button>
         </div>
       </div>
+  );
+
+  return (
+    <div className="min-h-dvh flex bg-gray-50">
+      {/* Sidebar desktop */}
+      <aside className="hidden lg:flex lg:w-64 bg-white shadow-sm border-r border-gray-200">
+        {SidebarNav}
+      </aside>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Bar */}
-        <header className="bg-white border-b border-gray-200 px-6 py-4">
-          <div className="flex items-center justify-between">
+        <header className="bg-white border-b border-gray-200 px-4 py-4 sm:px-6">
+          <div className="flex items-center justify-between gap-4">
             <h2 className="text-xl font-semibold text-gray-900 capitalize">
               {activeTab === 'dashboard' ? 'Dashboard' : 
                activeTab === 'pedidos' ? 'Gestão de Pedidos' :
                activeTab === 'cooperativas' ? 'Cooperativas' :
                activeTab === 'operadores' ? 'Operadores' :
+               activeTab === 'cidades' ? 'Cidades' :
                'Configurações'}
             </h2>
             <div className="flex items-center space-x-4">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="lg:hidden"
+                onClick={() => setMobileNavOpen(true)}
+                aria-label="Abrir menu"
+              >
+                <Menu className="w-5 h-5" />
+              </Button>
               <Button variant="ghost" size="icon">
                 <Bell className="w-5 h-5" />
               </Button>
@@ -152,6 +180,9 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setProfileDialogOpen(true)}>
+                    Perfil do usuário
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => { logout(); }}>
                     Sair
                   </DropdownMenuItem>
@@ -163,11 +194,24 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
 
         {/* Page Content */}
         <main className="flex-1 overflow-y-auto bg-gray-50">
-          <div className="p-6">
+          <div className="px-4 py-6 sm:p-6">
             {children}
           </div>
         </main>
       </div>
+
+      <Dialog open={isMobileNavOpen} onOpenChange={setMobileNavOpen}>
+        <DialogContent className="w-full max-w-[min(320px,calc(100dvw-2rem))] h-full max-h-[100dvh] top-0 right-0 left-auto translate-x-0 translate-y-0 p-0 overflow-hidden bg-transparent border-none shadow-none">
+          <div className="h-full w-full max-w-xs bg-white shadow-xl border border-gray-200 rounded-lg flex flex-col">
+            <DialogHeader className="p-6 border-b border-gray-200">
+              <DialogTitle className="text-base font-semibold text-gray-900">Menu</DialogTitle>
+            </DialogHeader>
+            {SidebarNav}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <UserProfileDialog open={isProfileDialogOpen} onOpenChange={setProfileDialogOpen} />
     </div>
   );
 }

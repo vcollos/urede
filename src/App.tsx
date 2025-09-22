@@ -10,6 +10,7 @@ import { PedidoDetalhes } from './components/PedidoDetalhes';
 import { Pedido } from './types';
 import { CooperativasView } from './components/CooperativasView';
 import { ConfiguracoesView } from './components/ConfiguracoesView';
+import { CidadesView } from './components/CidadesView';
 
 // Componente interno que usa o AuthContext
 function AppContent() {
@@ -21,7 +22,7 @@ function AppContent() {
   // Mostrar loading durante verificação da autenticação
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center dark:bg-slate-950">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">Carregando...</p>
@@ -62,6 +63,8 @@ function AppContent() {
         return <CooperativasView />;
       case 'operadores':
         return <OperadoresLista />;
+      case 'cidades':
+        return <CidadesView />;
       case 'configuracoes':
         return <ConfiguracoesView />;
       default:
@@ -71,7 +74,7 @@ function AppContent() {
 
   // Se autenticado, mostrar aplicação principal
   return (
-    <div className="h-screen bg-gray-50">
+    <div className="h-screen bg-gray-50 dark:bg-slate-950">
       <Layout activeTab={activeTab} onTabChange={setActiveTab}>
         {renderContent()}
       </Layout>
