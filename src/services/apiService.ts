@@ -118,10 +118,11 @@ class ApiService {
     }
   }
 
-  async deletePedido(pedidoId: string): Promise<{ ok: boolean }> {
+  async deletePedido(pedidoId: string): Promise<Pedido> {
     try {
       return await apiRequest(`/pedidos/${pedidoId}`, {
-        method: 'DELETE'
+        method: 'PUT',
+        body: JSON.stringify({ status: 'cancelado', excluido: true }),
       });
     } catch (error) {
       console.error('Erro ao excluir pedido:', error);

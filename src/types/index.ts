@@ -80,6 +80,7 @@ export interface Pedido {
   dias_para_concluir?: number;
   prioridade: 'baixa' | 'media' | 'alta' | 'urgente';
   ponto_de_vista?: 'feita' | 'recebida' | 'acompanhamento' | 'interna';
+  excluido?: boolean;
 }
 
 export interface AuditoriaLog {

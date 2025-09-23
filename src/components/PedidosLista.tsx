@@ -40,7 +40,7 @@ export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps
       try {
         setIsLoading(true);
         const pedidosData = await apiService.getPedidos();
-        setPedidos(pedidosData);
+        setPedidos(pedidosData.filter((pedido) => !pedido.excluido));
       } catch (err) {
         console.error('Erro ao carregar pedidos:', err);
         setError(err instanceof Error ? err.message : 'Erro ao carregar pedidos');
@@ -69,7 +69,7 @@ export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps
 
   // Filtrar pedidos baseado nos filtros aplicados
   const getFilteredPedidos = (): Pedido[] => {
-    let pedidosFiltrados = [...pedidos];
+    let pedidosFiltrados = pedidos.filter((pedido) => !pedido.excluido);
 
     // Aplicar filtros de busca
     if (searchTerm) {
