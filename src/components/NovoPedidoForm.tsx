@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -10,6 +9,14 @@ import { Alert, AlertDescription } from './ui/alert';
 import { X, Plus } from 'lucide-react';
 import { apiService } from '../services/apiService';
 import { Cidade, Pedido } from '../types';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogClose,
+} from './ui/dialog';
 
 interface NovoPedidoFormProps {
   onClose: () => void;
@@ -141,18 +148,25 @@ export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-lg w-full max-w-[min(720px,calc(100dvw-2rem))] max-h-[min(90dvh,calc(100dvh-2rem))] overflow-y-auto shadow-2xl">
-        <Card className="border-0 shadow-none">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-            <CardTitle>Novo Pedido de Credenciamento</CardTitle>
-            <Button variant="ghost" size="icon" onClick={onClose} disabled={isSubmitting}>
-              <X className="w-4 h-4" />
-            </Button>
-          </CardHeader>
-          
-          <CardContent className="space-y-6">
-            <form onSubmit={handleSubmit} className="space-y-6">
+    <Dialog open onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader className="text-left">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <DialogTitle>Novo Pedido de Credenciamento</DialogTitle>
+              <DialogDescription>
+                Informe os dados do pedido para iniciar o credenciamento.
+              </DialogDescription>
+            </div>
+            <DialogClose asChild>
+              <Button variant="ghost" size="icon" disabled={isSubmitting}>
+                <X className="w-4 h-4" />
+              </Button>
+            </DialogClose>
+          </div>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
               {error && (
                 <Alert variant="destructive">
                   <AlertDescription>{error}</AlertDescription>
@@ -301,27 +315,26 @@ export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
               </div>
 
               {/* Ações */}
-              <div className="flex items-center justify-end space-x-3 pt-4 border-t">
+            <div className="flex items-center justify-end space-x-3 pt-4 border-t">
+              <DialogClose asChild>
                 <Button 
                   type="button" 
-                  variant="outline" 
-                  onClick={onClose}
+                  variant="outline"
                   disabled={isSubmitting}
                 >
                   Cancelar
                 </Button>
-                <Button 
-                  type="submit" 
-                  className="bg-blue-600 hover:bg-blue-700"
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? 'Criando...' : 'Criar Pedido'}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+              </DialogClose>
+              <Button 
+                type="submit" 
+                className="bg-blue-600 hover:bg-blue-700"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? 'Criando...' : 'Criar Pedido'}
+              </Button>
+            </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

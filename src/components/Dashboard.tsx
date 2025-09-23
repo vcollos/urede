@@ -38,7 +38,7 @@ export function Dashboard() {
         ]);
         if (!isMounted) return;
         setDashboardStats(statsData);
-        setPedidos(pedidosData);
+        setPedidos(pedidosData.filter((pedido) => !pedido.excluido));
       } catch (err) {
         console.error('Erro ao carregar dados do dashboard:', err);
         if (isMounted) {
@@ -94,9 +94,10 @@ export function Dashboard() {
     return null;
   }
 
-  const pedidosVencendo = pedidos.filter(p => p.dias_restantes <= 7 && p.status !== 'concluido');
-  const pedidosEmAndamento = pedidos.filter(p => p.status === 'em_andamento');
-  const pedidosConcluidos = pedidos.filter(p => p.status === 'concluido');
+  const pedidosAtivos = pedidos.filter((pedido) => !pedido.excluido);
+  const pedidosVencendo = pedidosAtivos.filter(p => p.dias_restantes <= 7 && p.status !== 'concluido');
+  const pedidosEmAndamento = pedidosAtivos.filter(p => p.status === 'em_andamento');
+  const pedidosConcluidos = pedidosAtivos.filter(p => p.status === 'concluido');
 
   const stats = [
     {

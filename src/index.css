@@ -1697,6 +1697,15 @@
     }
   }
 
+  /* Intensifica o backdrop dos modais e drawers */
+  [data-slot="dialog-overlay"],
+  [data-slot="alert-dialog-overlay"],
+  [data-slot="drawer-overlay"],
+  [data-slot="sheet-overlay"] {
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(2px);
+  }
+
   .bg-blue-50 {
     background-color: var(--color-blue-50);
   }

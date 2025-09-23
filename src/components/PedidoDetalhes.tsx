@@ -5,23 +5,38 @@ import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { 
-  X, 
-  MapPin, 
-  Calendar, 
-  User, 
-  Clock, 
+import {
+  X,
+  MapPin,
+  Calendar,
+  User,
+  Clock,
   AlertTriangle,
   CheckCircle,
   MessageSquare,
   History,
-  Users
+  Users,
+  MoreVertical,
 } from 'lucide-react';
 import { Pedido, AuditoriaLog } from '../types';
 import { getNivelBadgeClass, getStatusBadgeClass } from '../utils/pedidoStyles';
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/apiService';
 import { renderMarkdown } from '../utils/markdown';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogClose,
+} from './ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 
 interface PedidoDetalhesProps {
   pedido: Pedido;
@@ -238,41 +253,56 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
     : '';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-lg w-full max-w-[min(960px,calc(100dvw-2rem))] max-h-[min(90dvh,calc(100dvh-2rem))] overflow-hidden flex flex-col shadow-2xl">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b">
-          <div className="flex-1 min-w-0">
-            <h1 className="text-xl font-semibold text-gray-900 truncate">
-              {pedido.titulo}
-            </h1>
-            <p className="text-sm text-gray-500 mt-1">
-              ID: {pedido.id} • Criado em {formatDateShort(pedido.data_criacao)}
-            </p>
-            <p className="text-xs text-gray-600 mt-1">
-              {pedido.ponto_de_vista === 'feita' && 'Solicitação feita'}
-              {pedido.ponto_de_vista === 'recebida' && 'Solicitação recebida'}
-              {pedido.ponto_de_vista === 'interna' && 'Interna'}
-              {(!pedido.ponto_de_vista || pedido.ponto_de_vista === 'acompanhamento') && 'Acompanhamento'}
-              {(pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome)
-                ? ` • Responsável: ${pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome}`
-                : ''}
-            </p>
+    <Dialog open onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
+      <DialogContent className="w-full max-w-4xl max-h-[90vh] overflow-y-auto p-0">
+        <DialogHeader className="border-b p-6 text-left">
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <DialogTitle className="truncate text-xl font-semibold text-gray-900">
+                {pedido.titulo}
+              </DialogTitle>
+              <DialogDescription className="mt-1 text-sm text-gray-500">
+                ID: {pedido.id} • Criado em {formatDateShort(pedido.data_criacao)}
+              </DialogDescription>
+              <p className="text-xs text-gray-600 mt-1">
+                {pedido.ponto_de_vista === 'feita' && 'Solicitação feita'}
+                {pedido.ponto_de_vista === 'recebida' && 'Solicitação recebida'}
+                {pedido.ponto_de_vista === 'interna' && 'Interna'}
+                {(!pedido.ponto_de_vista || pedido.ponto_de_vista === 'acompanhamento') && 'Acompanhamento'}
+                {(pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome)
+                  ? ` • Responsável: ${pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome}`
+                  : ''}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {canDelete() && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" aria-label="Mais opções">
+                      <MoreVertical className="w-5 h-5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={handleDelete}
+                      disabled={isDeleting}
+                    >
+                      {isDeleting ? 'Excluindo...' : 'Excluir pedido'}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              <DialogClose asChild>
+                <Button variant="ghost" size="icon" aria-label="Fechar">
+                  <X className="w-5 h-5" />
+                </Button>
+              </DialogClose>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            {canDelete() && (
-              <Button onClick={handleDelete} variant="destructive" disabled={isDeleting}>
-                {isDeleting ? 'Excluindo...' : 'Excluir'}
-              </Button>
-            )}
-            <Button variant="ghost" size="icon" onClick={onClose}>
-              <X className="w-5 h-5" />
-            </Button>
-          </div>
-        </div>
+        </DialogHeader>
 
-        {/* Conteúdo */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="p-6 space-y-6">
           <Tabs defaultValue="detalhes" className="h-full">
             <TabsList className="grid w-full grid-cols-3 mb-6">
               <TabsTrigger value="detalhes">Detalhes</TabsTrigger>
@@ -563,7 +593,7 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
             </TabsContent>
           </Tabs>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
