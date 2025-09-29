@@ -6,6 +6,7 @@
             "@fortawesome/fontawesome-svg-core": "^7.0.1",
             "@fortawesome/free-solid-svg-icons": "^7.0.1",
             "@fortawesome/react-fontawesome": "^3.0.2",
+            "@material/web": "^2.4.0",
             "@radix-ui/react-accordion": "^1.2.3",
             "@radix-ui/react-alert-dialog": "^1.1.6",
             "@radix-ui/react-aspect-ratio": "^1.1.2",

@@ -6,7 +6,6 @@ import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import {
-  X,
   MapPin,
   Calendar,
   User,
@@ -29,7 +28,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogClose,
 } from './ui/dialog';
 import {
   DropdownMenu,
@@ -254,7 +252,10 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
 
   return (
     <Dialog open onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
-      <DialogContent className="w-full max-w-4xl max-h-[90vh] overflow-y-auto p-0">
+      <DialogContent
+        className="w-full max-h-[90vh] overflow-y-auto p-0"
+        style={{ maxWidth: '960px' }}
+      >
         <DialogHeader className="border-b p-6 text-left">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0 flex-1">
@@ -293,11 +294,6 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
-              <DialogClose asChild>
-                <Button variant="ghost" size="icon" aria-label="Fechar">
-                  <X className="w-5 h-5" />
-                </Button>
-              </DialogClose>
             </div>
           </div>
         </DialogHeader>
