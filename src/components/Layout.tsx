@@ -17,6 +17,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from './ui/dropdown-menu';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { UserProfileDialog } from './UserProfileDialog';
+import brandWordmark from '../logo/urede_positivo.svg';
+import brandSymbol from '../logo/simbolo_uniodonto.svg';
 
 interface LayoutProps {
   children: ReactNode;
@@ -68,11 +70,11 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
       {/* Header */}
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-              <Building2 className="w-6 h-6 text-white" />
+            <div className="w-11 h-11 bg-purple-100 rounded-xl flex items-center justify-center shadow-sm ring-1 ring-purple-200">
+              <img src={brandSymbol} alt="Símbolo Uniodonto" className="h-6 w-6" />
             </div>
             <div>
-              <h1 className="font-semibold text-gray-900">Uniodonto</h1>
+              <img src={brandWordmark} alt="Uniodonto" className="h-6 w-auto" />
               <p className="text-xs text-gray-500">Sistema de Credenciamento</p>
             </div>
           </div>
@@ -113,7 +115,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
                   variant={isActive ? 'default' : 'ghost'}
                   className={`w-full justify-start ${
                     isActive
-                      ? 'bg-blue-600 text-white hover:bg-blue-700'
+                      ? 'bg-purple-600 text-white hover:bg-purple-700'
                       : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
                   }`}
                   onClick={() => handleTabChange(item.id)}
@@ -152,14 +154,17 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
         {/* Top Bar */}
         <header className="bg-white border-b border-gray-200 px-4 py-4 sm:px-6">
           <div className="flex items-center justify-between gap-4">
-            <h2 className="text-xl font-semibold text-gray-900 capitalize">
-              {activeTab === 'dashboard' ? 'Dashboard' : 
-               activeTab === 'pedidos' ? 'Gestão de Pedidos' :
-               activeTab === 'cooperativas' ? 'Cooperativas' :
-               activeTab === 'operadores' ? 'Operadores' :
-               activeTab === 'cidades' ? 'Cidades' :
-               'Configurações'}
-            </h2>
+            <div className="flex items-center gap-3">
+              <img src={brandWordmark} alt="Uniodonto" className="h-7 w-auto hidden sm:block" />
+              <h2 className="text-xl font-semibold text-gray-900 capitalize">
+                {activeTab === 'dashboard' ? 'Dashboard' : 
+                 activeTab === 'pedidos' ? 'Gestão de Pedidos' :
+                 activeTab === 'cooperativas' ? 'Cooperativas' :
+                 activeTab === 'operadores' ? 'Operadores' :
+                 activeTab === 'cidades' ? 'Cidades' :
+                 'Configurações'}
+              </h2>
+            </div>
             <div className="flex items-center space-x-4">
               <Button
                 variant="ghost"
@@ -204,9 +209,59 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
         <DialogContent className="w-full max-w-[min(320px,calc(100dvw-2rem))] h-full max-h-[100dvh] top-0 right-0 left-auto translate-x-0 translate-y-0 p-0 overflow-hidden bg-transparent border-none shadow-none">
           <div className="h-full w-full max-w-xs bg-white shadow-xl border border-gray-200 rounded-lg flex flex-col">
             <DialogHeader className="p-6 border-b border-gray-200">
-              <DialogTitle className="text-base font-semibold text-gray-900">Menu</DialogTitle>
+              <DialogTitle className="text-base font-semibold text-gray-900 flex items-center gap-3">
+                <img src={brandWordmark} alt="Uniodonto" className="h-6 w-auto" />
+                Menu
+              </DialogTitle>
             </DialogHeader>
-            {SidebarNav}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              <div className="flex items-center space-x-3">
+                <Avatar className="w-10 h-10">
+                  <AvatarFallback className="bg-purple-100 text-purple-600">
+                    {user.nome.split(' ').map((n) => n[0]).join('')}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">{user.nome}</p>
+                  <Badge variant="outline" className={`text-xs ${getRoleBadgeColor(user.papel)}`}>
+                    {getRoleLabel(user.papel)}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                {menuItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeTab === item.id;
+
+                  return (
+                    <Button
+                      key={`mobile-${item.id}`}
+                      variant={isActive ? 'default' : 'ghost'}
+                      className={`w-full justify-start ${
+                        isActive
+                          ? 'bg-purple-600 text-white hover:bg-purple-700'
+                          : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
+                      }`}
+                      onClick={() => {
+                        handleTabChange(item.id);
+                        setMobileNavOpen(false);
+                      }}
+                    >
+                      <Icon className="w-4 h-4 mr-3" />
+                      {item.label}
+                    </Button>
+                  );
+                })}
+              </div>
+
+              <div className="pt-2 border-t border-gray-200">
+                <Button variant="ghost" className="w-full justify-start text-gray-700" onClick={logout}>
+                  <LogOut className="w-4 h-4 mr-3" />
+                  Sair
+                </Button>
+              </div>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
