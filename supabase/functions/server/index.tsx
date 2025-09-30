@@ -306,6 +306,22 @@ const getCooperativaInfo = (id?: string | null) => {
   }
 };
 
+const normalizeBaseRole = (role?: string | null) => {
+  const value = (role || '').toLowerCase();
+  if (value === 'admin') return 'admin';
+  return 'operador';
+};
+
+const deriveRoleForCooperativa = (role: string | null | undefined, cooperativaId?: string | null) => {
+  const base = normalizeBaseRole(role);
+  if (base === 'admin') return 'admin';
+  const info = getCooperativaInfo(cooperativaId);
+  const tipo = info?.tipo;
+  if (tipo === 'CONFEDERACAO') return 'confederacao';
+  if (tipo === 'FEDERACAO') return 'federacao';
+  return 'operador';
+};
+
 const collectSingularesDaFederacao = (federacaoId?: string | null) => {
   if (!federacaoId) return [] as string[];
   try {
@@ -799,12 +815,13 @@ app.post('/auth/register', async (c) => {
     }
 
     const hash = await bcrypt.hash(password);
+    const resolvedRole = deriveRoleForCooperativa(finalPapel, finalCoop);
     db.query(`INSERT INTO auth_users (email, password_hash, nome, display_name, telefone, whatsapp, cargo, cooperativa_id, papel, ativo) VALUES (?,?,?,?,?,?,?,?,?,1)`, [
-      email, hash, nome || '', display_name || nome || '', telefone || '', whatsapp || '', cargo || '', finalCoop, finalPapel
+      email, hash, nome || '', display_name || nome || '', telefone || '', whatsapp || '', cargo || '', finalCoop, resolvedRole
     ]);
 
     // Emitir token após cadastro
-    const token = await signJwt(JWT_SECRET, { sub: email, email, nome: nome || '', cooperativa_id: cooperativa_id || '', papel: papel || 'operador' });
+    const token = await signJwt(JWT_SECRET, { sub: email, email, nome: nome || '', cooperativa_id: finalCoop || '', papel: resolvedRole || 'operador' });
     return c.json({
       message: 'Usuário criado com sucesso',
       token,
@@ -816,8 +833,8 @@ app.post('/auth/register', async (c) => {
         telefone: telefone || '',
         whatsapp: whatsapp || '',
         cargo: cargo || '',
-        cooperativa_id: cooperativa_id || '',
-        papel: (papel || 'operador'),
+        cooperativa_id: finalCoop || '',
+        papel: resolvedRole,
         ativo: true,
         data_cadastro: new Date().toISOString()
       }
@@ -1382,9 +1399,10 @@ app.post('/operadores', requireAuth, async (c) => {
     }
 
     try {
+      const derivedRole = deriveRoleForCooperativa('operador', idSingular);
       db.query(
-        `UPDATE auth_users SET cooperativa_id = COALESCE(?, cooperativa_id), papel = COALESCE(papel, 'operador') WHERE email = ?`,
-        [idSingular, email],
+        `UPDATE auth_users SET cooperativa_id = COALESCE(?, cooperativa_id), papel = COALESCE(papel, ?) WHERE email = ?`,
+        [idSingular, derivedRole, email],
       );
     } catch (e) {
       console.warn('[operadores] sincronização com auth_users falhou:', e);
@@ -1489,6 +1507,8 @@ app.put('/operadores/:id', requireAuth, async (c) => {
     }
     if ('papel' in allowed && !canEditRole) {
       delete allowed.papel;
+    } else if ('papel' in allowed) {
+      allowed.papel = deriveRoleForCooperativa(allowed.papel, operador.id_singular);
     }
 
     if (Object.keys(allowed).length === 0) {
@@ -2146,7 +2166,39 @@ export default app.fetch;
 // Permite rodar localmente sem Docker/Edge, usando Deno diretamente.
 // Mantém compatível com Edge Functions (export default app.fetch acima).
 if (import.meta.main) {
-  const port = Number(Deno.env.get('PORT') || '8000');
-  console.log(`[server] Iniciando servidor HTTP local na porta ${port}...`);
-  Deno.serve({ port }, app.fetch);
+  const parsePortList = (raw?: string | null) =>
+    (raw ? raw.split(',') : [])
+      .map((value) => Number(value.trim()))
+      .filter((value) => Number.isFinite(value) && value > 0);
+
+  const envPort = Number(Deno.env.get('PORT') || NaN);
+  const fallbackPortsFromEnv = parsePortList(Deno.env.get('PORT_FALLBACKS'));
+  const defaultPorts = [8300, 8301, 8302, 8303];
+
+  const portsToTry = [
+    ...(Number.isFinite(envPort) ? [envPort] : []),
+    ...fallbackPortsFromEnv,
+    ...defaultPorts,
+  ].filter((port, index, all) => all.indexOf(port) === index); // deduplicar preservando ordem
+
+  const startServer = () => {
+    for (const port of portsToTry) {
+      try {
+        console.log(`[server] Iniciando servidor HTTP local na porta ${port}...`);
+        Deno.serve({ port }, app.fetch);
+        return;
+      } catch (error) {
+        if (error instanceof Deno.errors.AddrInUse) {
+          console.error(`[server] Porta ${port} em uso, tentando próxima...`);
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    console.error('[server] Nenhuma das portas configuradas está disponível. Defina PORT ou PORT_FALLBACKS.');
+    Deno.exit(1);
+  };
+
+  startServer();
 }

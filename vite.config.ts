@@ -59,5 +59,6 @@ export default defineConfig({
   server: {
     port: 3400,
     open: true,
+    allowedHosts: ['urede.collos.com.br', 'api.urede.collos.com.br'],
   },
 });

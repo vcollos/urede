@@ -12,18 +12,19 @@ Este projeto agora está configurado para rodar somente com SQLite local (sem de
 - `bash scripts/create-sqlite-db.sh`
 - `bash scripts/import-csv-sqlite.sh`
 
-3) Configure o frontend para apontar para o backend local
-- Arquivo `.env` já contém `VITE_API_BASE_URL=http://127.0.0.1:8000`
+3) Ajuste o arquivo `.env` (raiz do projeto)
+- O mesmo arquivo abastece frontend e backend. Atualize `VITE_API_BASE_URL` e, se necessário, `ALLOWED_ORIGINS` para refletir seu ambiente (ex.: `http://127.0.0.1:8300`).
 
 4) Suba o backend (Deno)
 - `npm run server:dev`
+  - O servidor tenta usar `PORT` (default 8300) e avança para `PORT_FALLBACKS` se a porta estiver ocupada.
 
 5) Suba o frontend
 - `npm run dev`
 
 Testes rápidos:
-- Health: `curl http://127.0.0.1:8000/health`
-- Cooperativas públicas: `curl http://127.0.0.1:8000/cooperativas/public`
+- Health: `curl http://127.0.0.1:8300/health`
+- Cooperativas públicas: `curl http://127.0.0.1:8300/cooperativas/public`
 
 Notas:
 - Rotas protegidas usam JWT local (gerado pelo próprio backend em `/auth/register` e `/auth/login`).

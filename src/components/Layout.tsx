@@ -8,7 +8,8 @@ import {
   Bell,
   User,
   Menu,
-  Map
+  Map,
+  Plus
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -24,14 +25,17 @@ interface LayoutProps {
   children: ReactNode;
   activeTab: string;
   onTabChange: (tab: string) => void;
+  onCreatePedido?: () => void;
 }
 
-export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
+export function Layout({ children, activeTab, onTabChange, onCreatePedido }: LayoutProps) {
   const { user, logout } = useAuth();
   const [isMobileNavOpen, setMobileNavOpen] = useState(false);
   const [isProfileDialogOpen, setProfileDialogOpen] = useState(false);
 
   if (!user) return null;
+  const canCreatePedido = ['operador', 'admin', 'confederacao'].includes(user.papel);
+  const showQuickCreatePedido = activeTab === 'pedidos' && canCreatePedido && typeof onCreatePedido === 'function';
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
     { id: 'pedidos', label: 'Pedidos', icon: FileText },
@@ -166,6 +170,17 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
               </h2>
             </div>
             <div className="flex items-center space-x-4">
+              {showQuickCreatePedido && (
+                <button
+                  type="button"
+                  className="quick-action-button"
+                  onClick={onCreatePedido}
+                >
+                  <Plus />
+                  <span className="hidden sm:inline">Novo Pedido</span>
+                  <span className="sm:hidden">Novo</span>
+                </button>
+              )}
               <Button
                 variant="ghost"
                 size="icon"

@@ -6,7 +6,6 @@ import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { 
   Search, 
-  Plus, 
   Filter,
   Calendar,
   MapPin,
@@ -66,6 +65,8 @@ export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps
       window.removeEventListener('pedido:updated', handler);
     };
   }, [user]);
+
+  const canCreatePedido = !!user && ['operador', 'admin', 'confederacao'].includes(user.papel);
 
   // Filtrar pedidos baseado nos filtros aplicados
   const getFilteredPedidos = (): Pedido[] => {
@@ -231,12 +232,6 @@ export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps
             Gerencie pedidos de credenciamento e suprimento da rede com visibilidade sobre status, níveis e prazos.
           </p>
         </div>
-        {isAuthenticated && (
-        <Button onClick={() => { onCreatePedido(); }} className="bg-purple-600 hover:bg-purple-700 self-start sm:self-auto">
-          <Plus className="w-5 h-5 mr-2" />
-          Novo Pedido
-        </Button>
-        )}
       </div>
 
       {/* Filtros */}

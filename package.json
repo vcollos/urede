@@ -62,6 +62,6 @@
             "dev": "vite",
             "prebuild": "node scripts/write-health.mjs",
             "build": "vite build",
-            "server:dev": "deno run -A --env-file=supabase/functions/server/.env supabase/functions/server/index.tsx"
+      "server:dev": "deno run -A --env-file=.env supabase/functions/server/index.tsx"
       }
 }

@@ -18,6 +18,7 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showNovoPedido, setShowNovoPedido] = useState(false);
   const [selectedPedido, setSelectedPedido] = useState<Pedido | null>(null);
+  const openNovoPedido = () => setShowNovoPedido(true);
 
   // Mostrar loading durante verificação da autenticação
   if (isLoading) {
@@ -55,7 +56,7 @@ function AppContent() {
       case 'pedidos':
         return (
           <PedidosLista
-            onCreatePedido={() => setShowNovoPedido(true)}
+            onCreatePedido={openNovoPedido}
             onViewPedido={(pedido) => setSelectedPedido(pedido)}
           />
         );
@@ -75,7 +76,11 @@ function AppContent() {
   // Se autenticado, mostrar aplicação principal
   return (
     <div className="h-screen bg-gray-50 dark:bg-slate-950">
-      <Layout activeTab={activeTab} onTabChange={setActiveTab}>
+      <Layout
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        onCreatePedido={openNovoPedido}
+      >
         {renderContent()}
       </Layout>
 
