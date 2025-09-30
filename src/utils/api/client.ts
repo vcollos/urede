@@ -6,12 +6,21 @@ const deriveDefaultBase = () => {
     if (typeof window !== 'undefined' && window.location) {
       const proto = window.location.protocol || 'http:';
       const host = window.location.hostname || '127.0.0.1';
-      // Em dev, apontar sempre para porta 8000
+      const port = 8300;
+
       if (host === 'localhost' || host === '127.0.0.1') {
-        return `${proto}//127.0.0.1:8000`;
+        return `${proto}//127.0.0.1:${port}`;
       }
-      // Outros hosts (preview), manter mesmo protocolo e usar porta 8000 local
-      return `${proto}//127.0.0.1:8000`;
+
+      if (host === 'urede.collos.com.br') {
+        return `${proto}//apiurede.collos.com.br`;
+      }
+
+      if (host.endsWith('.collos.com.br')) {
+        return `${proto}//api.${host}`;
+      }
+
+      return `${proto}//${host}`;
     }
   } catch {}
   return '';

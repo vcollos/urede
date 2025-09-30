@@ -6,7 +6,7 @@ import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
-import { X, Plus } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import { apiService } from '../services/apiService';
 import { Cidade, Pedido } from '../types';
 import {
@@ -158,11 +158,6 @@ export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
                 Informe os dados do pedido para iniciar o credenciamento.
               </DialogDescription>
             </div>
-            <DialogClose asChild>
-              <Button variant="ghost" size="icon" disabled={isSubmitting}>
-                <X className="w-4 h-4" />
-              </Button>
-            </DialogClose>
           </div>
         </DialogHeader>
 

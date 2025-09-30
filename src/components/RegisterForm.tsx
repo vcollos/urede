@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from './ui/alert';
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/apiService';
 import type { Cooperativa } from '../types';
+import { deriveRole, toBaseRole } from '../utils/roleMapping';
 
 interface RegisterFormProps {
   onToggleMode: () => void;
@@ -23,7 +24,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
     cargo: '',
     password: '',
     cooperativa_id: '',
-    papel: 'operador' as 'admin' | 'operador' | 'federacao' | 'confederacao'
+    papel: 'operador' as 'operador' | 'admin'
   });
   const [cooperativas, setCooperativas] = useState<Cooperativa[]>([]);
   const [error, setError] = useState('');
@@ -100,7 +101,13 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
     setIsSubmitting(true);
 
     try {
-      await register(formData);
+      const cooperativaSelecionada = cooperativas.find((coop) => coop.id_singular === formData.cooperativa_id);
+      const papelFinal = deriveRole(formData.papel, cooperativaSelecionada);
+
+      await register({
+        ...formData,
+        papel: papelFinal,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao criar conta');
     } finally {
@@ -247,7 +254,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
             <Label htmlFor="papel">Papel no sistema</Label>
             <Select 
               value={formData.papel} 
-              onValueChange={(value) => updateFormData('papel', value as any)}
+              onValueChange={(value) => updateFormData('papel', toBaseRole(value))}
               required
               disabled={isSubmitting}
             >
@@ -256,8 +263,6 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="operador">Operador</SelectItem>
-                <SelectItem value="federacao">Federação</SelectItem>
-                <SelectItem value="confederacao">Confederação</SelectItem>
                 <SelectItem value="admin">Administrador</SelectItem>
               </SelectContent>
             </Select>

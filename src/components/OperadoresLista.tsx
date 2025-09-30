@@ -21,6 +21,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/apiService';
 import { Operador, Cooperativa } from '../types';
+import { deriveRole, toBaseRole, describeRole } from '../utils/roleMapping';
 
 interface OperadoresListaProps {
   onRequestEdit?: (operador: Operador) => void;
@@ -46,7 +47,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     telefone: '',
     whatsapp: '',
     ativo: true,
-    papel: 'operador' as Operador['papel'],
+    papel: 'operador' as 'operador' | 'admin',
   });
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -147,12 +148,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
   const roleOptions = [
     { value: 'operador', label: 'Operador' },
     { value: 'admin', label: 'Administrador' },
-  ];
-  if (isConfUser) {
-    roleOptions.push({ value: 'federacao', label: 'Federação' }, { value: 'confederacao', label: 'Confederação' });
-  } else if (isFederacaoUser) {
-    roleOptions.push({ value: 'federacao', label: 'Federação' });
-  }
+  ] as const;
 
   const handleOpenEdit = (operador: Operador) => {
     setEditingOperador(operador);
@@ -162,7 +158,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
       telefone: operador.telefone || '',
       whatsapp: operador.whatsapp || '',
       ativo: operador.ativo,
-      papel: operador.papel || 'operador',
+      papel: toBaseRole(operador.papel),
     });
     setSaveError('');
     setIsEditOpen(true);
@@ -191,7 +187,8 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
       };
 
       if (canManageRoles) {
-        payload.papel = editForm.papel;
+        const coop = cooperativas.find((c) => c.id_singular === editingOperador.id_singular);
+        payload.papel = deriveRole(editForm.papel, coop);
       }
 
       const updated = await apiService.updateOperador(editingOperador.id, payload);
@@ -423,7 +420,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
                       </TableCell>
                       <TableCell className="hidden lg:table-cell">
                         <Badge variant="outline" className="text-xs capitalize">
-                          {operador.papel || 'operador'}
+                          {describeRole(operador.papel)}
                         </Badge>
                       </TableCell>
 
@@ -539,8 +536,8 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
                 <div className="space-y-2">
                   <Label htmlFor="operador-papel">Tipo de acesso</Label>
                   <Select
-                    value={editForm.papel || 'operador'}
-                    onValueChange={(value) => setEditForm((prev) => ({ ...prev, papel: value as Operador['papel'] }))}
+                    value={editForm.papel}
+                    onValueChange={(value) => setEditForm((prev) => ({ ...prev, papel: toBaseRole(value) }))}
                   >
                     <SelectTrigger id="operador-papel">
                       <SelectValue />
@@ -557,7 +554,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
               ) : (
                 <div className="space-y-2">
                   <Label>Tipo de acesso</Label>
-                  <Input value={editingOperador?.papel || 'operador'} disabled readOnly />
+                  <Input value={describeRole(editingOperador?.papel)} disabled readOnly />
                 </div>
               )}
 

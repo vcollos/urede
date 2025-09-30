@@ -54,7 +54,7 @@ Sistema web que centraliza o credenciamento de prestadores da rede Uniodonto. Pe
 └────────────────────┘      └────────────────────────┘      └───────────────┘
 ```
 
-- **Frontend**: React 18 + Vite + Tailwind (via CSS gerado). Consome `VITE_API_BASE_URL` (default `http://127.0.0.1:8000`).
+- **Frontend**: React 18 + Vite + Tailwind (via CSS gerado). Consome `VITE_API_BASE_URL` (default `http://127.0.0.1:8300`).
 - **Backend**: Hono rodando em Deno (`supabase/functions/server/index.tsx`). Disponível via `npm run server:dev`.
 - **Banco**: SQLite (`data/urede.db`). Scripts para criar/importar em `scripts/`.
 - **Autenticação**: JWT local salvo em `localStorage` (`auth_token`).
@@ -133,15 +133,15 @@ npm --version
    Isso gera/popula `data/urede.db`. Ajuste os CSVs em `bases_csv/` conforme necessidade.
 
 3. **Configurar variáveis**
-   - Copie `.env.example` → `.env.local` ou `.env`.
-   - Valores padrão apontam para `http://127.0.0.1:8000` (API local).
+   - Utilize o arquivo `.env` na raiz (compartilhado por frontend e backend).
+   - Ajuste `VITE_API_BASE_URL` e `ALLOWED_ORIGINS` conforme ambiente (ex.: `http://127.0.0.1:8300`).
 
 4. **Rodar backend (Hono/Deno)**
    ```bash
    npm run server:dev
    ```
-   - Depende do arquivo `.env` em `supabase/functions/server/.env` (já versionado com defaults seguros para dev).
-   - API ficará disponível em `http://127.0.0.1:8000`.
+   - Usa o mesmo `.env` da raiz (variáveis `JWT_SECRET`, `SQLITE_PATH`, etc.).
+   - API ficará disponível em `http://127.0.0.1:8300` (ou na primeira porta livre da lista informada).
 
 5. **Rodar frontend**
    ```bash
@@ -161,20 +161,23 @@ npm --version
 
 ### Frontend (`.env`, `.env.local`)
 ```bash
-VITE_API_BASE_URL=http://127.0.0.1:8000
+VITE_API_BASE_URL=http://127.0.0.1:8300
 ```
 Outros valores poderão ser adicionados conforme integração com serviços externos.
 
-### Backend Deno (`supabase/functions/server/.env`)
+### Backend Deno (mesmo `.env` da raiz)
 ```bash
 JWT_SECRET=dev-secret-change-me
 SQLITE_PATH=./data/urede.db
 TABLE_PREFIX=urede_
 INSECURE_MODE=false
 ALLOWED_ORIGINS=http://localhost:3400
+PORT=8300
+PORT_FALLBACKS=8301,8302,8303
 ```
 - `INSECURE_MODE=true` libera autenticação para desenvolvimento.
 - Ajuste `ALLOWED_ORIGINS` para ambientes adicionais (app em produção, etc.).
+- `PORT` define a porta preferencial e `PORT_FALLBACKS` lista alternativas caso alguma já esteja em uso.
 
 ---
 
@@ -290,9 +293,9 @@ bash scripts/import-csv-sqlite.sh
 | Sintoma                              | Causa Provável                               | Ação                                                                 |
 |-------------------------------------|----------------------------------------------|----------------------------------------------------------------------|
 | Campos de texto lentos              | Re-render pesado em listas grandes            | Debounce, memoização com `useMemo`/`useDeferredValue`                |
-| Login falha / mock aparece          | API Deno não está rodando ou erro de CORS     | Verificar `npm run server:dev`, checar console e `supabase/functions/server/.env` |
+| Login falha / mock aparece          | API Deno não está rodando ou erro de CORS     | Verificar `npm run server:dev`, checar console e `.env` |
 | Build falha (npm)                   | Node/NPM ausentes ou versão incompatível      | Instalar Node 18+ (ex.: `brew install node`)                        |
-| `ECONNREFUSED` nas requisições      | API fora do ar ou `VITE_API_BASE_URL` errado  | Conferir `.env` e porta 8000                                        |
+| `ECONNREFUSED` nas requisições      | API fora do ar ou `VITE_API_BASE_URL` errado  | Conferir `.env` e porta 8300 (ou a porta configurada)               |
 | Escalonamento não dispara           | Cron não configurado                          | Rodar manual `POST /admin/escalar-pedidos` ou agendar script shell  |
 
 Logs úteis:
@@ -300,7 +303,7 @@ Logs úteis:
 # Backend Hono (Deno)
 npm run server:dev
 # Health da API
-curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8300/health
 # Frontend (Vite dev server)
 npm run dev
 ```
