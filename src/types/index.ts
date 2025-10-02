@@ -58,6 +58,7 @@ export interface Pedido {
   id: string;
   titulo: string;
   criado_por: string; // ID do operador que criou
+  criado_por_user?: string | null;
   cooperativa_solicitante_id: string; // id_singular da cooperativa
   cooperativa_solicitante_nome?: string;
   cooperativa_responsavel_nome?: string;
@@ -81,6 +82,28 @@ export interface Pedido {
   prioridade: 'baixa' | 'media' | 'alta' | 'urgente';
   ponto_de_vista?: 'feita' | 'recebida' | 'acompanhamento' | 'interna';
   excluido?: boolean;
+}
+
+export type AlertaTipo = 'novo' | 'comentario' | 'status' | 'nivel' | 'responsavel' | 'atualizacao';
+
+export interface Alerta {
+  id: string;
+  pedido_id: string;
+  pedido_titulo: string;
+  tipo: AlertaTipo;
+  mensagem: string;
+  detalhes?: string | null;
+  lido: boolean;
+  criado_em: string;
+  disparado_por_email?: string | null;
+  disparado_por_nome?: string | null;
+}
+
+export interface CooperativaConfig {
+  cooperativa_id: string;
+  nome: string;
+  tipo: 'SINGULAR' | 'FEDERACAO' | 'CONFEDERACAO';
+  auto_recusar: boolean;
 }
 
 export interface AuditoriaLog {

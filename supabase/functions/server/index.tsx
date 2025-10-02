@@ -135,7 +135,9 @@ const mapCoberturaLog = (row: any) => ({
   timestamp: row.timestamp ?? null,
 });
 
-const computeDiasRestantes = (prazoIso: string) => {
+const computeDiasRestantes = (prazoIso: string | null | undefined, status?: string | null) => {
+  if (!prazoIso) return 0;
+  if (status && status.toLowerCase() === 'concluido') return 0;
   const prazo = new Date(prazoIso);
   const agora = new Date();
   if (Number.isNaN(prazo.getTime())) return 0;
@@ -146,6 +148,27 @@ const computeDiasRestantes = (prazoIso: string) => {
   const diffTime = inicioPrazo.getTime() - inicioHoje.getTime();
 
   return Math.max(0, Math.floor(diffTime / msPorDia));
+};
+
+const getDeadlineDaysForNivel = (nivel: 'singular' | 'federacao' | 'confederacao') => {
+  try {
+    const settings = readSystemSettings();
+    if (nivel === 'singular') {
+      return Math.max(1, Number(settings.deadlines?.singularToFederacao ?? DEFAULT_SYSTEM_SETTINGS.deadlines.singularToFederacao) || DEFAULT_SYSTEM_SETTINGS.deadlines.singularToFederacao);
+    }
+    if (nivel === 'federacao') {
+      return Math.max(1, Number(settings.deadlines?.federacaoToConfederacao ?? DEFAULT_SYSTEM_SETTINGS.deadlines.federacaoToConfederacao) || DEFAULT_SYSTEM_SETTINGS.deadlines.federacaoToConfederacao);
+    }
+  } catch (error) {
+    console.warn('[deadlines] falha ao ler configurações:', error);
+  }
+  return 30;
+};
+
+const computePrazoLimite = (nivel: 'singular' | 'federacao' | 'confederacao', baseDate = new Date()) => {
+  const dias = getDeadlineDaysForNivel(nivel);
+  const prazoDate = new Date(baseDate.getTime() + dias * 24 * 60 * 60 * 1000);
+  return prazoDate.toISOString();
 };
 
 // Carrega nomes de cidade e cooperativa para um conjunto de pedidos
@@ -229,6 +252,62 @@ const ensureSettingsSchema = () => {
 };
 
 ensureSettingsSchema();
+
+const ensureAlertasSchema = () => {
+  try {
+    db.query(`CREATE TABLE IF NOT EXISTS ${TBL('alertas')} (
+      id TEXT PRIMARY KEY,
+      pedido_id TEXT NOT NULL,
+      pedido_titulo TEXT,
+      destinatario_email TEXT NOT NULL,
+      destinatario_nome TEXT,
+      destinatario_cooperativa_id TEXT,
+      tipo TEXT NOT NULL,
+      mensagem TEXT,
+      detalhes TEXT,
+      lido INTEGER NOT NULL DEFAULT 0,
+      criado_em TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+      disparado_por_email TEXT,
+      disparado_por_nome TEXT
+    )`);
+  } catch (e) {
+    console.warn('[schema] criacao de alertas falhou:', e);
+  }
+
+  try {
+    db.query(`CREATE INDEX IF NOT EXISTS idx_${TBL('alertas').replace('.', '_')}_destinatario ON ${TBL('alertas')}(destinatario_email)`);
+  } catch (e) {
+    console.warn('[schema] indice alertas destinatario falhou:', e);
+  }
+
+  try {
+    db.query(`CREATE INDEX IF NOT EXISTS idx_${TBL('alertas').replace('.', '_')}_pedido ON ${TBL('alertas')}(pedido_id)`);
+  } catch (e) {
+    console.warn('[schema] indice alertas pedido falhou:', e);
+  }
+
+  try {
+    db.query(`CREATE INDEX IF NOT EXISTS idx_${TBL('alertas').replace('.', '_')}_lido ON ${TBL('alertas')}(lido)`);
+  } catch (e) {
+    console.warn('[schema] indice alertas lido falhou:', e);
+  }
+};
+
+ensureAlertasSchema();
+
+const ensureCooperativaSettingsSchema = () => {
+  try {
+    db.query(`CREATE TABLE IF NOT EXISTS ${TBL('cooperativa_settings')} (
+      cooperativa_id TEXT PRIMARY KEY,
+      auto_recusar INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+    )`);
+  } catch (error) {
+    console.warn('[schema] criação de cooperativa_settings falhou:', error);
+  }
+};
+
+ensureCooperativaSettingsSchema();
 
 type SystemSettings = {
   theme: 'light' | 'dark' | 'system';
@@ -476,6 +555,437 @@ const ensureOperatorRecord = (user: {
   }
 };
 
+const getActiveUsersByCooperativa = (cooperativaId?: string | null) => {
+  if (!cooperativaId) return [] as Array<any>;
+  try {
+    const rows = db.queryEntries<any>(
+      `SELECT email, COALESCE(display_name, nome, email) AS nome, cooperativa_id, COALESCE(ativo, 1) AS ativo
+         FROM auth_users
+        WHERE cooperativa_id = ?`,
+      [cooperativaId],
+    ) || [];
+    return rows.filter((row) => Number(row.ativo ?? 1) !== 0);
+  } catch (error) {
+    console.warn('[alertas] falha ao buscar usuários da cooperativa:', error);
+    return [] as Array<any>;
+  }
+};
+
+const getActiveUserByEmail = (email?: string | null) => {
+  if (!email) return null;
+  try {
+    const row = db.queryEntries<any>(
+      `SELECT email, COALESCE(display_name, nome, email) AS nome, cooperativa_id, COALESCE(ativo, 1) AS ativo
+         FROM auth_users
+        WHERE LOWER(email) = LOWER(?)
+        LIMIT 1`,
+      [email],
+    )[0];
+    if (!row) return null;
+    if (Number(row.ativo ?? 1) === 0) return null;
+    return row;
+  } catch (error) {
+    console.warn('[alertas] falha ao buscar usuário por email:', error);
+    return null;
+  }
+};
+
+const truncateText = (value: string, max = 280) => {
+  if (!value) return '';
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= max) return normalized;
+  return `${normalized.slice(0, max - 1)}…`;
+};
+
+type PedidoAlertContext = {
+  pedidoOriginal?: any;
+  pedidoAtualizado: any;
+  actor: any;
+  detalhes: string[];
+  comentario?: string;
+  camposAlterados?: string[];
+  action: 'criado' | 'atualizado';
+  mensagemCustom?: string;
+};
+
+const dispatchPedidoAlert = (context: PedidoAlertContext) => {
+  try {
+    const pedido = context.pedidoAtualizado;
+    if (!pedido?.id) return;
+
+    const actorEmailRaw = context.actor?.email || context.actor?.id || '';
+    const actorEmail = (actorEmailRaw || '').toString().toLowerCase();
+    const actorNome = context.actor?.display_name || context.actor?.nome || actorEmailRaw || 'Sistema';
+    const titulo = pedido.titulo || 'Pedido';
+
+    const camposAlterados = context.camposAlterados || [];
+    const detalhesLimpos = (context.detalhes || []).filter(Boolean);
+    const comentarioTexto = context.comentario ? truncateText(context.comentario, 220) : '';
+
+    const tipo = (() => {
+      if (context.action === 'criado') return 'novo';
+      if (comentarioTexto) return 'comentario';
+      if (camposAlterados.includes('status')) return 'status';
+      if (camposAlterados.includes('nivel_atual')) return 'nivel';
+      if (camposAlterados.includes('responsavel_atual_id') || camposAlterados.includes('responsavel_atual_nome')) return 'responsavel';
+      if (camposAlterados.includes('cooperativa_responsavel_id')) return 'responsavel';
+      return 'atualizacao';
+    })();
+
+    const mensagem = truncateText(
+      context.mensagemCustom
+        || (detalhesLimpos.length > 0
+          ? detalhesLimpos.join(' • ')
+          : (comentarioTexto ? `Comentário: ${comentarioTexto}` : (context.action === 'criado' ? 'Novo pedido criado.' : 'Pedido atualizado.'))),
+      320,
+    );
+
+    const detalhesTexto = truncateText(detalhesLimpos.join(' | '), 1200) || null;
+
+    const recipients = new Map<string, { email: string; nome: string | null; cooperativaId: string | null }>();
+    const addRecipient = (email?: string | null, nome?: string | null, cooperativaId?: string | null) => {
+      if (!email) return;
+      const key = email.toString().toLowerCase();
+      if (!key) return;
+      if (key === actorEmail) return;
+      if (!recipients.has(key)) {
+        recipients.set(key, {
+          email: email,
+          nome: nome || email,
+          cooperativaId: cooperativaId || null,
+        });
+      }
+    };
+
+    if (pedido.cooperativa_solicitante_id) {
+      const solicitantes = getActiveUsersByCooperativa(pedido.cooperativa_solicitante_id);
+      if (solicitantes.length > 0) {
+        for (const usuario of solicitantes) {
+          addRecipient(usuario.email, usuario.nome, usuario.cooperativa_id || pedido.cooperativa_solicitante_id);
+        }
+      }
+      if (solicitantes.length === 0 && pedido.criado_por_user) {
+        addRecipient(pedido.criado_por_user, pedido.criado_por_user, pedido.cooperativa_solicitante_id);
+      }
+    } else if (pedido.criado_por_user) {
+      addRecipient(pedido.criado_por_user, pedido.criado_por_user, null);
+    }
+
+    if (pedido.responsavel_atual_id) {
+      const responsavel = getActiveUserByEmail(pedido.responsavel_atual_id);
+      if (responsavel) {
+        addRecipient(
+          responsavel.email,
+          responsavel.nome,
+          responsavel.cooperativa_id || pedido.cooperativa_responsavel_id || null,
+        );
+      } else {
+        addRecipient(
+          pedido.responsavel_atual_id,
+          pedido.responsavel_atual_nome || pedido.responsavel_atual_id,
+          pedido.cooperativa_responsavel_id || null,
+        );
+      }
+    } else if (pedido.cooperativa_responsavel_id) {
+      const responsaveis = getActiveUsersByCooperativa(pedido.cooperativa_responsavel_id);
+      for (const usuario of responsaveis) {
+        addRecipient(usuario.email, usuario.nome, usuario.cooperativa_id || pedido.cooperativa_responsavel_id);
+      }
+    }
+
+    if (recipients.size === 0) return;
+
+    const agora = new Date().toISOString();
+
+    for (const [, destinatario] of recipients) {
+      try {
+        const id = safeRandomId('alert');
+        db.query(
+          `INSERT INTO ${TBL('alertas')} (
+            id,
+            pedido_id,
+            pedido_titulo,
+            destinatario_email,
+            destinatario_nome,
+            destinatario_cooperativa_id,
+            tipo,
+            mensagem,
+            detalhes,
+            lido,
+            criado_em,
+            disparado_por_email,
+            disparado_por_nome
+          ) VALUES (?,?,?,?,?,?,?,?,?,0,?,?,?)`,
+          [
+            id,
+            pedido.id,
+            titulo,
+            destinatario.email,
+            destinatario.nome ?? destinatario.email,
+            destinatario.cooperativaId ?? null,
+            tipo,
+            mensagem,
+            detalhesTexto,
+            agora,
+            actorEmailRaw || null,
+            actorNome,
+          ],
+        );
+      } catch (error) {
+        console.warn('[alertas] falha ao inserir alerta:', error);
+      }
+    }
+  } catch (error) {
+    console.warn('[alertas] falha ao despachar alerta:', error);
+  }
+};
+
+const getCooperativaSettings = (cooperativaId?: string | null) => {
+  if (!cooperativaId) return { auto_recusar: false };
+  try {
+    const row = db.queryEntries<{ auto_recusar: number }>(
+      `SELECT auto_recusar FROM ${TBL('cooperativa_settings')} WHERE cooperativa_id = ? LIMIT 1`,
+      [cooperativaId],
+    )[0];
+    return { auto_recusar: !!(row?.auto_recusar) };
+  } catch (error) {
+    console.warn('[cooperativa_settings] falha ao buscar preferências:', error);
+    return { auto_recusar: false };
+  }
+};
+
+const setCooperativaSettings = (cooperativaId: string, settings: { auto_recusar?: boolean }) => {
+  if (!cooperativaId) return;
+  try {
+    const flag = settings.auto_recusar ? 1 : 0;
+    db.query(
+      `INSERT INTO ${TBL('cooperativa_settings')} (cooperativa_id, auto_recusar, updated_at)
+       VALUES (?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(cooperativa_id)
+       DO UPDATE SET auto_recusar = excluded.auto_recusar, updated_at = excluded.updated_at`,
+      [cooperativaId, flag],
+    );
+  } catch (error) {
+    console.error('[cooperativa_settings] falha ao salvar preferências:', error);
+    throw error;
+  }
+};
+
+type EscalationTarget = {
+  novoNivel: 'singular' | 'federacao' | 'confederacao';
+  novaCooperativa: string;
+};
+
+const computeEscalationTarget = (pedido: any): EscalationTarget | null => {
+  if (!pedido || !pedido.nivel_atual) return null;
+
+  const nivelAtual = (pedido.nivel_atual || '').toString();
+  if (nivelAtual === 'confederacao') return null;
+
+  if (nivelAtual === 'singular') {
+    try {
+      const coopSolic = db.queryEntries<any>(
+        `SELECT FEDERACAO FROM ${TBL('cooperativas')} WHERE id_singular = ? LIMIT 1`,
+        [pedido.cooperativa_solicitante_id],
+      )[0];
+      const federacaoNome = coopSolic?.FEDERACAO;
+      if (federacaoNome) {
+        const fed = db.queryEntries<any>(
+          `SELECT id_singular FROM ${TBL('cooperativas')} WHERE TIPO LIKE 'FEDER%' AND FEDERACAO = ? LIMIT 1`,
+          [federacaoNome],
+        )[0];
+        if (fed?.id_singular) {
+          return { novoNivel: 'federacao', novaCooperativa: fed.id_singular as string };
+        }
+      }
+    } catch (error) {
+      console.warn('[transferencia] falha ao localizar federação destino:', error);
+    }
+    return null;
+  }
+
+  if (nivelAtual === 'federacao') {
+    try {
+      const conf = db.queryEntries<any>(
+        `SELECT id_singular FROM ${TBL('cooperativas')} WHERE TIPO LIKE 'CONFEDER%' LIMIT 1`
+      )[0];
+      if (conf?.id_singular) {
+        return { novoNivel: 'confederacao', novaCooperativa: conf.id_singular as string };
+      }
+    } catch (error) {
+      console.warn('[transferencia] falha ao localizar confederação destino:', error);
+    }
+    return null;
+  }
+
+  return null;
+};
+
+const applyEscalation = async (
+  pedido: any,
+  actor: { email?: string; id?: string; nome?: string; display_name?: string } | null,
+  motivo: string,
+) => {
+  const target = computeEscalationTarget(pedido);
+  if (!target) return null;
+
+  const agoraDate = new Date();
+  const agora = agoraDate.toISOString();
+  const novoPrazo = computePrazoLimite(target.novoNivel, agoraDate);
+
+  try {
+    db.query(
+      `UPDATE ${TBL('pedidos')} SET nivel_atual = ?, cooperativa_responsavel_id = ?, prazo_atual = ?, data_ultima_alteracao = ?, responsavel_atual_id = NULL, responsavel_atual_nome = NULL WHERE id = ?`,
+      [target.novoNivel, target.novaCooperativa, novoPrazo, agora, pedido.id],
+    );
+  } catch (error) {
+    console.error('[transferencia] falha ao aplicar escalonamento:', error);
+    throw error;
+  }
+
+  const updatedRow = db.queryEntries<any>(`SELECT * FROM ${TBL('pedidos')} WHERE id = ? LIMIT 1`, [pedido.id])[0];
+  if (!updatedRow) return null;
+
+  const updatedPedido = {
+    ...updatedRow,
+    especialidades: Array.isArray(updatedRow.especialidades)
+      ? updatedRow.especialidades
+      : (() => { try { return JSON.parse(updatedRow.especialidades || '[]'); } catch { return []; } })(),
+  };
+
+  const base = [{
+    ...updatedPedido,
+    dias_restantes: computeDiasRestantes(updatedPedido.prazo_atual, updatedPedido.status),
+  }];
+  const [enriched] = await enrichPedidos(base);
+  const result = enriched || base[0];
+  if (result) {
+    result.dias_restantes = computeDiasRestantes(result.prazo_atual, result.status);
+    if (result.status === 'concluido' && result.data_conclusao && result.data_criacao) {
+      const dataInicio = new Date(result.data_criacao);
+      const dataFinal = new Date(result.data_conclusao);
+      if (!Number.isNaN(dataInicio.getTime()) && !Number.isNaN(dataFinal.getTime())) {
+        const diff = dataFinal.getTime() - dataInicio.getTime();
+        (result as any).dias_para_concluir = Math.max(0, Math.round(diff / (1000 * 60 * 60 * 24)));
+      }
+    }
+  }
+
+  const destinoInfo = getCooperativaInfo(target.novaCooperativa);
+  const dadosActor = actor || { email: 'sistema@urede', nome: 'Sistema Automático' };
+  const actorNome = dadosActor.display_name || dadosActor.nome || dadosActor.email || 'Sistema';
+
+  const auditoria = {
+    id: safeRandomId('audit'),
+    pedido_id: pedido.id,
+    usuario_id: dadosActor.id || dadosActor.email || 'sistema',
+    usuario_nome: actorNome,
+    usuario_display_nome: actorNome,
+    acao: 'Transferência de nível',
+    timestamp: new Date().toISOString(),
+    detalhes: `Novo nível: ${target.novoNivel}${destinoInfo?.uniodonto ? ` (${destinoInfo.uniodonto})` : ''} | Motivo: ${motivo}`,
+  };
+
+  try {
+    db.query(
+      `INSERT INTO ${TBL('auditoria_logs')} (id, pedido_id, usuario_id, usuario_nome, usuario_display_nome, acao, timestamp, detalhes)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [
+        auditoria.id,
+        auditoria.pedido_id,
+        auditoria.usuario_id,
+        auditoria.usuario_nome,
+        auditoria.usuario_display_nome,
+        auditoria.acao,
+        auditoria.timestamp,
+        auditoria.detalhes,
+      ],
+    );
+  } catch (error) {
+    console.warn('[transferencia] não foi possível registrar auditoria:', error);
+  }
+
+  try {
+    dispatchPedidoAlert({
+      pedidoOriginal: pedido,
+      pedidoAtualizado: result,
+      actor: dadosActor,
+      detalhes: [
+        `Transferência para ${target.novoNivel}`,
+        destinoInfo?.uniodonto ? `Nova responsável: ${destinoInfo.uniodonto}` : '',
+        `Motivo: ${motivo}`,
+      ],
+      action: 'atualizado',
+      mensagemCustom: `Pedido transferido para ${target.novoNivel}`,
+    });
+  } catch (error) {
+    console.warn('[transferencia] falha ao despachar alerta de transferência:', error);
+  }
+
+  return result;
+};
+
+const autoEscalateIfNeeded = async (
+  pedido: any,
+  actor: { email?: string; id?: string; nome?: string; display_name?: string } | null,
+) => {
+  let current = pedido;
+  const maxHops = 5;
+  let hops = 0;
+
+  while (current && hops < maxHops) {
+    const coopAtual = current.cooperativa_responsavel_id;
+    if (!coopAtual) break;
+    const settings = getCooperativaSettings(coopAtual);
+    if (!settings.auto_recusar) break;
+
+    const coopInfo = getCooperativaInfo(coopAtual);
+    const motivo = `Recusa automática por ${coopInfo?.uniodonto || 'cooperativa responsável'}`;
+    const escalado = await applyEscalation(current, actor, motivo);
+    if (!escalado) break;
+    current = escalado;
+    hops += 1;
+  }
+
+  if (current) {
+    current.dias_restantes = computeDiasRestantes(current.prazo_atual, current.status);
+    if (current.status === 'concluido' && current.data_conclusao && current.data_criacao) {
+      const dataInicio = new Date(current.data_criacao);
+      const dataFinal = new Date(current.data_conclusao);
+      if (!Number.isNaN(dataInicio.getTime()) && !Number.isNaN(dataFinal.getTime())) {
+        const diff = dataFinal.getTime() - dataInicio.getTime();
+        (current as any).dias_para_concluir = Math.max(0, Math.round(diff / (1000 * 60 * 60 * 24)));
+      }
+    }
+  }
+
+  return current;
+};
+
+const autoEscalatePedidosForCooperativa = async (
+  cooperativaId: string,
+  actor: { email?: string; id?: string; nome?: string; display_name?: string } | null,
+) => {
+  try {
+    const rows = db.queryEntries<any>(
+      `SELECT * FROM ${TBL('pedidos')} WHERE cooperativa_responsavel_id = ? AND status NOT IN ('concluido', 'cancelado')`,
+      [cooperativaId],
+    ) || [];
+
+    for (const row of rows) {
+      const pedido = {
+        ...row,
+        especialidades: Array.isArray(row.especialidades)
+          ? row.especialidades
+          : (() => { try { return JSON.parse(row.especialidades || '[]'); } catch { return []; } })(),
+      };
+      await autoEscalateIfNeeded(pedido, actor);
+    }
+  } catch (error) {
+    console.warn('[transferencia] falha ao aplicar recusa automática em lote:', error);
+  }
+};
+
 const enrichPedidos = async (pedidos: any[]) => {
   if (!pedidos || pedidos.length === 0) return [] as any[];
 
@@ -685,52 +1195,30 @@ const escalarPedidos = async () => {
     const pedidos = db.queryEntries<any>(`SELECT * FROM ${TBL('pedidos')} WHERE status = 'em_andamento' AND prazo_atual < ?`, [agoraIso]);
     if (!pedidos || pedidos.length === 0) return;
 
-    for (const pedido of pedidos as any[]) {
-      let novoNivel = pedido.nivel_atual as 'singular' | 'federacao' | 'confederacao';
-      let novaCooperativaResponsavel: string | null = pedido.cooperativa_responsavel_id || null;
+    const systemActor = { email: 'sistema@urede', nome: 'Sistema Automático', display_name: 'Sistema Automático', id: 'sistema' };
 
-      if (pedido.nivel_atual === 'singular') {
-        // Buscar federação da cooperativa solicitante
-        const coopSolic = db.queryEntries<any>(`SELECT FEDERACAO FROM ${TBL('cooperativas')} WHERE id_singular = ? LIMIT 1`, [pedido.cooperativa_solicitante_id])[0];
-        const federacaoNome = coopSolic?.FEDERACAO;
-        if (federacaoNome) {
-        const fed = db.queryEntries<any>(`SELECT id_singular FROM ${TBL('cooperativas')} WHERE TIPO LIKE 'FEDER%' AND FEDERACAO = ? LIMIT 1`, [federacaoNome])[0];
-          if (fed) {
-            novoNivel = 'federacao';
-            novaCooperativaResponsavel = fed.id_singular as string;
-          }
-        }
-      } else if (pedido.nivel_atual === 'federacao') {
-        const conf = db.queryEntries<any>(`SELECT id_singular FROM ${TBL('cooperativas')} WHERE TIPO LIKE 'CONFEDER%' LIMIT 1`)[0];
-        if (conf) {
-          novoNivel = 'confederacao';
-          novaCooperativaResponsavel = conf.id_singular as string;
-        }
-      }
+    for (const row of pedidos as any[]) {
+      const pedido = {
+        ...row,
+        especialidades: Array.isArray(row.especialidades)
+          ? row.especialidades
+          : (() => { try { return JSON.parse(row.especialidades || '[]'); } catch { return []; } })(),
+      };
 
-      if (novoNivel !== pedido.nivel_atual && novaCooperativaResponsavel) {
-        const novoPrazo = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-        const agora = new Date().toISOString();
+      const target = computeEscalationTarget(pedido);
+      if (!target) continue;
 
-        try {
-          db.query(
-            `UPDATE ${TBL('pedidos')} SET nivel_atual = ?, cooperativa_responsavel_id = ?, prazo_atual = ?, data_ultima_alteracao = ? WHERE id = ?`,
-            [novoNivel, novaCooperativaResponsavel, novoPrazo, agora, pedido.id]
-          );
-        } catch (e) {
-          console.error('Erro ao atualizar pedido no escalonamento:', e);
-          continue;
+      try {
+        const escalado = await applyEscalation(
+          pedido,
+          systemActor,
+          'Escalonamento automático por vencimento de prazo',
+        );
+        if (escalado) {
+          await autoEscalateIfNeeded(escalado, systemActor);
         }
-
-        // Registrar auditoria com autor como criador do pedido para evitar FK inválida
-        try {
-          const id = `audit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-          db.query(`INSERT INTO ${TBL('auditoria_logs')} (id, pedido_id, usuario_id, usuario_nome, usuario_display_nome, acao, timestamp, detalhes) VALUES (?,?,?,?,?,?,?,?)`,
-            [id, pedido.id, pedido.criado_por, 'Sistema Automático', 'Sistema Automático', `Escalamento automático para ${novoNivel}`, agora, `Pedido escalado automaticamente por vencimento de prazo. Novo prazo: ${novoPrazo}`]
-          );
-        } catch (e) {
-          console.error('Erro ao registrar auditoria de escalonamento:', e);
-        }
+      } catch (error) {
+        console.error('Erro ao escalar pedido automaticamente:', error);
       }
     }
   } catch (error) {
@@ -905,7 +1393,7 @@ app.put('/configuracoes/sistema', requireAuth, async (c) => {
   if (!userData) return c.json({ error: 'Usuário não encontrado' }, 401);
 
   const papel = (userData.papel || '').toLowerCase();
-  if (!['confederacao', 'admin', 'federacao'].includes(papel)) {
+  if (papel !== 'confederacao') {
     return c.json({ error: 'Acesso negado' }, 403);
   }
 
@@ -1105,6 +1593,112 @@ app.get('/cooperativas', requireAuth, async (c) => {
   } catch (error) {
     console.error('Erro ao buscar cooperativas:', error);
     return c.json({ error: 'Erro ao buscar cooperativas' }, 500);
+  }
+});
+
+app.get('/cooperativas/:id/config', requireAuth, async (c) => {
+  try {
+    const cooperativaId = c.req.param('id');
+    if (!cooperativaId) {
+      return c.json({ error: 'Cooperativa inválida' }, 400);
+    }
+
+    const authUser = c.get('user');
+    const userData = await getUserData(authUser.id, authUser.email);
+    if (!userData) {
+      return c.json({ error: 'Usuário não autenticado' }, 401);
+    }
+
+    const info = getCooperativaInfo(cooperativaId);
+    if (!info) {
+      return c.json({ error: 'Cooperativa não encontrada' }, 404);
+    }
+
+    const isOwn = userData.cooperativa_id === cooperativaId;
+    const podeVer = userData.papel === 'confederacao'
+      || (isOwn && (userData.papel === 'admin' || userData.papel === 'federacao'));
+
+    if (!podeVer) {
+      return c.json({ error: 'Acesso negado' }, 403);
+    }
+
+    const settings = getCooperativaSettings(cooperativaId);
+    return c.json({
+      cooperativa_id: cooperativaId,
+      nome: info.uniodonto,
+      tipo: info.tipo,
+      auto_recusar: settings.auto_recusar,
+    });
+  } catch (error) {
+    console.error('Erro ao carregar configurações da cooperativa:', error);
+    return c.json({ error: 'Erro ao carregar configurações' }, 500);
+  }
+});
+
+app.put('/cooperativas/:id/config', requireAuth, async (c) => {
+  try {
+    const cooperativaId = c.req.param('id');
+    if (!cooperativaId) {
+      return c.json({ error: 'Cooperativa inválida' }, 400);
+    }
+
+    const authUser = c.get('user');
+    const userData = await getUserData(authUser.id, authUser.email);
+    if (!userData) {
+      return c.json({ error: 'Usuário não autenticado' }, 401);
+    }
+
+    const info = getCooperativaInfo(cooperativaId);
+    if (!info) {
+      return c.json({ error: 'Cooperativa não encontrada' }, 404);
+    }
+
+    if (info.tipo === 'CONFEDERACAO') {
+      return c.json({ error: 'A Confederação não pode recusar pedidos automaticamente' }, 400);
+    }
+
+    const isOwn = userData.cooperativa_id === cooperativaId;
+    const podeEditar = (isOwn && (userData.papel === 'admin' || userData.papel === 'federacao')) || userData.papel === 'confederacao';
+
+    if (!podeEditar) {
+      return c.json({ error: 'Acesso negado' }, 403);
+    }
+
+    let body: any = {};
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'JSON inválido' }, 400);
+    }
+
+    const autoRecusar = Boolean(body?.auto_recusar);
+
+    try {
+      setCooperativaSettings(cooperativaId, { auto_recusar: autoRecusar });
+    } catch (error) {
+      console.error('Erro ao salvar preferências da cooperativa:', error);
+      return c.json({ error: 'Não foi possível salvar as preferências' }, 500);
+    }
+
+    if (autoRecusar) {
+      const actor = {
+        email: userData.email,
+        id: userData.id,
+        nome: userData.nome,
+        display_name: userData.display_name,
+      };
+      await autoEscalatePedidosForCooperativa(cooperativaId, actor);
+    }
+
+    return c.json({
+      cooperativa_id: cooperativaId,
+      nome: info.uniodonto,
+      tipo: info.tipo,
+      auto_recusar: autoRecusar,
+    });
+  } catch (error) {
+    console.error('Erro ao atualizar configurações da cooperativa:', error);
+    return c.json({ error: 'Erro ao atualizar configurações' }, 500);
   }
 });
 
@@ -1580,7 +2174,7 @@ app.get('/pedidos/public', async (c) => {
       status: p.status,
       nivel_atual: p.nivel_atual,
       prazo_atual: p.prazo_atual,
-      dias_restantes: computeDiasRestantes(p.prazo_atual),
+      dias_restantes: computeDiasRestantes(p.prazo_atual, p.status),
       cooperativa_solicitante_id: p.cooperativa_solicitante_id,
     }));
     const enriched = await enrichPedidos(base);
@@ -1635,15 +2229,24 @@ app.get('/pedidos', requireAuth, async (c) => {
     });
 
     // Calcular dias restantes para cada pedido
-    const pedidosComDias = pedidosFiltrados.map(p => ({
-      ...p,
-      dias_restantes: computeDiasRestantes(p.prazo_atual),
-    }));
+  const pedidosComDias = pedidosFiltrados.map(p => ({
+    ...p,
+    dias_restantes: computeDiasRestantes(p.prazo_atual, p.status),
+  }));
 
     const enriquecidosBase = await enrichPedidos(pedidosComDias);
     // Computar ponto_de_vista para o viewer
     const viewerCoop = userData?.cooperativa_id || null;
     const enriquecidos = enriquecidosBase.map((p: any) => {
+      const diasRestantes = computeDiasRestantes(p.prazo_atual, p.status);
+      let diasParaConcluir = p.dias_para_concluir ?? null;
+      if (p.status === 'concluido' && p.data_conclusao && p.data_criacao) {
+        const inicio = new Date(p.data_criacao);
+        const fim = new Date(p.data_conclusao);
+        if (!Number.isNaN(inicio.getTime()) && !Number.isNaN(fim.getTime())) {
+          diasParaConcluir = Math.max(0, Math.round((fim.getTime() - inicio.getTime()) / (1000 * 60 * 60 * 24)));
+        }
+      }
       let ponto: 'feita' | 'recebida' | 'acompanhamento' | 'interna' = 'acompanhamento';
       if (viewerCoop) {
         const isSolic = p.cooperativa_solicitante_id === viewerCoop;
@@ -1653,12 +2256,115 @@ app.get('/pedidos', requireAuth, async (c) => {
         else if (isResp) ponto = 'recebida';
         else ponto = 'acompanhamento';
       }
-      return { ...p, ponto_de_vista: ponto };
+      return {
+        ...p,
+        ponto_de_vista: ponto,
+        dias_restantes: diasRestantes,
+        dias_para_concluir: diasParaConcluir,
+      };
     });
     return c.json(enriquecidos);
   } catch (error) {
     console.error('Erro ao buscar pedidos:', error);
     return c.json({ error: 'Erro ao buscar pedidos' }, 500);
+  }
+});
+
+app.get('/pedidos/:id', requireAuth, async (c) => {
+  try {
+    const pedidoId = c.req.param('id');
+    if (!pedidoId) {
+      return c.json({ error: 'Identificador inválido' }, 400);
+    }
+
+    const authUser = c.get('user');
+    const userData = await getUserData(authUser.id, authUser.email);
+    if (!userData) {
+      return c.json({ error: 'Usuário não autenticado' }, 401);
+    }
+
+    const pedido = db.queryEntries<any>(`SELECT * FROM ${TBL('pedidos')} WHERE id = ? LIMIT 1`, [pedidoId])[0];
+    if (!pedido) {
+      return c.json({ error: 'Pedido não encontrado' }, 404);
+    }
+
+    let podeVer = false;
+    if (userData.papel === 'confederacao' || userData.papel === 'admin') {
+      podeVer = true;
+    } else if (userData.papel === 'operador') {
+      const mesmoSolicitante = pedido.cooperativa_solicitante_id === userData.cooperativa_id;
+      const mesmaResponsavel = pedido.cooperativa_responsavel_id === userData.cooperativa_id;
+      const criadoPor = (pedido.criado_por_user || '').toLowerCase() === (userData.email || '').toLowerCase();
+      podeVer = mesmoSolicitante || mesmaResponsavel || criadoPor;
+    } else if (userData.papel === 'federacao') {
+      const userFed = (() => {
+        try {
+          const row = db.queryEntries<any>(
+            `SELECT FEDERACAO FROM ${TBL('cooperativas')} WHERE id_singular = ? LIMIT 1`,
+            [userData.cooperativa_id],
+          )[0];
+          return row?.FEDERACAO || null;
+        } catch {
+          return null;
+        }
+      })();
+
+      const fedSolic = (() => {
+        try {
+          const row = db.queryEntries<any>(
+            `SELECT FEDERACAO FROM ${TBL('cooperativas')} WHERE id_singular = ? LIMIT 1`,
+            [pedido.cooperativa_solicitante_id],
+          )[0];
+          return row?.FEDERACAO || null;
+        } catch {
+          return null;
+        }
+      })();
+
+      const fedResp = (() => {
+        try {
+          const row = db.queryEntries<any>(
+            `SELECT FEDERACAO FROM ${TBL('cooperativas')} WHERE id_singular = ? LIMIT 1`,
+            [pedido.cooperativa_responsavel_id],
+          )[0];
+          return row?.FEDERACAO || null;
+        } catch {
+          return null;
+        }
+      })();
+
+      podeVer = !!userFed && (fedSolic === userFed || fedResp === userFed);
+    }
+
+    if (!podeVer) {
+      return c.json({ error: 'Acesso negado a este pedido' }, 403);
+    }
+
+    const especialidades = Array.isArray(pedido.especialidades)
+      ? pedido.especialidades
+      : (() => { try { return JSON.parse(pedido.especialidades || '[]'); } catch { return []; } })();
+    const base = [{
+      ...pedido,
+      especialidades,
+      dias_restantes: computeDiasRestantes(pedido.prazo_atual, pedido.status),
+    }];
+    const [enriched] = await enrichPedidos(base);
+    const resultPedido = enriched || base[0];
+    if (resultPedido) {
+      resultPedido.dias_restantes = computeDiasRestantes(resultPedido.prazo_atual, resultPedido.status);
+      if (resultPedido.status === 'concluido' && resultPedido.data_conclusao && resultPedido.data_criacao) {
+        const inicio = new Date(resultPedido.data_criacao);
+        const fim = new Date(resultPedido.data_conclusao);
+        if (!Number.isNaN(inicio.getTime()) && !Number.isNaN(fim.getTime())) {
+          const diff = fim.getTime() - inicio.getTime();
+          (resultPedido as any).dias_para_concluir = Math.max(0, Math.round(diff / (1000 * 60 * 60 * 24)));
+        }
+      }
+    }
+    return c.json(resultPedido);
+  } catch (error) {
+    console.error('Erro ao buscar pedido:', error);
+    return c.json({ error: 'Erro ao buscar pedido' }, 500);
   }
 });
 
@@ -1674,6 +2380,8 @@ app.post('/pedidos', requireAuth, async (c) => {
     }
     
     const id = `ped_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const prazoInicial = computePrazoLimite('singular');
+
     const novoPedido = {
       id,
       titulo: pedidoData.titulo,
@@ -1686,7 +2394,7 @@ app.post('/pedidos', requireAuth, async (c) => {
       quantidade: pedidoData.quantidade,
       observacoes: pedidoData.observacoes,
       nivel_atual: 'singular',
-      prazo_atual: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 dias
+      prazo_atual: prazoInicial,
       status: 'novo',
       data_criacao: new Date().toISOString(),
       data_ultima_alteracao: new Date().toISOString(),
@@ -1774,10 +2482,29 @@ app.post('/pedidos', requireAuth, async (c) => {
         especialidades: Array.isArray(pedidoData.especialidades)
           ? pedidoData.especialidades
           : (() => { try { return JSON.parse(novoPedido.especialidades || '[]'); } catch { return []; } })(),
-        dias_restantes: computeDiasRestantes(novoPedido.prazo_atual),
+        dias_restantes: computeDiasRestantes(novoPedido.prazo_atual, novoPedido.status),
       }];
       const [enriched] = await enrichPedidos(base);
-      return c.json(enriched || base[0]);
+      let pedidoResposta = enriched || base[0];
+      try {
+        const responsavelNome = pedidoResposta.cooperativa_responsavel_nome
+          || pedidoResposta.cooperativa_responsavel_id
+          || 'Responsável indefinido';
+        dispatchPedidoAlert({
+          pedidoAtualizado: pedidoResposta,
+          actor: userData,
+          detalhes: [
+            'Pedido criado',
+            `Responsável: ${responsavelNome}`,
+          ],
+          action: 'criado',
+          mensagemCustom: `Novo pedido criado: ${pedidoResposta.titulo}`,
+        });
+      } catch (error) {
+        console.warn('[alertas] falha ao gerar alerta de criação:', error);
+      }
+      const finalPedido = await autoEscalateIfNeeded(pedidoResposta, userData) || pedidoResposta;
+      return c.json(finalPedido);
     }
   } catch (error) {
     console.error('Erro ao criar pedido:', error);
@@ -1956,10 +2683,21 @@ app.put('/pedidos/:id', requireAuth, async (c) => {
     {
       const base = [{
         ...updated,
-        dias_restantes: computeDiasRestantes(updated.prazo_atual),
+        dias_restantes: computeDiasRestantes(updated.prazo_atual, updated.status),
       }];
       const [enriched] = await enrichPedidos(base);
       const result = enriched || base[0];
+      if (result) {
+        result.dias_restantes = computeDiasRestantes(result.prazo_atual, result.status);
+        if (result.status === 'concluido' && result.data_conclusao && result.data_criacao) {
+          const dataInicio = new Date(result.data_criacao);
+          const dataFinal = new Date(result.data_conclusao);
+          if (!Number.isNaN(dataInicio.getTime()) && !Number.isNaN(dataFinal.getTime())) {
+            const diff = dataFinal.getTime() - dataInicio.getTime();
+            (result as any).dias_para_concluir = Math.max(0, Math.round(diff / (1000 * 60 * 60 * 24)));
+          }
+        }
+      }
       if (result && dataConclusao) {
         result.data_conclusao = dataConclusao;
         const dataInicio = result.data_criacao ? new Date(result.data_criacao) : null;
@@ -1969,11 +2707,92 @@ app.put('/pedidos/:id', requireAuth, async (c) => {
           (result as any).dias_para_concluir = Math.max(0, Math.round(diff / (1000 * 60 * 60 * 24)));
         }
       }
-      return c.json(result);
+      try {
+        dispatchPedidoAlert({
+          pedidoOriginal: pedido,
+          pedidoAtualizado: result,
+          actor: userData,
+          detalhes: detalhesPartes,
+          comentario: comentarioAtual,
+          camposAlterados,
+          action: 'atualizado',
+        });
+      } catch (error) {
+        console.warn('[alertas] falha ao gerar alerta de atualização:', error);
+      }
+      const finalResult = await autoEscalateIfNeeded(result, userData) || result;
+      if (finalResult) {
+        finalResult.dias_restantes = computeDiasRestantes(finalResult.prazo_atual, finalResult.status);
+      }
+      return c.json(finalResult);
     }
   } catch (error) {
     console.error('Erro ao atualizar pedido:', error);
     return c.json({ error: 'Erro ao atualizar pedido' }, 500);
+  }
+});
+
+app.post('/pedidos/:id/transferir', requireAuth, async (c) => {
+  try {
+    const pedidoId = c.req.param('id');
+    const authUser = c.get('user');
+    const userData = await getUserData(authUser.id, authUser.email);
+    if (!userData) {
+      return c.json({ error: 'Usuário não autenticado' }, 401);
+    }
+
+    const row = db.queryEntries<any>(`SELECT * FROM ${TBL('pedidos')} WHERE id = ? LIMIT 1`, [pedidoId])[0];
+    if (!row) {
+      return c.json({ error: 'Pedido não encontrado' }, 404);
+    }
+
+    const pedido = {
+      ...row,
+      especialidades: Array.isArray(row.especialidades)
+        ? row.especialidades
+        : (() => { try { return JSON.parse(row.especialidades || '[]'); } catch { return []; } })(),
+    };
+
+    const target = computeEscalationTarget(pedido);
+    if (!target) {
+      return c.json({ error: 'Não há nível superior disponível para este pedido' }, 400);
+    }
+
+    const mesmaResponsavel = pedido.cooperativa_responsavel_id
+      && userData.cooperativa_id === pedido.cooperativa_responsavel_id;
+    const podeTransferir = userData.papel === 'confederacao'
+      || mesmaResponsavel;
+
+    if (!podeTransferir) {
+      return c.json({ error: 'Acesso negado para transferir este pedido' }, 403);
+    }
+
+    let body: any = {};
+    try {
+      body = await c.req.json();
+    } catch {}
+
+    const motivoManual = typeof body?.motivo === 'string' && body.motivo.trim().length > 0
+      ? body.motivo.trim()
+      : 'Transferência manual solicitada pela cooperativa responsável';
+
+    let atualizado;
+    try {
+      atualizado = await applyEscalation(pedido, userData, motivoManual);
+    } catch (error) {
+      console.error('Erro ao transferir pedido manualmente:', error);
+      return c.json({ error: 'Erro ao transferir o pedido' }, 500);
+    }
+
+    if (!atualizado) {
+      return c.json({ error: 'Não foi possível transferir este pedido' }, 400);
+    }
+
+    const finalPedido = await autoEscalateIfNeeded(atualizado, userData) || atualizado;
+    return c.json(finalPedido);
+  } catch (error) {
+    console.error('Erro na transferência manual do pedido:', error);
+    return c.json({ error: 'Erro ao transferir pedido' }, 500);
   }
 });
 
@@ -2032,6 +2851,197 @@ app.get('/pedidos/:id/auditoria', requireAuth, async (c) => {
   } catch (error) {
     console.error('Erro ao buscar auditoria do pedido:', error);
     return c.json({ error: 'Erro ao buscar auditoria do pedido' }, 500);
+  }
+});
+
+// ROTAS DE ALERTAS
+app.get('/alertas', requireAuth, async (c) => {
+  try {
+    const authUser = c.get('user');
+    const email = authUser.email || authUser?.claims?.email;
+    if (!email) {
+      return c.json([]);
+    }
+
+    const limitParam = c.req.query('limit');
+    const limit = (() => {
+      const parsed = Number(limitParam);
+      if (!Number.isFinite(parsed)) return 50;
+      return Math.min(Math.max(Math.trunc(parsed), 1), 200);
+    })();
+
+    const rows = db.queryEntries<any>(
+      `SELECT id, pedido_id, pedido_titulo, destinatario_email, destinatario_nome, destinatario_cooperativa_id, tipo, mensagem, detalhes, lido, criado_em, disparado_por_email, disparado_por_nome
+         FROM ${TBL('alertas')}
+        WHERE LOWER(destinatario_email) = LOWER(?)
+        ORDER BY lido ASC, datetime(COALESCE(criado_em, CURRENT_TIMESTAMP)) DESC
+        LIMIT ?`,
+      [email, limit],
+    ) || [];
+
+    const mapped = rows.map((row) => ({
+      id: row.id,
+      pedido_id: row.pedido_id,
+      pedido_titulo: row.pedido_titulo,
+      tipo: row.tipo,
+      mensagem: row.mensagem,
+      detalhes: row.detalhes,
+      lido: Number(row.lido ?? 0) !== 0,
+      criado_em: row.criado_em,
+      disparado_por_email: row.disparado_por_email,
+      disparado_por_nome: row.disparado_por_nome,
+    }));
+
+    return c.json(mapped);
+  } catch (error) {
+    console.error('Erro ao buscar alertas:', error);
+    return c.json({ error: 'Erro ao buscar alertas' }, 500);
+  }
+});
+
+app.post('/alertas/:id/lido', requireAuth, async (c) => {
+  try {
+    const authUser = c.get('user');
+    const alertaId = c.req.param('id');
+    if (!alertaId) {
+      return c.json({ error: 'Identificador inválido' }, 400);
+    }
+
+    const email = authUser.email || authUser?.claims?.email;
+    if (!email) {
+      return c.json({ error: 'Usuário não autenticado' }, 401);
+    }
+
+    const userData = await getUserData(authUser.id, email);
+    if (!userData) {
+      return c.json({ error: 'Usuário não autenticado' }, 401);
+    }
+
+    const alertaRow = db.queryEntries<any>(
+      `SELECT * FROM ${TBL('alertas')} WHERE id = ? AND LOWER(destinatario_email) = LOWER(?) LIMIT 1`,
+      [alertaId, email],
+    )[0];
+    if (!alertaRow) {
+      return c.json({ error: 'Alerta não encontrado' }, 404);
+    }
+
+    let body = {} as any;
+    try {
+      body = await c.req.json();
+    } catch {}
+    const marcado = body?.lido === false ? 0 : 1;
+
+    db.query(
+      `UPDATE ${TBL('alertas')} SET lido = ?, criado_em = criado_em WHERE id = ? AND LOWER(destinatario_email) = LOWER(?)`,
+      [marcado, alertaId, email],
+    );
+
+    const estavaLido = Number(alertaRow.lido ?? 0) !== 0;
+    if (!estavaLido && marcado === 1 && alertaRow.pedido_id) {
+      try {
+        const detalhes = truncateText(
+          `Alerta visualizado: ${alertaRow.tipo || 'atualizacao'}${alertaRow.mensagem ? ` • ${alertaRow.mensagem}` : ''}`,
+          500,
+        );
+        const auditoria = {
+          id: safeRandomId('audit'),
+          pedido_id: alertaRow.pedido_id,
+          usuario_id: userData.id,
+          usuario_nome: userData.nome,
+          usuario_display_nome: userData.display_name || userData.nome,
+          acao: 'Leitura de alerta',
+          timestamp: new Date().toISOString(),
+          detalhes,
+        };
+        db.query(
+          `INSERT INTO ${TBL('auditoria_logs')} (id, pedido_id, usuario_id, usuario_nome, usuario_display_nome, acao, timestamp, detalhes)
+           VALUES (?,?,?,?,?,?,?,?)`,
+          [
+            auditoria.id,
+            auditoria.pedido_id,
+            auditoria.usuario_id,
+            auditoria.usuario_nome,
+            auditoria.usuario_display_nome,
+            auditoria.acao,
+            auditoria.timestamp,
+            auditoria.detalhes,
+          ],
+        );
+      } catch (error) {
+        console.warn('[alertas] falha ao registrar auditoria de leitura:', error);
+      }
+    }
+
+    return c.json({ ok: true, lido: marcado === 1 });
+  } catch (error) {
+    console.error('Erro ao atualizar alerta:', error);
+    return c.json({ error: 'Erro ao atualizar alerta' }, 500);
+  }
+});
+
+app.post('/alertas/marcar-todos', requireAuth, async (c) => {
+  try {
+    const authUser = c.get('user');
+    const email = authUser.email || authUser?.claims?.email;
+    if (!email) {
+      return c.json({ error: 'Usuário não autenticado' }, 401);
+    }
+
+    const userData = await getUserData(authUser.id, email);
+    if (!userData) {
+      return c.json({ error: 'Usuário não autenticado' }, 401);
+    }
+
+    const alertas = db.queryEntries<any>(
+      `SELECT * FROM ${TBL('alertas')} WHERE LOWER(destinatario_email) = LOWER(?) AND (lido IS NULL OR lido = 0)`,
+      [email],
+    ) || [];
+
+    db.query(
+      `UPDATE ${TBL('alertas')} SET lido = 1 WHERE LOWER(destinatario_email) = LOWER(?)`,
+      [email],
+    );
+
+    for (const alerta of alertas) {
+      if (!alerta?.pedido_id) continue;
+      try {
+        const detalhes = truncateText(
+          `Alerta visualizado: ${alerta.tipo || 'atualizacao'}${alerta.mensagem ? ` • ${alerta.mensagem}` : ''}`,
+          500,
+        );
+        const auditoria = {
+          id: safeRandomId('audit'),
+          pedido_id: alerta.pedido_id,
+          usuario_id: userData.id,
+          usuario_nome: userData.nome,
+          usuario_display_nome: userData.display_name || userData.nome,
+          acao: 'Leitura de alerta',
+          timestamp: new Date().toISOString(),
+          detalhes,
+        };
+        db.query(
+          `INSERT INTO ${TBL('auditoria_logs')} (id, pedido_id, usuario_id, usuario_nome, usuario_display_nome, acao, timestamp, detalhes)
+           VALUES (?,?,?,?,?,?,?,?)`,
+          [
+            auditoria.id,
+            auditoria.pedido_id,
+            auditoria.usuario_id,
+            auditoria.usuario_nome,
+            auditoria.usuario_display_nome,
+            auditoria.acao,
+            auditoria.timestamp,
+            auditoria.detalhes,
+          ],
+        );
+      } catch (error) {
+        console.warn('[alertas] falha ao registrar auditoria de leitura (marcar todos):', error);
+      }
+    }
+
+    return c.json({ ok: true, total: alertas.length });
+  } catch (error) {
+    console.error('Erro ao marcar alertas como lidos:', error);
+    return c.json({ error: 'Erro ao marcar alertas' }, 500);
   }
 });
 

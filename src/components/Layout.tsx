@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Building2,
   FileText,
@@ -20,18 +20,206 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { UserProfileDialog } from './UserProfileDialog';
 import brandWordmark from '../logo/urede_positivo.svg';
 import brandSymbol from '../logo/simbolo_uniodonto.svg';
+import { apiService } from '../services/apiService';
+import type { Alerta } from '../types';
 
 interface LayoutProps {
   children: ReactNode;
   activeTab: string;
   onTabChange: (tab: string) => void;
   onCreatePedido?: () => void;
+  onOpenPedido?: (pedidoId: string) => void;
 }
 
-export function Layout({ children, activeTab, onTabChange, onCreatePedido }: LayoutProps) {
+export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpenPedido }: LayoutProps) {
   const { user, logout } = useAuth();
   const [isMobileNavOpen, setMobileNavOpen] = useState(false);
   const [isProfileDialogOpen, setProfileDialogOpen] = useState(false);
+  const [alertas, setAlertas] = useState<Alerta[]>([]);
+  const [isLoadingAlertas, setIsLoadingAlertas] = useState(false);
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const isMountedRef = useRef(true);
+  const lastAlertIdsRef = useRef<Set<string>>(new Set());
+  const hasRequestedNotificationRef = useRef(false);
+  const notificationsSupported = typeof window !== 'undefined' && 'Notification' in window;
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const unreadCount = alertas.reduce((count, alerta) => (alerta.lido ? count : count + 1), 0);
+
+  const formatAlertDate = useCallback((value: string) => {
+    if (!value) return '';
+    try {
+      return new Date(value).toLocaleString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return value;
+    }
+  }, []);
+
+  const getAlertTypeLabel = useCallback((tipo: Alerta['tipo']) => {
+    switch (tipo) {
+      case 'novo':
+        return 'Novo pedido';
+      case 'comentario':
+        return 'Comentário';
+      case 'status':
+        return 'Status';
+      case 'nivel':
+        return 'Escalonamento';
+      case 'responsavel':
+        return 'Responsável';
+      default:
+        return 'Atualização';
+    }
+  }, []);
+
+  const triggerNotifications = useCallback((novos: Alerta[]) => {
+    if (!notificationsSupported || novos.length === 0) return;
+
+    const apresentar = () => {
+      novos.forEach((alerta) => {
+        const title = alerta.pedido_titulo || 'Atualização no pedido';
+        const bodyParts = [getAlertTypeLabel(alerta.tipo), alerta.mensagem]
+          .filter(Boolean)
+          .join(' • ');
+        try {
+          const notification = new Notification(title, {
+            body: bodyParts || 'Há novidades em um pedido.',
+            tag: alerta.id,
+          });
+          notification.onclick = () => {
+            window.focus();
+            setAlertsOpen(true);
+            if (alerta.pedido_id) {
+              onOpenPedido?.(alerta.pedido_id);
+            }
+            notification.close();
+          };
+        } catch (error) {
+          console.warn('[alertas] falha ao disparar notificação do navegador:', error);
+        }
+      });
+    };
+
+    const permission = Notification.permission;
+    if (permission === 'granted') {
+      apresentar();
+    } else if (permission === 'default' && !hasRequestedNotificationRef.current) {
+      hasRequestedNotificationRef.current = true;
+      Notification.requestPermission().then((result) => {
+        if (result === 'granted') {
+          apresentar();
+        }
+      }).catch(() => {
+        /* silencioso */
+      });
+    }
+  }, [notificationsSupported, getAlertTypeLabel, onOpenPedido]);
+
+  const refreshAlertas = useCallback(async () => {
+    if (!user) {
+      if (isMountedRef.current) {
+        setAlertas([]);
+        lastAlertIdsRef.current = new Set();
+      }
+      return [] as Alerta[];
+    }
+    try {
+      const data = await apiService.getAlertas(50);
+      if (isMountedRef.current) {
+        const previousIds = lastAlertIdsRef.current;
+        const newUnread = notificationsSupported
+          ? data.filter((alerta) => !alerta.lido && !previousIds.has(alerta.id))
+          : [];
+        lastAlertIdsRef.current = new Set(data.map((alerta) => alerta.id));
+        setAlertas(data);
+        if (newUnread.length > 0) {
+          triggerNotifications(newUnread);
+        }
+      }
+      return data;
+    } catch (error) {
+      console.error('Erro ao buscar alertas:', error);
+      return [] as Alerta[];
+    }
+  }, [user, notificationsSupported, triggerNotifications]);
+
+  useEffect(() => {
+    if (!user) {
+      setAlertas([]);
+      lastAlertIdsRef.current = new Set();
+      setIsLoadingAlertas(false);
+      return;
+    }
+
+    let active = true;
+
+    const run = async () => {
+      if (!active) return;
+      setIsLoadingAlertas(true);
+      try {
+        await refreshAlertas();
+      } finally {
+        if (active && isMountedRef.current) {
+          setIsLoadingAlertas(false);
+        }
+      }
+    };
+
+    run();
+    const intervalId = window.setInterval(run, 60000);
+    const handleRefresh = () => { void run(); };
+    window.addEventListener('pedido:updated', handleRefresh);
+    window.addEventListener('pedido:deleted', handleRefresh);
+    window.addEventListener('pedido:created', handleRefresh);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      window.removeEventListener('pedido:updated', handleRefresh);
+      window.removeEventListener('pedido:deleted', handleRefresh);
+      window.removeEventListener('pedido:created', handleRefresh);
+    };
+  }, [user, refreshAlertas]);
+
+  const handleAlertClick = useCallback(async (alerta: Alerta) => {
+    try {
+      if (!alerta.lido) {
+        await apiService.marcarAlertaComoLido(alerta.id, true);
+        if (isMountedRef.current) {
+          setAlertas((prev) => prev.map((item) =>
+            item.id === alerta.id ? { ...item, lido: true } : item
+          ));
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao atualizar alerta:', error);
+    } finally {
+      setAlertsOpen(false);
+      onOpenPedido?.(alerta.pedido_id);
+    }
+  }, [onOpenPedido]);
+
+  const handleMarkAllAlertas = useCallback(async () => {
+    try {
+      await apiService.marcarTodosAlertasComoLidos();
+      if (isMountedRef.current) {
+        setAlertas((prev) => prev.map((alerta) => ({ ...alerta, lido: true })));
+      }
+    } catch (error) {
+      console.error('Erro ao marcar alertas como lidos:', error);
+    }
+  }, []);
 
   if (!user) return null;
   const canCreatePedido = ['operador', 'admin', 'confederacao'].includes(user.papel);
@@ -190,9 +378,99 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido }: Lay
               >
                 <Menu className="w-5 h-5" />
               </Button>
-              <Button variant="ghost" size="icon">
-                <Bell className="w-5 h-5" />
-              </Button>
+              <DropdownMenu
+                open={alertsOpen}
+                onOpenChange={(open) => {
+                  setAlertsOpen(open);
+                  if (open) {
+                    setIsLoadingAlertas(true);
+                    void refreshAlertas().finally(() => {
+                      if (isMountedRef.current) {
+                        setIsLoadingAlertas(false);
+                      }
+                    });
+                  }
+                }}
+              >
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Abrir alertas"
+                    className={`relative ${unreadCount > 0 ? 'text-red-500 hover:text-red-600 focus-visible:text-red-600' : ''}`}
+                  >
+                    <Bell className={`w-5 h-5 ${unreadCount > 0 ? 'text-red-500' : ''}`} />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-semibold text-white">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </span>
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-[320px] p-0">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Alertas</p>
+                      <p className="text-xs text-gray-500">
+                        {unreadCount > 0
+                          ? `${unreadCount} alerta${unreadCount > 1 ? 's' : ''} pendente${unreadCount > 1 ? 's' : ''}`
+                          : 'Tudo em dia'}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleMarkAllAlertas}
+                      disabled={unreadCount === 0}
+                    >
+                      Marcar como lidos
+                    </Button>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto">
+                    {isLoadingAlertas ? (
+                      <div className="px-4 py-6 text-sm text-gray-500">Carregando alertas...</div>
+                    ) : alertas.length === 0 ? (
+                      <div className="px-4 py-6 text-sm text-gray-500">Nenhum alerta por aqui.</div>
+                    ) : (
+                      alertas.map((alerta) => {
+                        const message = (alerta.mensagem && alerta.mensagem.trim())
+                          || (alerta.detalhes && alerta.detalhes.trim())
+                          || 'Atualização registrada.';
+                        return (
+                          <button
+                            key={alerta.id}
+                            type="button"
+                            onClick={() => handleAlertClick(alerta)}
+                            className={`w-full px-4 py-3 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 ${
+                              alerta.lido
+                                ? 'bg-white hover:bg-gray-50'
+                                : 'bg-purple-50 hover:bg-purple-100'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-semibold text-gray-900 line-clamp-1">
+                                {alerta.pedido_titulo || alerta.pedido_id}
+                              </p>
+                              <Badge
+                                variant={alerta.lido ? 'outline' : 'secondary'}
+                                className="text-[10px] uppercase tracking-wide"
+                              >
+                                {getAlertTypeLabel(alerta.tipo)}
+                              </Badge>
+                            </div>
+                            <p className="mt-1 text-xs text-gray-600 line-clamp-3">
+                              {message}
+                            </p>
+                            <div className="mt-2 text-[11px] text-gray-400">
+                              {formatAlertDate(alerta.criado_em)}
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <DropdownMenu>
                 <DropdownMenuTrigger>
                   <Button variant="ghost" size="icon" aria-label="Perfil">

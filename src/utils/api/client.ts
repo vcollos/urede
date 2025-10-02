@@ -7,9 +7,16 @@ const deriveDefaultBase = () => {
       const proto = window.location.protocol || 'http:';
       const host = window.location.hostname || '127.0.0.1';
       const port = 8300;
+      const portSuffix = `:${port}`;
+      const isIp = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host);
+      const localHosts = new Set(['localhost', '127.0.0.1', '0.0.0.0']);
 
-      if (host === 'localhost' || host === '127.0.0.1') {
-        return `${proto}//127.0.0.1:${port}`;
+      if (localHosts.has(host)) {
+        return `${proto}//127.0.0.1${portSuffix}`;
+      }
+
+      if (isIp) {
+        return `${proto}//${host}${portSuffix}`;
       }
 
       if (host === 'urede.collos.com.br') {
@@ -18,6 +25,11 @@ const deriveDefaultBase = () => {
 
       if (host.endsWith('.collos.com.br')) {
         return `${proto}//api.${host}`;
+      }
+
+      const currentPort = window.location.port;
+      if (currentPort && currentPort !== '80' && currentPort !== '443') {
+        return `${proto}//${host}${portSuffix}`;
       }
 
       return `${proto}//${host}`;
