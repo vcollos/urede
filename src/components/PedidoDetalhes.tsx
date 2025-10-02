@@ -57,6 +57,7 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
   const [isUpdating, setIsUpdating] = useState(false);
   const [isAssumindo, setIsAssumindo] = useState(false);
   const [isLiberando, setIsLiberando] = useState(false);
+  const [isTransferring, setIsTransferring] = useState(false);
 
   const { user } = useAuth();
 
@@ -112,15 +113,18 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
     return <CheckCircle className="w-5 h-5 text-green-500" />;
   };
 
-  const canUpdateStatus = () => {
-    if (!user) return false;
-    if (user.papel === 'confederacao') return true;
-    // Admin da solicitante pode alterar
-    if (user.papel === 'admin' && pedido.cooperativa_solicitante_id === user.cooperativa_id) return true;
-    // Qualquer usuário da responsável pode alterar andamento/observações
-    if (pedido.cooperativa_responsavel_id === user.cooperativa_id) return true;
-    return false;
-  };
+  const userEmailLower = user?.email?.toLowerCase() || null;
+  const pedidoCreatorLower = pedido.criado_por_user?.toLowerCase() || null;
+  const canChangeStatus = !!user && (
+    user.papel === 'confederacao'
+      || (user.papel === 'admin' && pedido.cooperativa_solicitante_id === user.cooperativa_id)
+      || pedido.cooperativa_responsavel_id === user.cooperativa_id
+  );
+  const canAddUpdate = canChangeStatus
+    || (!!user && user.papel === 'operador' && (
+      (pedidoCreatorLower && userEmailLower && pedidoCreatorLower === userEmailLower)
+      || (!pedido.criado_por_user && pedido.cooperativa_solicitante_id === user.cooperativa_id)
+    ));
 
   const canDelete = () => {
     if (!user) return false;
@@ -128,8 +132,9 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
     if (user.papel === 'admin' && pedido.cooperativa_solicitante_id === user.cooperativa_id) return true;
     if (user.papel === 'operador') {
       // Operador que criou pode excluir (ou legado sem campo, se da mesma solicitante)
-      const legacySameSolic = (pedido.cooperativa_solicitante_id === user.cooperativa_id) && !(pedido as any).criado_por_user;
-      return (user.email && (pedido as any).criado_por_user === user.email) || legacySameSolic;
+      const legacySameSolic = (pedido.cooperativa_solicitante_id === user.cooperativa_id) && !pedido.criado_por_user;
+      const isCreator = userEmailLower && pedidoCreatorLower && userEmailLower === pedidoCreatorLower;
+      return isCreator || legacySameSolic;
     }
     return false;
   };
@@ -154,19 +159,20 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
 
   const handleUpdateStatus = async () => {
     const trimmedComment = comentario.trim();
-    if (!canUpdateStatus() || isUpdating || (!trimmedComment && novoStatus === pedido.status)) return;
+    if (!canAddUpdate || isUpdating) return;
+    if (!trimmedComment && (!canChangeStatus || novoStatus === pedido.status)) return;
 
     setIsUpdating(true);
     try {
       const updates: (Partial<Pedido> & { comentario_atual?: string }) = {};
 
-      if (novoStatus !== pedido.status) {
+      if (canChangeStatus && novoStatus !== pedido.status) {
         updates.status = novoStatus as Pedido['status'];
       }
 
       const userName = user?.display_name || user?.nome || 'Responsável';
 
-      if (novoStatus === 'em_andamento' && user) {
+      if (canChangeStatus && novoStatus === 'em_andamento' && user) {
         updates.responsavel_atual_id = user.id;
         updates.responsavel_atual_nome = userName;
       }
@@ -222,6 +228,21 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
     }
   };
 
+  const handleTransferirPedido = async () => {
+    if (!canTransfer || isTransferring) return;
+    if (!confirm('Deseja transferir este pedido para o próximo nível imediatamente?')) return;
+    setIsTransferring(true);
+    try {
+      const updatedPedido = await apiService.transferirPedido(pedido.id);
+      await applyUpdatedPedido(updatedPedido);
+    } catch (error) {
+      console.error('Erro ao transferir pedido:', error);
+      alert('Não foi possível transferir o pedido. Tente novamente mais tarde.');
+    } finally {
+      setIsTransferring(false);
+    }
+  };
+
   const formatDate = (value: string | Date) => {
     return new Date(value).toLocaleDateString('pt-BR', {
       day: '2-digit',
@@ -241,10 +262,11 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
   };
 
   const hasComment = comentario.trim().length > 0;
-  const sameCooperativaResponsavel = user && pedido.cooperativa_responsavel_id === user.cooperativa_id;
-  const isResponsavelAtual = user && pedido.responsavel_atual_id === user.id;
-  const canAssumir = canUpdateStatus() && user && sameCooperativaResponsavel && !isResponsavelAtual;
-  const canLiberar = canUpdateStatus() && !!pedido.responsavel_atual_id;
+  const sameCooperativaResponsavel = !!(user && pedido.cooperativa_responsavel_id === user.cooperativa_id);
+  const isResponsavelAtual = !!(user && pedido.responsavel_atual_id === user.id);
+  const canAssumir = canChangeStatus && sameCooperativaResponsavel && !isResponsavelAtual;
+  const canLiberar = canChangeStatus && !!pedido.responsavel_atual_id;
+  const canTransfer = canChangeStatus && pedido.nivel_atual !== 'confederacao';
 
   const justificativaInicial = pedido.observacoes
     ? extractInitialJustificativa(pedido.observacoes)
@@ -435,6 +457,16 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
                           {isLiberando ? 'Liberando...' : 'Liberar responsabilidade'}
                         </Button>
                       )}
+                      {canTransfer && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={handleTransferirPedido}
+                          disabled={isTransferring}
+                        >
+                          {isTransferring ? 'Transferindo...' : 'Transferir pedido'}
+                        </Button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -462,12 +494,14 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
             </TabsContent>
 
             <TabsContent value="andamento" className="space-y-6">
-              {canUpdateStatus() ? (
+              {canAddUpdate ? (
                 <Card>
                   <CardHeader>
                     <CardTitle>Atualizar Status</CardTitle>
                     <CardDescription>
-                      Atualize o status do pedido e adicione comentários
+                      {canChangeStatus
+                        ? 'Atualize o status do pedido e adicione comentários'
+                        : 'Adicione comentários para manter o andamento atualizado'}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -475,8 +509,13 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
                       <label className="text-sm font-medium text-gray-600 mb-2 block">
                         Novo Status
                       </label>
-                      <Select value={novoStatus} onValueChange={setNovoStatus}>
-                        <SelectTrigger>
+                      <Select
+                        value={novoStatus}
+                        onValueChange={(value) => {
+                          if (canChangeStatus) setNovoStatus(value);
+                        }}
+                      >
+                        <SelectTrigger disabled={!canChangeStatus}>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -485,6 +524,11 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
                           <SelectItem value="concluido">Concluído</SelectItem>
                         </SelectContent>
                       </Select>
+                      {!canChangeStatus && (
+                        <p className="mt-2 text-xs text-gray-500">
+                          Apenas responsáveis com permissão podem alterar o status. Você ainda pode registrar atualizações para o histórico.
+                        </p>
+                      )}
                     </div>
                     
                   <div>
@@ -507,7 +551,7 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
                     
                     <Button 
                       onClick={handleUpdateStatus}
-                      disabled={isUpdating || (!hasComment && novoStatus === pedido.status)}
+                      disabled={!canAddUpdate || isUpdating || (!hasComment && (!canChangeStatus || novoStatus === pedido.status))}
                       className="bg-blue-600 hover:bg-blue-700"
                     >
                       {isUpdating ? 'Atualizando...' : 'Atualizar Pedido'}

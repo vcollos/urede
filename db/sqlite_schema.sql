@@ -129,6 +129,34 @@ CREATE TABLE IF NOT EXISTS urede_auditoria_logs (
 CREATE INDEX IF NOT EXISTS idx_auditoria_pedido ON urede_auditoria_logs(pedido_id);
 CREATE INDEX IF NOT EXISTS idx_auditoria_usuario ON urede_auditoria_logs(usuario_id);
 
+-- urede_alertas (notificações por usuário)
+CREATE TABLE IF NOT EXISTS urede_alertas (
+  id TEXT PRIMARY KEY,
+  pedido_id TEXT NOT NULL,
+  pedido_titulo TEXT,
+  destinatario_email TEXT NOT NULL,
+  destinatario_nome TEXT,
+  destinatario_cooperativa_id TEXT,
+  tipo TEXT NOT NULL,
+  mensagem TEXT,
+  detalhes TEXT,
+  lido INTEGER NOT NULL DEFAULT 0,
+  criado_em TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+  disparado_por_email TEXT,
+  disparado_por_nome TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_urede_alertas_destinatario ON urede_alertas(destinatario_email);
+CREATE INDEX IF NOT EXISTS idx_urede_alertas_pedido ON urede_alertas(pedido_id);
+CREATE INDEX IF NOT EXISTS idx_urede_alertas_lido ON urede_alertas(lido);
+
+-- Preferências específicas por cooperativa
+CREATE TABLE IF NOT EXISTS urede_cooperativa_settings (
+  cooperativa_id TEXT PRIMARY KEY,
+  auto_recusar INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+
 -- Configurações gerais do sistema
 CREATE TABLE IF NOT EXISTS urede_settings (
   key TEXT PRIMARY KEY,

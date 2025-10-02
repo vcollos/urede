@@ -1,13 +1,15 @@
 import { apiRequest } from '../utils/api/client';
-import type { 
-  Pedido, 
-  Cooperativa, 
-  Cidade, 
-  Operador, 
+import type {
+  Pedido,
+  Cooperativa,
+  Cidade,
+  Operador,
   AuditoriaLog,
   DashboardStats,
   CoberturaLog,
-  SystemSettings
+  SystemSettings,
+  Alerta,
+  CooperativaConfig,
 } from '../types';
 
 class ApiService {
@@ -87,6 +89,10 @@ class ApiService {
     return await apiRequest('/pedidos');
   }
 
+  async getPedidoById(pedidoId: string): Promise<Pedido> {
+    return await apiRequest(`/pedidos/${pedidoId}`);
+  }
+
   async createPedido(pedidoData: {
     titulo: string;
     cidade_id: string;
@@ -118,6 +124,18 @@ class ApiService {
     }
   }
 
+  async transferirPedido(pedidoId: string, motivo?: string): Promise<Pedido> {
+    try {
+      return await apiRequest(`/pedidos/${pedidoId}/transferir`, {
+        method: 'POST',
+        body: motivo ? JSON.stringify({ motivo }) : undefined,
+      });
+    } catch (error) {
+      console.error('Erro ao transferir pedido:', error);
+      throw error;
+    }
+  }
+
   async deletePedido(pedidoId: string): Promise<Pedido> {
     try {
       return await apiRequest(`/pedidos/${pedidoId}`, {
@@ -135,6 +153,60 @@ class ApiService {
       return await apiRequest(`/pedidos/${pedidoId}/auditoria`);
     } catch (error) {
       console.error('Erro ao buscar auditoria do pedido:', error);
+      throw error;
+    }
+  }
+
+  async getAlertas(limit = 50): Promise<Alerta[]> {
+    try {
+      const response = await apiRequest(`/alertas?limit=${limit}`);
+      return Array.isArray(response) ? response : [];
+    } catch (error) {
+      console.error('Erro ao buscar alertas:', error);
+      throw error;
+    }
+  }
+
+  async marcarAlertaComoLido(alertaId: string, lido = true): Promise<void> {
+    try {
+      await apiRequest(`/alertas/${alertaId}/lido`, {
+        method: 'POST',
+        body: JSON.stringify({ lido }),
+      });
+    } catch (error) {
+      console.error('Erro ao marcar alerta como lido:', error);
+      throw error;
+    }
+  }
+
+  async marcarTodosAlertasComoLidos(): Promise<void> {
+    try {
+      await apiRequest('/alertas/marcar-todos', {
+        method: 'POST',
+      });
+    } catch (error) {
+      console.error('Erro ao marcar todos os alertas como lidos:', error);
+      throw error;
+    }
+  }
+
+  async getCooperativaConfig(cooperativaId: string): Promise<CooperativaConfig> {
+    try {
+      return await apiRequest(`/cooperativas/${cooperativaId}/config`);
+    } catch (error) {
+      console.error('Erro ao carregar configurações da cooperativa:', error);
+      throw error;
+    }
+  }
+
+  async updateCooperativaConfig(cooperativaId: string, data: { auto_recusar: boolean }): Promise<CooperativaConfig> {
+    try {
+      return await apiRequest(`/cooperativas/${cooperativaId}/config`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      });
+    } catch (error) {
+      console.error('Erro ao atualizar configurações da cooperativa:', error);
       throw error;
     }
   }

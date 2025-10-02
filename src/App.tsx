@@ -11,6 +11,7 @@ import { Pedido } from './types';
 import { CooperativasView } from './components/CooperativasView';
 import { ConfiguracoesView } from './components/ConfiguracoesView';
 import { CidadesView } from './components/CidadesView';
+import { apiService } from './services/apiService';
 
 // Componente interno que usa o AuthContext
 function AppContent() {
@@ -49,6 +50,17 @@ function AppContent() {
     setSelectedPedido(null);
   };
 
+  const handleOpenPedidoFromAlert = async (pedidoId: string) => {
+    try {
+      const pedidoDetalhado = await apiService.getPedidoById(pedidoId);
+      setActiveTab('pedidos');
+      setSelectedPedido(pedidoDetalhado);
+    } catch (error) {
+      console.error('Erro ao abrir pedido via alerta:', error);
+      alert('Não foi possível carregar o pedido selecionado. Tente novamente.');
+    }
+  };
+
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
@@ -80,6 +92,7 @@ function AppContent() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         onCreatePedido={openNovoPedido}
+        onOpenPedido={handleOpenPedidoFromAlert}
       >
         {renderContent()}
       </Layout>
