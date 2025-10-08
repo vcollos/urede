@@ -51,7 +51,8 @@
             "recharts": "^2.15.2",
             "sonner": "^2.0.3",
             "tailwind-merge": "*",
-            "vaul": "^1.1.2"
+            "vaul": "^1.1.2",
+            "xlsx": "^0.18.5"
       },
       "devDependencies": {
             "@types/node": "^20.10.0",
@@ -62,6 +63,6 @@
             "dev": "vite",
             "prebuild": "node scripts/write-health.mjs",
             "build": "vite build",
-      "server:dev": "deno run -A --env-file=.env supabase/functions/server/index.tsx"
+            "server:dev": "deno run -A --env-file=.env supabase/functions/server/index.tsx"
       }
 }

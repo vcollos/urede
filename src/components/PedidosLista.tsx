@@ -4,34 +4,43 @@ import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { 
-  Search, 
-  Filter,
-  Calendar,
+import {
+  Search,
   MapPin,
   User,
   Clock,
-  AlertCircle
+  AlertCircle,
+  UploadCloud,
+  Plus,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/apiService';
 import { Pedido } from '../types';
 import { getNivelBadgeClass, getStatusBadgeClass, getStatusCardColors } from '../utils/pedidoStyles';
 
+export type PedidosFilterPreset = {
+  status?: Pedido['status'] | 'todos';
+  custom?: 'vencendo' | null;
+  token?: number;
+};
+
 interface PedidosListaProps {
   onCreatePedido: () => void;
   onViewPedido: (pedido: Pedido) => void;
+  presetFilter?: PedidosFilterPreset | null;
+  onOpenImportacao?: () => void;
 }
 
-export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps) {
+export function PedidosLista({ onCreatePedido, onViewPedido, presetFilter, onOpenImportacao }: PedidosListaProps) {
   const { user, isAuthenticated } = useAuth();
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('todos');
+  const [statusFilter, setStatusFilter] = useState<Pedido['status'] | 'todos'>('todos');
   const [nivelFilter, setNivelFilter] = useState('todos');
   const [viewMode, setViewMode] = useState<'lista' | 'kanban'>('kanban');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [customFilter, setCustomFilter] = useState<'vencendo' | null>(null);
 
   // Carregar pedidos
   useEffect(() => {
@@ -68,6 +77,36 @@ export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps
 
   const canCreatePedido = !!user && ['operador', 'admin', 'confederacao'].includes(user.papel);
 
+  const quickFilterValue = customFilter === 'vencendo'
+    ? 'vencendo'
+    : statusFilter === 'em_andamento'
+      ? 'em_andamento'
+      : statusFilter === 'concluido'
+        ? 'concluido'
+        : 'todos';
+
+  const handleQuickFilterChange = (value: string) => {
+    setSearchTerm('');
+    setNivelFilter('todos');
+    setCustomFilter(null);
+
+    switch (value) {
+      case 'vencendo':
+        setCustomFilter('vencendo');
+        setStatusFilter('todos');
+        break;
+      case 'em_andamento':
+        setStatusFilter('em_andamento');
+        break;
+      case 'concluido':
+        setStatusFilter('concluido');
+        break;
+      default:
+        setStatusFilter('todos');
+        break;
+    }
+  };
+
   // Filtrar pedidos baseado nos filtros aplicados
   const getFilteredPedidos = (): Pedido[] => {
     let pedidosFiltrados = pedidos.filter((pedido) => !pedido.excluido);
@@ -90,8 +129,23 @@ export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps
       pedidosFiltrados = pedidosFiltrados.filter(p => p.nivel_atual === nivelFilter);
     }
 
+    if (customFilter === 'vencendo') {
+      pedidosFiltrados = pedidosFiltrados.filter(p => p.dias_restantes <= 7 && p.status !== 'concluido');
+    }
+
     return pedidosFiltrados;
   };
+
+  useEffect(() => {
+    if (!presetFilter) {
+      return;
+    }
+
+    setStatusFilter(presetFilter.status ?? 'todos');
+    setCustomFilter(presetFilter.custom ?? null);
+    setSearchTerm('');
+    setNivelFilter('todos');
+  }, [presetFilter?.token, presetFilter?.status, presetFilter?.custom]);
 
   const pedidosFiltrados = getFilteredPedidos();
 
@@ -107,6 +161,9 @@ export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps
   const PedidoCard = ({ pedido }: { pedido: Pedido }) => {
     const { borderClass, backgroundClass, borderColor, backgroundColor } = getStatusCardColors(pedido.status);
 
+    const especialidadesVisiveis = pedido.especialidades.slice(0, 3);
+    const especialidadesRestantes = pedido.especialidades.length - especialidadesVisiveis.length;
+
     return (
       <Card
         key={pedido.id}
@@ -117,57 +174,67 @@ export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps
         }}
         onClick={() => onViewPedido(pedido)}
       >
-        <CardContent>
-          <div className="flex items-center justify-between text-xs text-gray-500">
-            <span className="uppercase tracking-wide font-semibold text-gray-600">
-              {labelByPov(pedido)}
-            </span>
+        <CardContent className="p-4 space-y-3">
+          <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-gray-500">
+            <span className="font-semibold text-gray-600">{labelByPov(pedido)}</span>
             {(pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome) && (
-              <span>
+              <span className="font-medium text-gray-500">
                 Resp.: {pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome}
               </span>
             )}
           </div>
 
-          <div className="flex items-start justify-between gap-3">
-            <h3 className="text-lg font-semibold text-gray-900 leading-snug line-clamp-2">
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="text-base font-semibold text-gray-900 leading-snug line-clamp-2">
               {pedido.titulo}
             </h3>
             {pedido.dias_restantes <= 7 && (
-              <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+              <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
             )}
           </div>
 
-          <div className="pedido-card__meta">
-            <span className="flex items-center gap-2">
-              <MapPin />
+          <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+            <span className="flex items-center gap-1">
+              <MapPin className="w-3.5 h-3.5 text-gray-400" />
               <span>{pedido.cidade_nome}, {pedido.estado}</span>
             </span>
-            <span className="flex items-center gap-2">
-              <User />
+            <span className="flex items-center gap-1">
+              <User className="w-3.5 h-3.5 text-gray-400" />
               <span>{pedido.cooperativa_solicitante_nome}</span>
             </span>
           </div>
 
-          <div className="pedido-card__tags">
-            {pedido.especialidades.map((esp, index) => (
-              <Badge key={index} variant="secondary">
-                {esp}
-              </Badge>
-            ))}
-          </div>
+          {especialidadesVisiveis.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-600">
+              {especialidadesVisiveis.map((esp, index) => (
+                <Badge key={index} variant="secondary" className="px-2 py-[2px]">
+                  {esp}
+                </Badge>
+              ))}
+              {especialidadesRestantes > 0 && (
+                <Badge variant="outline" className="px-2 py-[2px] text-gray-500">
+                  +{especialidadesRestantes}
+                </Badge>
+              )}
+            </div>
+          )}
 
-          <div className="pedido-card__status">
-            <div className="flex items-center gap-3">
-              <Badge variant="outline" className={getNivelBadgeClass(pedido.nivel_atual)}>
+          <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge
+                variant="outline"
+                className={`${getNivelBadgeClass(pedido.nivel_atual)} px-2 py-[2px] text-[11px]`}
+              >
                 {pedido.nivel_atual}
               </Badge>
-              <Badge className={getStatusBadgeClass(pedido.status)}>
+              <Badge
+                className={`${getStatusBadgeClass(pedido.status)} px-2 py-[2px] text-[11px]`}
+              >
                 {pedido.status.replace('_', ' ')}
               </Badge>
             </div>
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <Clock className="w-3 h-3" />
+            <div className="flex items-center gap-1 text-gray-500">
+              <Clock className="w-3.5 h-3.5" />
               <span className={pedido.dias_restantes <= 7 ? 'font-semibold text-red-500' : ''}>
                 {pedido.dias_restantes}d
               </span>
@@ -232,13 +299,55 @@ export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps
             Gerencie pedidos de credenciamento e suprimento da rede com visibilidade sobre status, níveis e prazos.
           </p>
         </div>
+        {canCreatePedido && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" className="flex items-center gap-2" onClick={onCreatePedido}>
+              <Plus className="h-4 w-4" />
+              Novo pedido
+            </Button>
+            {typeof onOpenImportacao === 'function' && (
+              <Button
+                size="sm"
+                variant="secondary"
+                className="flex items-center gap-2"
+                onClick={onOpenImportacao}
+              >
+                <UploadCloud className="h-4 w-4" />
+                Pedidos em lote
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Filtros */}
       <Card className="filtros-card">
         <CardContent>
+          {customFilter === 'vencendo' && (
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+              <div className="flex items-center gap-2 text-sm text-red-700">
+                <AlertCircle className="w-4 h-4" />
+                Filtrando pedidos que vencem em até 7 dias
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => handleQuickFilterChange('todos')}>
+                Limpar filtro
+              </Button>
+            </div>
+          )}
           <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
             <div className="flex flex-col md:flex-row gap-4 flex-1 w-full">
+              <Select value={quickFilterValue} onValueChange={handleQuickFilterChange}>
+                <SelectTrigger className="w-full md:w-48">
+                  <SelectValue placeholder="Filtro rápido" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos os pedidos</SelectItem>
+                  <SelectItem value="vencendo">Vencendo em 7 dias</SelectItem>
+                  <SelectItem value="em_andamento">Em andamento</SelectItem>
+                  <SelectItem value="concluido">Concluídos</SelectItem>
+                </SelectContent>
+              </Select>
+
               <div className="relative flex-1 md:max-w-sm">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                 <Input
@@ -309,6 +418,7 @@ export function PedidosLista({ onCreatePedido, onViewPedido }: PedidosListaProps
           {viewMode === 'kanban' ? <KanbanView /> : <ListaView />}
         </>
       )}
+
     </div>
   );
 }

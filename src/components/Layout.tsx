@@ -9,7 +9,8 @@ import {
   User,
   Menu,
   Map,
-  Plus
+  Plus,
+  UploadCloud
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -29,9 +30,10 @@ interface LayoutProps {
   onTabChange: (tab: string) => void;
   onCreatePedido?: () => void;
   onOpenPedido?: (pedidoId: string) => void;
+  onOpenImportacao?: () => void;
 }
 
-export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpenPedido }: LayoutProps) {
+export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpenPedido, onOpenImportacao }: LayoutProps) {
   const { user, logout } = useAuth();
   const [isMobileNavOpen, setMobileNavOpen] = useState(false);
   const [isProfileDialogOpen, setProfileDialogOpen] = useState(false);
@@ -224,9 +226,11 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
   if (!user) return null;
   const canCreatePedido = ['operador', 'admin', 'confederacao'].includes(user.papel);
   const showQuickCreatePedido = activeTab === 'pedidos' && canCreatePedido && typeof onCreatePedido === 'function';
+  const showQuickImportacao = activeTab === 'pedidos' && canCreatePedido && typeof onOpenImportacao === 'function';
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
     { id: 'pedidos', label: 'Pedidos', icon: FileText },
+    ...(canCreatePedido ? [{ id: 'importacao', label: 'Pedidos em lote', icon: UploadCloud }] : []),
     { id: 'cooperativas', label: 'Cooperativas', icon: Building2 },
     { id: 'operadores', label: 'Operadores', icon: User },
     { id: 'cidades', label: 'Cidades', icon: Map },
@@ -261,15 +265,20 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
     <div className="flex flex-col h-full">
       {/* Header */}
         <div className="p-6 border-b border-gray-200">
-          <div className="flex items-center space-x-3">
+          <button
+            type="button"
+            onClick={() => handleTabChange('dashboard')}
+            className="flex items-center space-x-3 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
+            aria-label="Ir para o dashboard"
+          >
             <div className="w-11 h-11 bg-purple-100 rounded-xl flex items-center justify-center shadow-sm ring-1 ring-purple-200">
               <img src={brandSymbol} alt="Símbolo Uniodonto" className="h-6 w-6" />
             </div>
-            <div>
+            <div className="text-left">
               <img src={brandWordmark} alt="Uniodonto" className="h-6 w-auto" />
               <p className="text-xs text-gray-500">Sistema de Credenciamento</p>
             </div>
-          </div>
+          </button>
         </div>
 
         {/* User Info */}
@@ -347,7 +356,15 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
         <header className="bg-white border-b border-gray-200 px-4 py-4 sm:px-6">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <img src={brandWordmark} alt="Uniodonto" className="h-7 w-auto hidden sm:block" />
+              <button
+                type="button"
+                onClick={() => handleTabChange('dashboard')}
+                className="flex items-center gap-3 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
+                aria-label="Ir para o dashboard"
+              >
+                <img src={brandWordmark} alt="Uniodonto" className="h-7 w-auto hidden sm:block" />
+                <img src={brandSymbol} alt="Uniodonto" className="h-8 w-auto sm:hidden" />
+              </button>
               <h2 className="text-xl font-semibold text-gray-900 capitalize">
                 {activeTab === 'dashboard' ? 'Dashboard' : 
                  activeTab === 'pedidos' ? 'Gestão de Pedidos' :
@@ -358,16 +375,33 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
               </h2>
             </div>
             <div className="flex items-center space-x-4">
-              {showQuickCreatePedido && (
-                <button
-                  type="button"
-                  className="quick-action-button"
-                  onClick={onCreatePedido}
-                >
-                  <Plus />
-                  <span className="hidden sm:inline">Novo Pedido</span>
-                  <span className="sm:hidden">Novo</span>
-                </button>
+              {(showQuickCreatePedido || showQuickImportacao) && (
+                <div className="flex items-center gap-2">
+                  {showQuickImportacao && (
+                    <button
+                      type="button"
+                      className="quick-action-button"
+                      onClick={() => {
+                        if (typeof onOpenImportacao === 'function') onOpenImportacao();
+                      }}
+                    >
+                      <UploadCloud />
+                      <span className="hidden sm:inline">Pedidos em lote</span>
+                      <span className="sm:hidden">Lote</span>
+                    </button>
+                  )}
+                  {showQuickCreatePedido && (
+                    <button
+                      type="button"
+                      className="quick-action-button"
+                      onClick={onCreatePedido}
+                    >
+                      <Plus />
+                      <span className="hidden sm:inline">Novo Pedido</span>
+                      <span className="sm:hidden">Novo</span>
+                    </button>
+                  )}
+                </div>
               )}
               <Button
                 variant="ghost"
@@ -503,7 +537,17 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
           <div className="h-full w-full max-w-xs bg-white shadow-xl border border-gray-200 rounded-lg flex flex-col">
             <DialogHeader className="p-6 border-b border-gray-200">
               <DialogTitle className="text-base font-semibold text-gray-900 flex items-center gap-3">
-                <img src={brandWordmark} alt="Uniodonto" className="h-6 w-auto" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleTabChange('dashboard');
+                    setMobileNavOpen(false);
+                  }}
+                  className="flex items-center gap-2 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
+                  aria-label="Ir para o dashboard"
+                >
+                  <img src={brandWordmark} alt="Uniodonto" className="h-6 w-auto" />
+                </button>
                 Menu
               </DialogTitle>
             </DialogHeader>
