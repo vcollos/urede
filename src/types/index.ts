@@ -151,3 +151,39 @@ export interface SystemSettings {
   autoNotifyManagers: boolean;
   enableSelfRegistration: boolean;
 }
+
+export interface PedidoImportPayloadItem {
+  rowNumber: number;
+  titulo: string;
+  especialidade: string;
+  cidadeCodigo: string;
+  responsavelEmail?: string;
+  detalhes?: string;
+}
+
+export interface PedidoImportPayload {
+  items: PedidoImportPayloadItem[];
+  meta?: {
+    originalFilename?: string;
+    mapping?: Record<string, string | null>;
+  };
+}
+
+export interface PedidoImportError {
+  rowNumber: number;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+export interface PedidoImportSummary {
+  total: number;
+  imported: number;
+  skipped: number;
+  durationMs: number;
+}
+
+export interface PedidoImportResponse {
+  summary: PedidoImportSummary;
+  errors: PedidoImportError[];
+  imported: Pedido[];
+}

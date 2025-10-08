@@ -14,8 +14,13 @@ import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/apiService';
 import { Pedido, DashboardStats } from '../types';
 import { getNivelBadgeClass, getStatusBadgeClass } from '../utils/pedidoStyles';
+import type { PedidosFilterPreset } from './PedidosLista';
 
-export function Dashboard() {
+type DashboardProps = {
+  onNavigateToPedidos: (filter: PedidosFilterPreset) => void;
+};
+
+export function Dashboard({ onNavigateToPedidos }: DashboardProps) {
   const { user } = useAuth();
   const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
@@ -99,14 +104,23 @@ export function Dashboard() {
   const pedidosEmAndamento = pedidosAtivos.filter(p => p.status === 'em_andamento');
   const pedidosConcluidos = pedidosAtivos.filter(p => p.status === 'concluido');
 
-  const stats = [
+  const stats: Array<{
+    title: string;
+    value: string;
+    description: string;
+    icon: typeof FileText;
+    color: string;
+    bgColor: string;
+    filter: PedidosFilterPreset;
+  }> = [
     {
       title: "Total de Pedidos",
       value: dashboardStats.total_pedidos.toString(),
       description: "Pedidos sob sua responsabilidade",
       icon: FileText,
       color: "text-blue-600",
-      bgColor: "bg-blue-100"
+      bgColor: "bg-blue-100",
+      filter: { status: 'todos', custom: null }
     },
     {
       title: "Vencendo em 7 dias",
@@ -114,7 +128,8 @@ export function Dashboard() {
       description: "Requer atenção urgente",
       icon: AlertTriangle,
       color: "text-red-600",
-      bgColor: "bg-red-100"
+      bgColor: "bg-red-100",
+      filter: { status: 'todos', custom: 'vencendo' }
     },
     {
       title: "Em Andamento",
@@ -122,7 +137,8 @@ export function Dashboard() {
       description: "Sendo processados",
       icon: Clock,
       color: "text-yellow-600",
-      bgColor: "bg-yellow-100"
+      bgColor: "bg-yellow-100",
+      filter: { status: 'em_andamento', custom: null }
     },
     {
       title: "Concluídos",
@@ -130,7 +146,8 @@ export function Dashboard() {
       description: "Finalizados com sucesso",
       icon: CheckCircle,
       color: "text-green-600",
-      bgColor: "bg-green-100"
+      bgColor: "bg-green-100",
+      filter: { status: 'concluido', custom: null }
     }
   ];
 
@@ -147,7 +164,19 @@ export function Dashboard() {
         {stats.map((stat) => {
           const Icon = stat.icon;
           return (
-            <Card key={stat.title}>
+            <Card
+              key={stat.title}
+              role="button"
+              tabIndex={0}
+              className="transition transform hover:-translate-y-1 hover:shadow-lg cursor-pointer focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500"
+              onClick={() => onNavigateToPedidos(stat.filter)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onNavigateToPedidos(stat.filter);
+                }
+              }}
+            >
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>

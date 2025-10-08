@@ -10,6 +10,8 @@ import type {
   SystemSettings,
   Alerta,
   CooperativaConfig,
+  PedidoImportPayload,
+  PedidoImportResponse,
 } from '../types';
 
 class ApiService {
@@ -153,6 +155,18 @@ class ApiService {
       return await apiRequest(`/pedidos/${pedidoId}/auditoria`);
     } catch (error) {
       console.error('Erro ao buscar auditoria do pedido:', error);
+      throw error;
+    }
+  }
+
+  async importPedidos(payload: PedidoImportPayload): Promise<PedidoImportResponse> {
+    try {
+      return await apiRequest('/pedidos/import', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      console.error('Erro ao importar pedidos:', error);
       throw error;
     }
   }

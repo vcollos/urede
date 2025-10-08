@@ -74,8 +74,15 @@ main {
 /* Pedido list cards */
 .pedido-card {
   border-left-width: 6px !important;
-  border-radius: 20px !important;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  border-radius: 14px !important;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.pedido-card [data-slot="card-content"] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
 }
 
 .pedido-card:hover {
@@ -91,19 +98,7 @@ main {
   gap: var(--md-space-2);
 }
 
-.pedido-card__meta {
-  display: flex;
-  align-items: center;
-  gap: var(--md-space-4);
-  font-size: 0.95rem;
-  color: var(--md-muted-text);
-}
-
-.pedido-card__meta svg {
-  width: 18px;
-  height: 18px;
-}
-
+.pedido-card__meta,
 .pedido-card__status {
   display: flex;
   align-items: center;

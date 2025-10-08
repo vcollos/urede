@@ -3,7 +3,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AuthScreen } from './components/AuthScreen';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
-import { PedidosLista } from './components/PedidosLista';
+import { PedidosLista, type PedidosFilterPreset } from './components/PedidosLista';
 import { OperadoresLista } from './components/OperadoresLista';
 import { NovoPedidoForm } from './components/NovoPedidoForm';
 import { PedidoDetalhes } from './components/PedidoDetalhes';
@@ -11,6 +11,7 @@ import { Pedido } from './types';
 import { CooperativasView } from './components/CooperativasView';
 import { ConfiguracoesView } from './components/ConfiguracoesView';
 import { CidadesView } from './components/CidadesView';
+import { PedidosImportPage } from './components/PedidosImportPage';
 import { apiService } from './services/apiService';
 
 // Componente interno que usa o AuthContext
@@ -19,6 +20,7 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showNovoPedido, setShowNovoPedido] = useState(false);
   const [selectedPedido, setSelectedPedido] = useState<Pedido | null>(null);
+  const [pedidosPresetFilter, setPedidosPresetFilter] = useState<PedidosFilterPreset | null>(null);
   const openNovoPedido = () => setShowNovoPedido(true);
 
   // Mostrar loading durante verificação da autenticação
@@ -50,6 +52,18 @@ function AppContent() {
     setSelectedPedido(null);
   };
 
+  const navigateToPedidosWithFilter = (filter: PedidosFilterPreset) => {
+    setActiveTab('pedidos');
+    setSelectedPedido(null);
+    setPedidosPresetFilter({ ...filter, token: Date.now() });
+  };
+
+  const handleOpenImportacao = () => {
+    setActiveTab('importacao');
+    setSelectedPedido(null);
+    setPedidosPresetFilter(null);
+  };
+
   const handleOpenPedidoFromAlert = async (pedidoId: string) => {
     try {
       const pedidoDetalhado = await apiService.getPedidoById(pedidoId);
@@ -64,14 +78,18 @@ function AppContent() {
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <Dashboard />;
+        return <Dashboard onNavigateToPedidos={navigateToPedidosWithFilter} />;
       case 'pedidos':
         return (
           <PedidosLista
             onCreatePedido={openNovoPedido}
             onViewPedido={(pedido) => setSelectedPedido(pedido)}
+            presetFilter={pedidosPresetFilter}
+            onOpenImportacao={handleOpenImportacao}
           />
         );
+      case 'importacao':
+        return <PedidosImportPage onBack={() => setActiveTab('pedidos')} />;
       case 'cooperativas':
         return <CooperativasView />;
       case 'operadores':
@@ -81,7 +99,7 @@ function AppContent() {
       case 'configuracoes':
         return <ConfiguracoesView />;
       default:
-        return <Dashboard />;
+        return <Dashboard onNavigateToPedidos={navigateToPedidosWithFilter} />;
     }
   };
 
@@ -93,6 +111,7 @@ function AppContent() {
         onTabChange={setActiveTab}
         onCreatePedido={openNovoPedido}
         onOpenPedido={handleOpenPedidoFromAlert}
+        onOpenImportacao={handleOpenImportacao}
       >
         {renderContent()}
       </Layout>
