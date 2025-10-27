@@ -1,14 +1,14 @@
 import { Pool, PoolClient } from "https://deno.land/x/postgres@v0.17.2/mod.ts";
 
-const CONNECTION_URL = Deno.env.get("SUPABASE_DB_URL");
+const CONNECTION_URL = Deno.env.get("DATABASE_DB_URL");
 
 if (!CONNECTION_URL) {
   throw new Error(
-    "[postgres] SUPABASE_DB_URL não definido. Configure a string de conexão do Supabase.",
+    "[postgres] DATABASE_DB_URL não definido. Configure a string de conexão do banco.",
   );
 }
 
-const POOL_SIZE = Number(Deno.env.get("SUPABASE_DB_POOL_SIZE") ?? 5);
+const POOL_SIZE = Number(Deno.env.get("DATABASE_DB_POOL_SIZE") ?? 5);
 const pool = new Pool(CONNECTION_URL, POOL_SIZE, true);
 
 const blockOn = <T>(promise: Promise<T>): T => {

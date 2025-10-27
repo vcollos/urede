@@ -40,7 +40,7 @@ Sistema web que centraliza o credenciamento de prestadores da rede Uniodonto. Pe
 - ⏳ CRUD completo de operadores no frontend (UI em andamento)
 - ⏳ Configurações administrativas (painel a reimplementar)
 - ⏳ Monitoramento em tempo real / notificações assíncronas
-- ⏳ Deploy gerenciado (Supabase/Postgres ou outro serviço gerenciado) 
+- ⏳ Deploy gerenciado (Postgres gerenciado ou outro serviço gerenciado) 
 
 ---
 
@@ -49,13 +49,13 @@ Sistema web que centraliza o credenciamento de prestadores da rede Uniodonto. Pe
 ```
 ┌────────────────────┐      ┌────────────────────────┐      ┌───────────────┐
 │ Frontend (React)   │────▶ │ API Hono (Deno)         │────▶│ SQLite local  │
-│ Vite + Tailwind    │      │ supabase/functions/...  │      │ data/urede.db  │
+│ Vite + Tailwind    │      │ database/functions/...  │      │ data/urede.db  │
 │ Auth via JWT local │◀─────│ JWT emitido/validado    │◀────│                │
 └────────────────────┘      └────────────────────────┘      └───────────────┘
 ```
 
 - **Frontend**: React 18 + Vite + Tailwind (via CSS gerado). Consome `VITE_API_BASE_URL` (default `http://127.0.0.1:8300`).
-- **Backend**: Hono rodando em Deno (`supabase/functions/server/index.tsx`). Disponível via `npm run server:dev`.
+- **Backend**: Hono rodando em Deno (`database/functions/server/index.tsx`). Disponível via `npm run server:dev`.
 - **Banco**: SQLite (`data/urede.db`). Scripts para criar/importar em `scripts/`.
 - **Autenticação**: JWT local salvo em `localStorage` (`auth_token`).
 - **Comunicação**: Fetch via helper `src/utils/api/client.ts`, com headers automáticos.
@@ -89,8 +89,8 @@ Sistema web que centraliza o credenciamento de prestadores da rede Uniodonto. Pe
 
 | Área                    | Estado Atual (SQLite/Deno)                                          | Visão Final (Essência)                                           |
 |-------------------------|---------------------------------------------------------------------|------------------------------------------------------------------|
-| Autenticação            | JWT local, usuários em tabela `auth_users` / operadores             | Integração com provedor gerenciado (Supabase Auth / AD / IAM)    |
-| Banco de dados          | SQLite local (`data/urede.db`)                                      | Postgres/Supabase gerenciado, replicação e backups automáticos   |
+| Autenticação            | JWT local, usuários em tabela `auth_users` / operadores             | Integração com provedor gerenciado (Auth externo / AD / IAM)     |
+| Banco de dados          | SQLite local (`data/urede.db`)                                      | Postgres gerenciado, replicação e backups automáticos            |
 | API                     | Deno + Hono, single file                                            | Edge Functions ou Node/Go com observabilidade completa           |
 | Escalonamento           | Função local `escalarPedidos` consultando o SQLite                  | Cron gerenciado + notificações (email/Slack)                     |
 | Monitoramento           | `health.json` gerado no build                                       | Stack de logs/metrics (Grafana, Sentry, etc.)                    |
@@ -220,7 +220,7 @@ bash scripts/import-csv-sqlite.sh
 │   ├── types/index.ts
 │   ├── utils/{api/client.ts, pedidoStyles.ts}
 │   └── data/mockData.ts (dados mock usados apenas em Fallbacks/Dev)
-├── supabase/functions/server/
+├── database/functions/server/
 │   ├── index.tsx (API principal Hono)
 │   ├── index.ts (re-export para Deno)
 │   └── lib/{jwt.ts, sqlite.ts}
@@ -265,11 +265,11 @@ bash scripts/import-csv-sqlite.sh
 
 1. **Infraestrutura Gerenciada**
    - Migrar SQLite → Postgres
-   - Avaliar Supabase/PostgreSQL gerenciado
+   - Avaliar PostgreSQL gerenciado
    - Configurar backup, migrações e RLS
 
 2. **Autenticação Corporativa**
-   - Integração com provedores (Supabase Auth, AD, etc.)
+   - Integração com provedores (Auth externo, AD, etc.)
    - Fluxos de recuperação de senha e convites
 
 3. **Observabilidade**

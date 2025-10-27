@@ -1,7 +1,7 @@
 
 # Credenciamento e Suprimento App
 
-Este projeto agora está configurado para rodar somente com SQLite local (sem depender de Supabase/Postgres). O backend é uma API em Deno/Hono que acessa um arquivo SQLite, e o frontend (Vite + React) consome essa API via `VITE_API_BASE_URL`.
+Este projeto agora está configurado para rodar somente com SQLite local (sem depender de provedores externos). O backend é uma API em Deno/Hono que acessa um arquivo SQLite, e o frontend (Vite + React) consome essa API via `VITE_API_BASE_URL`.
 
 ## Rodar localmente (SQLite)
 
@@ -34,7 +34,7 @@ Notas:
 
 - `scripts/create-sqlite-db.sh`: cria o banco local lendo `db/sqlite_schema.sql`.
 - `scripts/import-csv-sqlite.sh`: importa CSVs de `bases_csv/` para as tabelas `urede_*`.
-- `supabase/functions/server/index.tsx`: API Hono (Deno) acessando SQLite diretamente.
+- `database/functions/server/index.tsx`: API Hono (Deno) acessando SQLite diretamente.
 - `src/utils/api/client.ts`: helper de requests autenticadas (JWT local em `localStorage`).
 - `db/sqlite_schema.sql`: schema das tabelas locais.
 

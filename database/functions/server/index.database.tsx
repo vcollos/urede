@@ -67,7 +67,7 @@ const JWT_SECRET = Deno.env.get("JWT_SECRET") || "dev-secret-change-me";
 const DB_DRIVER = "postgres";
 
 // Modo inseguro para desenvolvimento local: quando true, pulamos checagens de autenticação e permissões.
-// Defina INSECURE_MODE=true no arquivo supabase/functions/server/.env para habilitar.
+// Defina INSECURE_MODE=true no arquivo database/functions/server/.env para habilitar.
 const INSECURE_MODE =
   (Deno.env.get("INSECURE_MODE") || "").toLowerCase() === "true";
 

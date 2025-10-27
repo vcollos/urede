@@ -63,7 +63,7 @@ try {
 const DB_DRIVER = (Deno.env.get("DB_DRIVER") || "sqlite").toLowerCase(); // sqlite
 
 // Modo inseguro para desenvolvimento local: quando true, pulamos checagens de autenticação e permissões.
-// Defina INSECURE_MODE=true no arquivo supabase/functions/server/.env para habilitar.
+// Defina INSECURE_MODE=true no arquivo database/functions/server/.env para habilitar.
 const INSECURE_MODE =
   (Deno.env.get("INSECURE_MODE") || "").toLowerCase() === "true";
 
