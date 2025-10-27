@@ -1638,12 +1638,11 @@ const initializeData = async () => {};
 // Função para escalonar pedidos automaticamente
 const escalarPedidos = async () => {
   try {
-    const agoraIso = new Date().toISOString();
+    const agoraDate = new Date();
     const pedidos = db.queryEntries<any>(
       `SELECT * FROM ${
         TBL("pedidos")
-      } WHERE status = 'em_andamento' AND prazo_atual < ?`,
-      [agoraIso],
+      } WHERE status IN ('novo','em_andamento') AND (nivel_atual IS NULL OR nivel_atual <> 'confederacao')`,
     );
     if (!pedidos || pedidos.length === 0) return;
 
@@ -1667,6 +1666,20 @@ const escalarPedidos = async () => {
             }
           })(),
       };
+
+      if (!pedido.prazo_atual) {
+        continue;
+      }
+
+      const diasRestantes = computeDiasRestantes(
+        pedido.prazo_atual,
+        pedido.status,
+      );
+      const prazoExpirado = diasRestantes <= 0 ||
+        new Date(pedido.prazo_atual) <= agoraDate;
+      if (!prazoExpirado) {
+        continue;
+      }
 
       const target = computeEscalationTarget(pedido);
       if (!target) continue;
@@ -2889,6 +2902,7 @@ app.get("/pedidos", requireAuth, async (c) => {
   try {
     const authUser = c.get("user");
     const userData = await getUserData(authUser.id, authUser.email);
+    await escalarPedidos();
 
     const pedidosRows = db.queryEntries<any>(`SELECT * FROM ${TBL("pedidos")}`);
     const pedidosData = (pedidosRows || []).map((r) => ({
@@ -3933,8 +3947,10 @@ app.post("/pedidos/:id/transferir", requireAuth, async (c) => {
 
     const mesmaResponsavel = pedido.cooperativa_responsavel_id &&
       userData.cooperativa_id === pedido.cooperativa_responsavel_id;
+    const mesmaSolicitante = pedido.cooperativa_solicitante_id &&
+      userData.cooperativa_id === pedido.cooperativa_solicitante_id;
     const podeTransferir = userData.papel === "confederacao" ||
-      mesmaResponsavel;
+      mesmaResponsavel || mesmaSolicitante;
 
     if (!podeTransferir) {
       return c.json(
@@ -4279,6 +4295,7 @@ app.get("/dashboard/stats", requireAuth, async (c) => {
   try {
     const authUser = c.get("user");
     const userData = await getUserData(authUser.id, authUser.email);
+    await escalarPedidos();
 
     const pedidosData = db.queryEntries<any>(`SELECT * FROM ${TBL("pedidos")}`);
 
