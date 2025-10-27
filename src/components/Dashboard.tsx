@@ -100,7 +100,11 @@ export function Dashboard({ onNavigateToPedidos }: DashboardProps) {
   }
 
   const pedidosAtivos = pedidos.filter((pedido) => !pedido.excluido);
-  const pedidosVencendo = pedidosAtivos.filter(p => p.dias_restantes <= 7 && p.status !== 'concluido');
+  const pedidosVencendo = pedidosAtivos.filter(
+    (p) =>
+      p.dias_restantes <= 7 &&
+      (p.status === 'novo' || p.status === 'em_andamento'),
+  );
   const pedidosEmAndamento = pedidosAtivos.filter(p => p.status === 'em_andamento');
   const pedidosConcluidos = pedidosAtivos.filter(p => p.status === 'concluido');
 

@@ -266,7 +266,9 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
   const isResponsavelAtual = !!(user && pedido.responsavel_atual_id === user.id);
   const canAssumir = canChangeStatus && sameCooperativaResponsavel && !isResponsavelAtual;
   const canLiberar = canChangeStatus && !!pedido.responsavel_atual_id;
-  const canTransfer = canChangeStatus && pedido.nivel_atual !== 'confederacao';
+  const canTransfer = !!user && pedido.nivel_atual !== 'confederacao' && (
+    canChangeStatus || pedido.cooperativa_solicitante_id === user.cooperativa_id
+  );
 
   const justificativaInicial = pedido.observacoes
     ? extractInitialJustificativa(pedido.observacoes)

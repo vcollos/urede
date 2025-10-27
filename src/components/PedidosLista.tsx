@@ -130,7 +130,11 @@ export function PedidosLista({ onCreatePedido, onViewPedido, presetFilter, onOpe
     }
 
     if (customFilter === 'vencendo') {
-      pedidosFiltrados = pedidosFiltrados.filter(p => p.dias_restantes <= 7 && p.status !== 'concluido');
+      pedidosFiltrados = pedidosFiltrados.filter(
+        (p) =>
+          p.dias_restantes <= 7 &&
+          (p.status === 'novo' || p.status === 'em_andamento'),
+      );
     }
 
     return pedidosFiltrados;
