@@ -1,4 +1,4 @@
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, FormEvent, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -20,8 +20,10 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/apiService';
-import { Operador, Cooperativa } from '../types';
+import { Operador, Cooperativa, PendingUserApproval } from '../types';
 import { deriveRole, toBaseRole, describeRole } from '../utils/roleMapping';
+import { authService } from '../services/authService';
+import { Alert, AlertDescription } from './ui/alert';
 
 interface OperadoresListaProps {
   onRequestEdit?: (operador: Operador) => void;
@@ -29,7 +31,7 @@ interface OperadoresListaProps {
 }
 
 export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresListaProps = {}) {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, refreshUser } = useAuth();
   const [operadores, setOperadores] = useState<Operador[]>([]);
   const [cooperativas, setCooperativas] = useState<Cooperativa[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -60,6 +62,27 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     whatsapp: '',
     id_singular: '',
   });
+  const fetchPendingApprovals = useCallback(async () => {
+    if (!user || user.papel !== 'admin' || user.approval_status !== 'approved') {
+      setPendingApprovals([]);
+      return;
+    }
+
+    try {
+      setIsLoadingPending(true);
+      setPendingError('');
+      const result = await authService.getPendingApprovals();
+      setPendingApprovals(result);
+    } catch (err) {
+      setPendingError(err instanceof Error ? err.message : 'Erro ao carregar solicitações pendentes');
+    } finally {
+      setIsLoadingPending(false);
+    }
+  }, [user]);
+  const [pendingApprovals, setPendingApprovals] = useState<PendingUserApproval[]>([]);
+  const [pendingError, setPendingError] = useState('');
+  const [isLoadingPending, setIsLoadingPending] = useState(false);
+  const [processingApprovalId, setProcessingApprovalId] = useState<string | null>(null);
 
   // Carregar dados
   useEffect(() => {
@@ -83,6 +106,15 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
 
     if (user) loadData();
   }, [user]);
+
+  useEffect(() => {
+    if (user?.papel === 'admin' && user.approval_status === 'approved') {
+      void fetchPendingApprovals();
+    } else {
+      setPendingApprovals([]);
+      setPendingError('');
+    }
+  }, [user?.papel, user?.approval_status, fetchPendingApprovals]);
 
   // Filtrar operadores
   const getFilteredOperadores = (): Operador[] => {
@@ -121,6 +153,16 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     return new Date(value).toLocaleDateString('pt-BR');
   };
 
+  const formatDateTime = (value: string | Date) => {
+    return new Date(value).toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
   const formatPhone = (phone: string) => {
     return phone || 'N/A';
   };
@@ -128,6 +170,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
   const currentCooperativa = cooperativas.find((c) => c.id_singular === user?.cooperativa_id);
   const isConfUser = !!user && (user.papel === 'confederacao' || currentCooperativa?.tipo === 'CONFEDERACAO');
   const isFederacaoUser = !!user && (user.papel === 'federacao' || currentCooperativa?.tipo === 'FEDERACAO');
+  const isAdminUser = !!user && user.papel === 'admin';
   const canCreate = !!user && (user.papel === 'admin' || isConfUser || isFederacaoUser);
   const canManageRoles = !!user && (user.papel === 'admin' || isConfUser);
 
@@ -149,6 +192,35 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     { value: 'operador', label: 'Operador' },
     { value: 'admin', label: 'Administrador' },
   ] as const;
+
+  const handleApprovePending = async (requestId: string) => {
+    try {
+      setProcessingApprovalId(requestId);
+      setPendingError('');
+      await authService.approvePending(requestId);
+      await fetchPendingApprovals();
+      await refreshUser();
+    } catch (err) {
+      setPendingError(err instanceof Error ? err.message : 'Erro ao aprovar usuário');
+    } finally {
+      setProcessingApprovalId(null);
+    }
+  };
+
+  const handleRejectPending = async (requestId: string) => {
+    const notes = window.prompt('Informe o motivo da rejeição (opcional):') || '';
+    try {
+      setProcessingApprovalId(requestId);
+      setPendingError('');
+      await authService.rejectPending(requestId, notes.trim() ? notes.trim() : undefined);
+      await fetchPendingApprovals();
+      await refreshUser();
+    } catch (err) {
+      setPendingError(err instanceof Error ? err.message : 'Erro ao rejeitar usuário');
+    } finally {
+      setProcessingApprovalId(null);
+    }
+  };
 
   const handleOpenEdit = (operador: Operador) => {
     setEditingOperador(operador);
@@ -295,10 +367,10 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Operadores</h1>
-          <p className="text-gray-600">Gerencie os operadores do sistema</p>
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Operadores</h1>
+        <p className="text-gray-600">Gerencie os operadores do sistema</p>
+      </div>
         {isAuthenticated && canCreate && (
           <Button
             onClick={handleOpenCreate}
@@ -310,6 +382,71 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
           </Button>
         )}
       </div>
+
+      {isAdminUser && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Solicitações de acesso pendentes</CardTitle>
+            <CardDescription>
+              Aprove as contas recém-cadastradas para liberar o acesso ao sistema.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {pendingError && (
+              <Alert variant="destructive">
+                <AlertDescription>{pendingError}</AlertDescription>
+              </Alert>
+            )}
+            {isLoadingPending ? (
+              <div className="text-sm text-gray-500">Carregando solicitações...</div>
+            ) : pendingApprovals.length === 0 ? (
+              <p className="text-sm text-gray-500">Nenhuma solicitação pendente.</p>
+            ) : (
+              <div className="space-y-3">
+                {pendingApprovals.map((pending) => (
+                  <div
+                    key={pending.id}
+                    className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border border-gray-200 rounded-lg p-3 bg-gray-50"
+                  >
+                    <div className="space-y-1 text-left">
+                      <div className="font-medium text-gray-900">{pending.nome}</div>
+                      <div className="text-sm text-gray-500">{pending.email}</div>
+                      {pending.cooperativa_nome && (
+                        <div className="text-sm text-gray-500">
+                          Cooperativa: {pending.cooperativa_nome}
+                        </div>
+                      )}
+                      <div className="text-sm text-gray-500">
+                        Papel solicitado: {describeRole(pending.requested_papel)}
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        Solicitação em {formatDateTime(pending.created_at)}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() => handleApprovePending(pending.id)}
+                        disabled={processingApprovalId === pending.id}
+                      >
+                        {processingApprovalId === pending.id ? 'Processando...' : 'Aprovar'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleRejectPending(pending.id)}
+                        disabled={processingApprovalId === pending.id}
+                      >
+                        {processingApprovalId === pending.id ? 'Processando...' : 'Rejeitar'}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Filtros */}
       <Card>

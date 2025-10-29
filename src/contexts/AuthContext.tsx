@@ -18,7 +18,7 @@ interface AuthContextType {
     cargo: string;
     cooperativa_id: string;
     papel: 'admin' | 'operador' | 'federacao' | 'confederacao';
-  }) => Promise<void>;
+  }) => Promise<{ message: string; status?: string; autoApprove?: boolean }>;
   updateProfile: (data: Partial<Pick<User, 'nome' | 'display_name' | 'telefone' | 'whatsapp' | 'cargo'>>) => Promise<User | null>;
   changePassword: (data: { current_password?: string; new_password: string }) => Promise<void>;
   refreshUser: () => Promise<User | null>;
@@ -91,7 +91,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setUser(userData);
     } catch (error) {
       console.error('Erro no login:', error);
-      throw error;
+      if (error instanceof Error) {
+        const code = error.message;
+        let friendly = code;
+        switch (code) {
+          case 'pending_confirmation':
+            friendly = 'Confirme seu e-mail antes de acessar o sistema.';
+            break;
+          case 'pending_approval':
+            friendly = 'Sua conta está aguardando aprovação.';
+            break;
+          case 'pending_manual':
+            friendly = 'Sua conta aguarda revisão manual. Aguarde contato.';
+            break;
+          case 'rejected':
+            friendly = 'Sua solicitação foi rejeitada.';
+            break;
+          default:
+            friendly = error.message;
+        }
+        throw new Error(friendly);
+      }
+      throw error as Error;
     } finally {
       setIsLoading(false);
     }
@@ -123,9 +144,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }) => {
     try {
       setIsLoading(true);
-      await authService.register(data);
-      // Após o registro, fazer login automaticamente
-      await login(data.email, data.password);
+      const response = await authService.register(data);
+      return {
+        message: response?.message || 'Cadastro realizado com sucesso.',
+        status: response?.status,
+        autoApprove: response?.autoApprove,
+      };
     } catch (error) {
       console.error('Erro no registro:', error);
       throw error;

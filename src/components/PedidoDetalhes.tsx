@@ -213,10 +213,14 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
         responsavel_atual_id: user.id,
         responsavel_atual_nome: user.display_name || user.nome || user.email,
       };
+      if (pedido.status === 'novo') {
+        updates.status = 'em_andamento';
+      }
       const updatedPedido = await apiService.updatePedido(pedido.id, updates);
       await applyUpdatedPedido(updatedPedido);
     } catch (e) {
       console.error('Erro ao assumir pedido:', e);
+      alert('Não foi possível assumir o pedido. Tente novamente ou verifique suas permissões.');
     } finally {
       setIsAssumindo(false);
     }
@@ -229,6 +233,7 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
       const updates = {
         responsavel_atual_id: null,
         responsavel_atual_nome: null,
+        ...(pedido.status === 'em_andamento' ? { status: 'novo' } : {}),
       } as Partial<Pedido>;
       const updatedPedido = await apiService.updatePedido(pedido.id, updates);
       await applyUpdatedPedido(updatedPedido);

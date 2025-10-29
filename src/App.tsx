@@ -13,15 +13,30 @@ import { ConfiguracoesView } from './components/ConfiguracoesView';
 import { CidadesView } from './components/CidadesView';
 import { PedidosImportPage } from './components/PedidosImportPage';
 import { apiService } from './services/apiService';
+import { ConfirmEmailScreen } from './components/ConfirmEmailScreen';
+import { Button } from './components/ui/button';
 
 // Componente interno que usa o AuthContext
 function AppContent() {
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { isAuthenticated, isLoading, user, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showNovoPedido, setShowNovoPedido] = useState(false);
   const [selectedPedido, setSelectedPedido] = useState<Pedido | null>(null);
   const [pedidosPresetFilter, setPedidosPresetFilter] = useState<PedidosFilterPreset | null>(null);
   const openNovoPedido = () => setShowNovoPedido(true);
+
+  const pathname = typeof window !== 'undefined' ? window.location.pathname : '/';
+  if (pathname.startsWith('/confirm-email')) {
+    return (
+      <ConfirmEmailScreen
+        onGoToLogin={() => {
+          if (typeof window !== 'undefined') {
+            window.location.assign('/');
+          }
+        }}
+      />
+    );
+  }
 
   // Mostrar loading durante verificação da autenticação
   if (isLoading) {
@@ -38,6 +53,43 @@ function AppContent() {
   // Se não estiver autenticado, mostrar tela de login
   if (!isAuthenticated) {
     return <AuthScreen />;
+  }
+
+  if (user?.approval_status && user.approval_status !== 'approved') {
+    const status = user.approval_status;
+    const titleMap: Record<string, string> = {
+      pending_confirmation: 'Confirmação de e-mail pendente',
+      pending_approval: 'Conta aguardando aprovação',
+      pending_manual: 'Aprovação manual necessária',
+      rejected: 'Conta não aprovada',
+    };
+    const descriptionMap: Record<string, string> = {
+      pending_confirmation: 'Confirme seu e-mail para prosseguir com a ativação da conta.',
+      pending_approval: 'Sua confirmação foi recebida e aguarda a aprovação do responsável pela cooperativa.',
+      pending_manual: 'Sua conta será analisada pela administração. Aguarde contato.',
+      rejected: 'Sua solicitação foi rejeitada. Entre em contato com o suporte para mais detalhes.',
+    };
+
+    const title = titleMap[status] || 'Ativação pendente';
+    const description = descriptionMap[status] || 'Estamos processando sua solicitação.';
+
+    const handleRefresh = async () => {
+      try {
+        await refreshUser();
+      } catch (error) {
+        console.error('Erro ao atualizar usuário:', error);
+      }
+    };
+
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center dark:bg-slate-950 p-4">
+        <div className="w-full max-w-md bg-white dark:bg-slate-900 shadow rounded-lg p-6 space-y-4 text-center">
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">{title}</h1>
+          <p className="text-gray-600 dark:text-gray-300">{description}</p>
+          <Button onClick={handleRefresh}>Atualizar status</Button>
+        </div>
+      </div>
+    );
   }
 
   const handleUpdatePedido = (pedidoId: string, updates: Partial<Pedido>) => {

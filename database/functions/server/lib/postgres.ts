@@ -1,15 +1,21 @@
 import { Pool, PoolClient } from "https://deno.land/x/postgres@v0.17.2/mod.ts";
 
-const CONNECTION_URL = Deno.env.get("DATABASE_DB_URL");
+let pool: Pool | null = null;
 
-if (!CONNECTION_URL) {
-  throw new Error(
-    "[postgres] DATABASE_DB_URL não definido. Configure a string de conexão do banco.",
-  );
-}
+const getPool = () => {
+  if (pool) return pool;
 
-const POOL_SIZE = Number(Deno.env.get("DATABASE_DB_POOL_SIZE") ?? 5);
-const pool = new Pool(CONNECTION_URL, POOL_SIZE, true);
+  const connectionUrl = Deno.env.get("DATABASE_DB_URL");
+  if (!connectionUrl) {
+    throw new Error(
+      "[postgres] DATABASE_DB_URL não definido. Configure a string de conexão do banco.",
+    );
+  }
+
+  const poolSize = Number(Deno.env.get("DATABASE_DB_POOL_SIZE") ?? 5);
+  pool = new Pool(connectionUrl, poolSize, true);
+  return pool;
+};
 
 const blockOn = <T>(promise: Promise<T>): T => {
   const sab = new SharedArrayBuffer(4);
@@ -51,6 +57,7 @@ const prepareQuery = (text: string, args: unknown[]) => {
 };
 
 const withClient = async <T>(fn: (client: PoolClient) => Promise<T>) => {
+  const pool = getPool();
   const client = await pool.connect();
   try {
     return await fn(client);
@@ -107,3 +114,75 @@ export const query = (
 };
 
 export const execute = query;
+
+type SyncDbClient = {
+  query: (text: string, args?: unknown[]) => void;
+  queryEntries: <T = Record<string, unknown>>(
+    text: string,
+    args?: unknown[],
+  ) => T[];
+  queryArray: (text: string, args?: unknown[]) => unknown[][];
+  execute: (text: string, args?: unknown[]) => void;
+};
+
+const makeSyncClient = (client: PoolClient): SyncDbClient => {
+  const runQueryArray = (
+    text: string,
+    args: unknown[] = [],
+  ) => {
+    const { text: finalText, args: finalArgs } = prepareQuery(text, args);
+    return client.queryArray({
+      text: finalText,
+      args: finalArgs,
+    });
+  };
+
+  const runQueryObject = <T>(
+    text: string,
+    args: unknown[] = [],
+  ) => {
+    const { text: finalText, args: finalArgs } = prepareQuery(text, args);
+    return client.queryObject<T>({
+      text: finalText,
+      args: finalArgs,
+    });
+  };
+
+  return {
+    query: (text: string, args: unknown[] = []) => {
+      blockOn(runQueryArray(text, args));
+    },
+    queryEntries: <T = Record<string, unknown>>(
+      text: string,
+      args: unknown[] = [],
+    ) => {
+      const result = blockOn(runQueryObject<T>(text, args));
+      return result.rows;
+    },
+    queryArray: (text: string, args: unknown[] = []) => {
+      const result = blockOn(runQueryArray(text, args));
+      return result.rows;
+    },
+    execute: (text: string, args: unknown[] = []) => {
+      blockOn(runQueryArray(text, args));
+    },
+  };
+};
+
+export const transaction = <T>(fn: (tx: SyncDbClient) => T): T =>
+  blockOn(
+    withClient(async (client) => {
+      const txClient = makeSyncClient(client);
+      try {
+        await client.queryArray("BEGIN");
+        const result = fn(txClient);
+        await client.queryArray("COMMIT");
+        return result;
+      } catch (error) {
+        try {
+          await client.queryArray("ROLLBACK");
+        } catch (_) {}
+        throw error;
+      }
+    }),
+  );

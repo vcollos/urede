@@ -12,6 +12,12 @@ export interface User {
   papel: 'admin' | 'operador' | 'federacao' | 'confederacao';
   ativo: boolean;
   data_cadastro: string;
+  approval_status?: 'pending_confirmation' | 'pending_approval' | 'pending_manual' | 'approved' | 'rejected';
+  email_confirmed_at?: string | null;
+  approval_requested_at?: string | null;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  requested_papel?: 'admin' | 'operador' | 'federacao' | 'confederacao' | null;
 }
 
 export interface Cooperativa {
@@ -141,6 +147,17 @@ export interface CoberturaLog {
   usuario_papel: string;
   detalhes?: string | null;
   timestamp: string;
+}
+
+export interface PendingUserApproval {
+  id: string;
+  email: string;
+  nome: string;
+  cooperativa_id: string | null;
+  cooperativa_nome: string | null;
+  requested_papel: 'admin' | 'operador' | 'federacao' | 'confederacao';
+  approval_status: string;
+  created_at: string;
 }
 
 export interface SystemSettings {
