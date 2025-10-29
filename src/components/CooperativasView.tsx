@@ -170,9 +170,12 @@ export function CooperativasView() {
 
   // Aplica filtro de busca na tabela principal.
   const filteredCooperativas = useMemo(() => {
-    if (!searchTerm) return cooperativas;
+    const sorted = [...cooperativas].sort((a, b) =>
+      a.uniodonto.localeCompare(b.uniodonto, 'pt-BR', { sensitivity: 'base' })
+    );
+    if (!searchTerm) return sorted;
     const query = searchTerm.toLowerCase();
-    return cooperativas.filter((coop) =>
+    return sorted.filter((coop) =>
       coop.uniodonto.toLowerCase().includes(query) ||
       coop.raz_social.toLowerCase().includes(query) ||
       coop.id_singular.toLowerCase().includes(query)

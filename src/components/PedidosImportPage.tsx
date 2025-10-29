@@ -446,431 +446,429 @@ export function PedidosImportPage({ onBack, onCompleted }: PedidosImportPageProp
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Como preparar o arquivo</CardTitle>
-          <CardDescription>
-            Preencha as colunas obrigatórias e siga as orientações abaixo para evitar rejeições.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4 text-sm text-gray-700">
-          <div>
-            <p className="font-semibold text-gray-900">Especialidades disponíveis</p>
-            <p className="mt-2 text-sm">
-              Utilize exatamente a grafia abaixo para que o sistema identifique corretamente cada área.
-            </p>
-            <div className="mt-3 overflow-x-auto">
-              <table className="min-w-[280px] divide-y divide-gray-200 rounded-lg border border-gray-200 text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left font-semibold uppercase tracking-wide text-gray-600">Especialidade</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {AVAILABLE_SPECIALTIES.map((item) => (
-                    <tr key={item}>
-                      <td className="px-4 py-2 text-gray-700">{item}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="mt-3 text-xs text-gray-500">
-              Para múltiplas especialidades no mesmo pedido, separe os valores com vírgula ou ponto e vírgula (ex.: "Clínica Geral; Ortodontia").
-            </p>
-          </div>
-          <div>
-            <p className="font-semibold text-gray-900">E-mail do responsável</p>
-            <ul className="mt-2 list-disc space-y-1 pl-5">
-              <li>Informe o e-mail do operador que acompanhará o pedido na cooperativa.</li>
-              <li>Esse endereço recebe as notificações automáticas do sistema.</li>
-            </ul>
-          </div>
-          <div>
-            <p className="font-semibold text-gray-900">Códigos IBGE de cidade</p>
-            <ul className="mt-2 list-disc space-y-1 pl-5">
-              <li>Digite o código IBGE de 6 dígitos (sem o dígito verificador final).</li>
-              <li>Também aceitamos o código completo com 7 dígitos; o sistema ajusta automaticamente.</li>
-            </ul>
-          </div>
-          <div>
-            <p className="font-semibold text-gray-900">Dicas adicionais</p>
-            <ul className="mt-2 list-disc space-y-1 pl-5">
-              <li>Evite linhas vazias no arquivo e mantenha o cabeçalho na primeira linha.</li>
-              <li>Os pedidos serão vinculados automaticamente à cooperativa do usuário logado.</li>
-              <li>O prazo inicial é calculado com base nas regras de SLA configuradas.</li>
-            </ul>
-          </div>
-        </CardContent>
-      </Card>
-
-      {step === 'upload' && (
+      <div className="grid gap-6 items-start md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         <Card>
           <CardHeader>
-            <CardTitle>1. Carregue o arquivo</CardTitle>
+            <CardTitle>Como preparar o arquivo</CardTitle>
             <CardDescription>
-              Selecione o arquivo preenchido (CSV ou Excel) para iniciar a importação.
+              Preencha as colunas obrigatórias e siga as orientações abaixo para evitar rejeições.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-6 text-center">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-purple-100 text-purple-600">
-                <UploadCloud className="h-7 w-7" />
-              </div>
-              <h3 className="mt-4 text-lg font-semibold text-gray-900">Selecione o arquivo de pedidos</h3>
-              <p className="mt-2 text-sm text-gray-600">
-                Extensões aceitas: .xlsx, .xls ou .csv. Mantenha a primeira linha com o cabeçalho.
+          <CardContent className="space-y-4 text-sm text-gray-700">
+            <div>
+              <p className="font-semibold text-gray-900">Especialidades disponíveis</p>
+              <p className="mt-2 text-sm">
+                Utilize exatamente a grafia abaixo para que o sistema identifique corretamente cada área.
               </p>
-              <div className="mt-5 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-                <Button
-                  type="button"
-                  onClick={() => document.getElementById('import-file-input')?.click()}
-                  disabled={isProcessing}
-                  className="flex items-center gap-2"
-                >
-                  <UploadCloud className="h-4 w-4" />
-                  Selecionar arquivo
-                </Button>
-                {selectedFile && (
-                  <span className="text-sm text-gray-600">{selectedFile.name}</span>
-                )}
+              <div className="mt-3 overflow-x-auto">
+                <table className="min-w-[280px] divide-y divide-gray-200 rounded-lg border border-gray-200 text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left font-semibold uppercase tracking-wide text-gray-600">Especialidade</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {AVAILABLE_SPECIALTIES.map((item) => (
+                      <tr key={item}>
+                        <td className="px-4 py-2 text-gray-700">{item}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              <Input
-                id="import-file-input"
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                className="hidden"
-                onChange={handleFileChange}
-              />
+              <p className="mt-3 text-xs text-gray-500">
+                Para múltiplas especialidades no mesmo pedido, separe os valores com vírgula ou ponto e vírgula (ex.: "Clínica Geral; Ortodontia").
+              </p>
             </div>
-
-            {parseError && (
-              <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                <AlertCircle className="h-4 w-4" />
-                {parseError}
-              </div>
-            )}
-
-            <div className="flex flex-wrap gap-3">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={onBack}
-                className="flex items-center gap-2"
-              >
-                <ArrowLeft className="h-4 w-4" /> Cancelar
-              </Button>
+            <div>
+              <p className="font-semibold text-gray-900">E-mail do responsável</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                <li>Informe o e-mail do operador que acompanhará o pedido na cooperativa.</li>
+                <li>Esse endereço recebe as notificações automáticas do sistema.</li>
+              </ul>
+            </div>
+            <div>
+              <p className="font-semibold text-gray-900">Códigos IBGE de cidade</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                <li>Digite o código IBGE de 6 dígitos (sem o dígito verificador final).</li>
+                <li>Também aceitamos o código completo com 7 dígitos; o sistema ajusta automaticamente.</li>
+              </ul>
+            </div>
+            <div>
+              <p className="font-semibold text-gray-900">Dicas adicionais</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                <li>Evite linhas vazias no arquivo e mantenha o cabeçalho na primeira linha.</li>
+                <li>Os pedidos serão vinculados automaticamente à cooperativa do usuário logado.</li>
+                <li>O prazo inicial é calculado com base nas regras de SLA configuradas.</li>
+              </ul>
             </div>
           </CardContent>
         </Card>
-      )}
 
-      {step === 'mapping' && (
         <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>2. Mapeie as colunas</CardTitle>
-              <CardDescription>
-                Relacione os campos do sistema com as colunas presentes no arquivo importado.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                {DESTINATION_FIELDS.map((field) => {
-                  const value = mapping[field.key] ?? '';
-                  const isRequired = field.required;
-                  const error = mappingError && isRequired && !value;
-                  return (
-                    <div key={field.key} className="flex flex-col gap-2">
-                      <div className="flex items-center justify-between">
-                        <label className="text-sm font-medium text-gray-800">
-                          {field.label}
-                          {isRequired && <span className="text-red-500"> *</span>}
-                        </label>
-                        {value && mappedHeaders.has(value) && (
-                          <span className="text-xs text-gray-400">{value}</span>
+          {step === 'upload' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>1. Carregue o arquivo</CardTitle>
+                <CardDescription>
+                  Selecione o arquivo preenchido (CSV ou Excel) para iniciar a importação.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-6 text-center">
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-purple-100 text-purple-600">
+                    <UploadCloud className="h-7 w-7" />
+                  </div>
+                  <h3 className="mt-4 text-lg font-semibold text-gray-900">Selecione o arquivo de pedidos</h3>
+                  <p className="mt-2 text-sm text-gray-600">
+                    Extensões aceitas: .xlsx, .xls ou .csv. Mantenha a primeira linha com o cabeçalho.
+                  </p>
+                  <div className="mt-5 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+                    <Button
+                      type="button"
+                      onClick={() => document.getElementById('import-file-input')?.click()}
+                      disabled={isProcessing}
+                      className="flex items-center gap-2"
+                    >
+                      <UploadCloud className="h-4 w-4" />
+                      Selecionar arquivo
+                    </Button>
+                    {selectedFile && (
+                      <span className="text-sm text-gray-600">{selectedFile.name}</span>
+                    )}
+                  </div>
+                  <Input
+                    id="import-file-input"
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                </div>
+
+                {parseError && (
+                  <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    <AlertCircle className="h-4 w-4" />
+                    {parseError}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-3">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={onBack}
+                    className="flex items-center gap-2"
+                  >
+                    <ArrowLeft className="h-4 w-4" /> Cancelar
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {step === 'mapping' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>2. Mapeie as colunas</CardTitle>
+                <CardDescription>
+                  Relacione os campos do sistema com as colunas presentes no arquivo importado.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {DESTINATION_FIELDS.map((field) => {
+                    const value = mapping[field.key] ?? '';
+                    const isRequired = field.required;
+                    const error = mappingError && isRequired && !value;
+                    return (
+                      <div key={field.key} className="flex flex-col gap-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-medium text-gray-800">
+                            {field.label}
+                            {isRequired && <span className="text-red-500"> *</span>}
+                          </label>
+                          {value && mappedHeaders.has(value) && (
+                            <span className="text-xs text-gray-400">{value}</span>
+                          )}
+                        </div>
+                        <Select
+                          value={value || NONE_VALUE}
+                          onValueChange={(selected) => updateMapping(field.key, selected)}
+                        >
+                          <SelectTrigger className={error ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}>
+                            <SelectValue placeholder="Selecionar coluna" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NONE_VALUE}>Não utilizar</SelectItem>
+                            {headers.map((header) => (
+                              <SelectItem key={header} value={header}>
+                                {header}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-gray-500">{field.description}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="rounded-lg border border-gray-200">
+                  <div className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700">
+                    Pré-visualização (primeiras linhas)
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          {headers.map((header) => (
+                            <th key={header} className="px-3 py-2 text-left font-medium uppercase tracking-wide text-gray-500">
+                              {header}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {previewRows.map((row, idx) => (
+                          <tr key={idx}>
+                            {headers.map((header) => (
+                              <td key={header} className="px-3 py-2 text-gray-700">
+                                {row[header] ?? ''}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                        {previewRows.length === 0 && (
+                          <tr>
+                            <td className="px-3 py-4 text-center text-gray-500" colSpan={headers.length}>
+                              Nenhuma linha para exibir.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {mappingError && (
+                  <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    <AlertCircle className="h-4 w-4" />
+                    {mappingError}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <Button variant="ghost" onClick={handleBackStep} disabled={isProcessing}>
+                    <ArrowLeft className="mr-2 h-4 w-4" /> Voltar
+                  </Button>
+                  <Button onClick={handleValidateMapping} disabled={!readyToReview || isProcessing}>
+                    Continuar
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {step === 'review' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>3. Revise os dados</CardTitle>
+                <CardDescription>
+                  Analise o resumo antes de confirmar a importação. Linhas com problemas serão ignoradas.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <div className="rounded-md bg-gray-50 p-3">
+                    <p className="text-xs uppercase tracking-wide text-gray-500">Linhas carregadas</p>
+                    <p className="text-xl font-semibold text-gray-900">{rows.length}</p>
+                  </div>
+                  <div className="rounded-md bg-gray-50 p-3">
+                    <p className="text-xs uppercase tracking-wide text-gray-500">Linhas válidas</p>
+                    <p className="text-xl font-semibold text-gray-900">{preparedRows.length}</p>
+                  </div>
+                  <div className="rounded-md bg-gray-50 p-3">
+                    <p className="text-xs uppercase tracking-wide text-gray-500">Possíveis problemas</p>
+                    <p className="text-xl font-semibold text-gray-900">{preflightIssues.length}</p>
+                  </div>
+                </div>
+
+                {preflightIssues.length > 0 && (
+                  <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="h-5 w-5" />
+                      <div>
+                        <p className="font-semibold">Algumas linhas serão ignoradas</p>
+                        <p className="mt-1 text-sm">
+                          Os registros abaixo possuem campos obrigatórios vazios e não serão importados.
+                        </p>
+                        <ul className="mt-3 space-y-1 text-sm">
+                          {preflightIssues.slice(0, 5).map((issue) => (
+                            <li key={`${issue.rowNumber}-${issue.message}`}>
+                              Linha {issue.rowNumber}: {issue.message}
+                            </li>
+                          ))}
+                        </ul>
+                        {preflightIssues.length > 5 && (
+                          <p className="mt-2 text-xs text-yellow-700">
+                            + {preflightIssues.length - 5} outro(s) registro(s) com o mesmo problema.
+                          </p>
                         )}
                       </div>
-                      <Select
-                        value={value || NONE_VALUE}
-                        onValueChange={(selected) => updateMapping(field.key, selected)}
-                      >
-                        <SelectTrigger className={error ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}>
-                          <SelectValue placeholder="Selecionar coluna" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={NONE_VALUE}>Não utilizar</SelectItem>
-                          {headers.map((header) => (
-                            <SelectItem key={header} value={header}>
-                              {header}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-gray-500">{field.description}</p>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="rounded-lg border border-gray-200">
-                <div className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700">
-                  Pré-visualização (primeiras linhas)
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200 text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        {headers.map((header) => (
-                          <th key={header} className="px-3 py-2 text-left font-medium uppercase tracking-wide text-gray-500">
-                            {header}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {previewRows.map((row, idx) => (
-                        <tr key={idx}>
-                          {headers.map((header) => (
-                            <td key={header} className="px-3 py-2 text-gray-700">
-                              {row[header] ?? ''}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                      {previewRows.length === 0 && (
-                        <tr>
-                          <td className="px-3 py-4 text-center text-gray-500" colSpan={headers.length}>
-                            Nenhuma linha para exibir.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {mappingError && (
-                <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                  <AlertCircle className="h-4 w-4" />
-                  {mappingError}
-                </div>
-              )}
-
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <Button variant="ghost" onClick={handleBackStep} disabled={isProcessing}>
-                  <ArrowLeft className="mr-2 h-4 w-4" /> Voltar
-                </Button>
-                <Button onClick={handleValidateMapping} disabled={!readyToReview || isProcessing}>
-                  Continuar
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {step === 'review' && (
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>3. Revise os dados</CardTitle>
-              <CardDescription>
-                Analise o resumo antes de confirmar a importação. Linhas com problemas serão ignoradas.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <div className="rounded-md bg-gray-50 p-3">
-                  <p className="text-xs uppercase tracking-wide text-gray-500">Linhas carregadas</p>
-                  <p className="text-xl font-semibold text-gray-900">{rows.length}</p>
-                </div>
-                <div className="rounded-md bg-gray-50 p-3">
-                  <p className="text-xs uppercase tracking-wide text-gray-500">Linhas válidas</p>
-                  <p className="text-xl font-semibold text-gray-900">{preparedRows.length}</p>
-                </div>
-                <div className="rounded-md bg-gray-50 p-3">
-                  <p className="text-xs uppercase tracking-wide text-gray-500">Possíveis problemas</p>
-                  <p className="text-xl font-semibold text-gray-900">{preflightIssues.length}</p>
-                </div>
-              </div>
-
-              {preflightIssues.length > 0 && (
-                <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">
-                  <div className="flex items-start gap-2">
-                    <AlertCircle className="h-5 w-5" />
-                    <div>
-                      <p className="font-semibold">Algumas linhas serão ignoradas</p>
-                      <p className="mt-1 text-sm">
-                        Os registros abaixo possuem campos obrigatórios vazios e não serão importados.
-                      </p>
-                      <ul className="mt-3 space-y-1 text-sm">
-                        {preflightIssues.slice(0, 5).map((issue) => (
-                          <li key={`${issue.rowNumber}-${issue.message}`}>
-                            Linha {issue.rowNumber}: {issue.message}
-                          </li>
-                        ))}
-                      </ul>
-                      {preflightIssues.length > 5 && (
-                        <p className="mt-2 text-xs text-yellow-700">
-                          + {preflightIssues.length - 5} outro(s) registro(s) com o mesmo problema.
-                        </p>
-                      )}
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              <div className="rounded-lg border border-gray-200">
-                <div className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700">
-                  Pré-visualização dos dados mapeados
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200 text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-3 py-2 text-left font-medium uppercase tracking-wide text-gray-500">Linha</th>
-                        {DESTINATION_FIELDS.map((field) => (
-                          <th key={field.key} className="px-3 py-2 text-left font-medium uppercase tracking-wide text-gray-500">
-                            {field.label}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {preparedRows.slice(0, 5).map((record) => (
-                        <tr key={record.rowNumber}>
-                          <td className="px-3 py-2 text-gray-500">{record.rowNumber}</td>
+                <div className="rounded-lg border border-gray-200">
+                  <div className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700">
+                    Pré-visualização dos dados mapeados
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium uppercase tracking-wide text-gray-500">Linha</th>
                           {DESTINATION_FIELDS.map((field) => (
-                            <td key={field.key} className="px-3 py-2 text-gray-700">
-                              {(record as any)[field.key] || '—'}
-                            </td>
+                            <th key={field.key} className="px-3 py-2 text-left font-medium uppercase tracking-wide text-gray-500">
+                              {field.label}
+                            </th>
                           ))}
                         </tr>
-                      ))}
-                      {preparedRows.length === 0 && (
-                        <tr>
-                          <td className="px-3 py-4 text-center text-gray-500" colSpan={DESTINATION_FIELDS.length + 1}>
-                            Nenhum dado válido para exibir.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {mappingError && (
-                <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                  <AlertCircle className="h-4 w-4" />
-                  {mappingError}
-                </div>
-              )}
-
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <Button variant="ghost" onClick={handleBackStep} disabled={isProcessing}>
-                  <ArrowLeft className="mr-2 h-4 w-4" /> Voltar
-                </Button>
-                <Button onClick={handleSubmit} disabled={isProcessing || preparedRows.length === 0}>
-                  {isProcessing ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <FileSpreadsheet className="mr-2 h-4 w-4" />
-                  )}
-                  {isProcessing ? 'Importando...' : 'Iniciar importação'}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {step === 'result' && result && (
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>4. Resultado da importação</CardTitle>
-              <CardDescription>
-                Acompanhe o resumo abaixo. Baixe o relatório para revisar eventuais inconsistências.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="rounded-lg border border-green-200 bg-green-50 p-4">
-                <div className="flex items-start gap-3">
-                  <CheckCircle2 className="mt-0.5 h-5 w-5 text-green-600" />
-                  <div>
-                    <p className="text-base font-semibold text-green-700">Importação concluída</p>
-                    <p className="mt-1 text-sm text-green-700">
-                      {result.summary.imported} pedido(s) criado(s) com sucesso.
-                    </p>
-                    <dl className="mt-3 grid grid-cols-1 gap-2 text-xs text-green-700 sm:grid-cols-3">
-                      <div>
-                        <dt className="uppercase tracking-wide text-green-800/80">Processados</dt>
-                        <dd className="text-base font-semibold text-green-800">{result.summary.total}</dd>
-                      </div>
-                      <div>
-                        <dt className="uppercase tracking-wide text-green-800/80">Importados</dt>
-                        <dd className="text-base font-semibold text-green-800">{result.summary.imported}</dd>
-                      </div>
-                      <div>
-                        <dt className="uppercase tracking-wide text-green-800/80">Ignorados</dt>
-                        <dd className="text-base font-semibold text-green-800">{result.summary.skipped}</dd>
-                      </div>
-                    </dl>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {preparedRows.slice(0, 5).map((record) => (
+                          <tr key={record.rowNumber}>
+                            <td className="px-3 py-2 text-gray-500">{record.rowNumber}</td>
+                            {DESTINATION_FIELDS.map((field) => (
+                              <td key={field.key} className="px-3 py-2 text-gray-700">
+                                {(record as any)[field.key] || '—'}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                        {preparedRows.length === 0 && (
+                          <tr>
+                            <td className="px-3 py-4 text-center text-gray-500" colSpan={DESTINATION_FIELDS.length + 1}>
+                              Nenhum dado válido para exibir.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
-              </div>
 
-              {result.errors.length > 0 && (
-                <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+                {mappingError && (
+                  <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    <AlertCircle className="h-4 w-4" />
+                    {mappingError}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <Button variant="ghost" onClick={handleBackStep} disabled={isProcessing}>
+                    <ArrowLeft className="mr-2 h-4 w-4" /> Voltar
+                  </Button>
+                  <Button onClick={handleSubmit} disabled={isProcessing || preparedRows.length === 0}>
+                    {isProcessing ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <FileSpreadsheet className="mr-2 h-4 w-4" />
+                    )}
+                    {isProcessing ? 'Importando...' : 'Iniciar importação'}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {step === 'result' && result && (
+            <Card>
+              <CardHeader>
+                <CardTitle>4. Resultado da importação</CardTitle>
+                <CardDescription>
+                  Acompanhe o resumo abaixo. Baixe o relatório para revisar eventuais inconsistências.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="rounded-lg border border-green-200 bg-green-50 p-4">
                   <div className="flex items-start gap-3">
-                    <AlertCircle className="mt-0.5 h-5 w-5 text-yellow-700" />
-                    <div className="space-y-3 text-sm text-yellow-800">
-                      <div>
-                        <p className="font-semibold">Alguns registros não foram importados</p>
-                        <p className="text-sm">
-                          Faça o download do relatório para revisar os problemas e tentar novamente.
-                        </p>
-                      </div>
-                      <ul className="space-y-1">
-                        {result.errors.slice(0, 5).map((error, index) => (
-                          <li key={`${error.rowNumber}-${index}`}>
-                            Linha {error.rowNumber}: {error.message}
-                          </li>
-                        ))}
-                      </ul>
-                      {result.errors.length > 5 && (
-                        <p className="text-xs text-yellow-700">
-                          + {result.errors.length - 5} outro(s) registro(s) com o mesmo problema.
-                        </p>
-                      )}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="inline-flex w-fit items-center gap-2"
-                        onClick={handleDownloadErrors}
-                      >
-                        <Download className="h-4 w-4" /> Baixar relatório de erros
-                      </Button>
+                    <CheckCircle2 className="mt-0.5 h-5 w-5 text-green-600" />
+                    <div>
+                      <p className="text-base font-semibold text-green-700">Importação concluída</p>
+                      <p className="mt-1 text-sm text-green-700">
+                        {result.summary.imported} pedido(s) criado(s) com sucesso.
+                      </p>
+                      <dl className="mt-3 grid grid-cols-1 gap-2 text-xs text-green-700 sm:grid-cols-3">
+                        <div>
+                          <dt className="uppercase tracking-wide text-green-800/80">Processados</dt>
+                          <dd className="text-base font-semibold text-green-800">{result.summary.total}</dd>
+                        </div>
+                        <div>
+                          <dt className="uppercase tracking-wide text-green-800/80">Importados</dt>
+                          <dd className="text-base font-semibold text-green-800">{result.summary.imported}</dd>
+                        </div>
+                        <div>
+                          <dt className="uppercase tracking-wide text-green-800/80">Ignorados</dt>
+                          <dd className="text-base font-semibold text-green-800">{result.summary.skipped}</dd>
+                        </div>
+                      </dl>
                     </div>
                   </div>
                 </div>
-              )}
 
-              <div className="flex flex-wrap items-center gap-3">
-                <Button variant="default" onClick={onBack}>
-                  Voltar para pedidos
-                </Button>
-                <Button variant="secondary" onClick={resetState} className="flex items-center gap-2">
-                  <UploadCloud className="h-4 w-4" /> Importar outro arquivo
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+                {result.errors.length > 0 && (
+                  <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="mt-0.5 h-5 w-5 text-yellow-700" />
+                      <div className="space-y-3 text-sm text-yellow-800">
+                        <div>
+                          <p className="font-semibold">Alguns registros não foram importados</p>
+                          <p className="text-sm">
+                            Faça o download do relatório para revisar os problemas e tentar novamente.
+                          </p>
+                        </div>
+                        <ul className="space-y-1">
+                          {result.errors.slice(0, 5).map((error, index) => (
+                            <li key={`${error.rowNumber}-${index}`}>
+                              Linha {error.rowNumber}: {error.message}
+                            </li>
+                          ))}
+                        </ul>
+                        {result.errors.length > 5 && (
+                          <p className="text-xs text-yellow-700">
+                            + {result.errors.length - 5} outro(s) registro(s) com o mesmo problema.
+                          </p>
+                        )}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="inline-flex w-fit items-center gap-2"
+                          onClick={handleDownloadErrors}
+                        >
+                          <Download className="h-4 w-4" /> Baixar relatório de erros
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button variant="default" onClick={onBack}>
+                    Voltar para pedidos
+                  </Button>
+                  <Button variant="secondary" onClick={resetState} className="flex items-center gap-2">
+                    <UploadCloud className="h-4 w-4" /> Importar outro arquivo
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

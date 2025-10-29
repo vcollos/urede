@@ -221,6 +221,8 @@ const ensurePedidoSchema = () => {
     `ALTER TABLE ${TBL("pedidos")} ADD COLUMN responsavel_atual_nome TEXT`,
     `ALTER TABLE ${TBL("pedidos")} ADD COLUMN criado_por_user TEXT`,
     `ALTER TABLE ${TBL("pedidos")} ADD COLUMN data_conclusao TEXT`,
+    `ALTER TABLE ${TBL("pedidos")} ADD COLUMN motivo_categoria TEXT`,
+    `ALTER TABLE ${TBL("pedidos")} ADD COLUMN beneficiarios_quantidade INTEGER`,
   ];
   for (const stmt of alters) {
     try {
@@ -396,6 +398,7 @@ type SystemSettings = {
   requireApproval: boolean;
   autoNotifyManagers: boolean;
   enableSelfRegistration: boolean;
+  pedido_motivos: string[];
 };
 
 const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
@@ -407,9 +410,26 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   requireApproval: true,
   autoNotifyManagers: true,
   enableSelfRegistration: true,
+  pedido_motivos: [],
 };
 
 const SETTINGS_KEY_SYSTEM = "system_preferences";
+
+const sanitizeMotivos = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const trimmed = item.trim();
+    if (!trimmed) continue;
+    const normalized = trimmed.slice(0, 150);
+    if (seen.has(normalized.toLowerCase())) continue;
+    seen.add(normalized.toLowerCase());
+    result.push(normalized);
+  }
+  return result;
+};
 
 const readSystemSettings = (): SystemSettings => {
   try {
@@ -426,6 +446,7 @@ const readSystemSettings = (): SystemSettings => {
           ...DEFAULT_SYSTEM_SETTINGS.deadlines,
           ...(parsed?.deadlines ?? {}),
         },
+        pedido_motivos: sanitizeMotivos(parsed?.pedido_motivos),
       };
     }
   } catch (error) {
@@ -1111,33 +1132,41 @@ const computeEscalationTarget = (pedido: any): EscalationTarget | null => {
   if (nivelAtual === "confederacao") return null;
 
   if (nivelAtual === "singular") {
-    try {
-      const coopSolic = db.queryEntries<any>(
-        `SELECT FEDERACAO FROM ${
-          TBL("cooperativas")
-        } WHERE id_singular = ? LIMIT 1`,
-        [pedido.cooperativa_solicitante_id],
-      )[0];
-      const federacaoNome = coopSolic?.FEDERACAO;
-      if (federacaoNome) {
-        const fed = db.queryEntries<any>(
-          `SELECT id_singular FROM ${
+    const candidatos = [
+      pedido.cooperativa_responsavel_id,
+      pedido.cooperativa_solicitante_id,
+    ].map((value) => (typeof value === "string" ? value.trim() : ""))
+      .filter((value, index, arr) => value && arr.indexOf(value) === index);
+
+    for (const cooperativaId of candidatos) {
+      try {
+        const coopRow = db.queryEntries<any>(
+          `SELECT FEDERACAO FROM ${
             TBL("cooperativas")
-          } WHERE TIPO LIKE 'FEDER%' AND FEDERACAO = ? LIMIT 1`,
-          [federacaoNome],
+          } WHERE id_singular = ? LIMIT 1`,
+          [cooperativaId],
         )[0];
-        if (fed?.id_singular) {
-          return {
-            novoNivel: "federacao",
-            novaCooperativa: fed.id_singular as string,
-          };
+        const federacaoNome = coopRow?.FEDERACAO;
+        if (federacaoNome) {
+          const fed = db.queryEntries<any>(
+            `SELECT id_singular FROM ${
+              TBL("cooperativas")
+            } WHERE TIPO LIKE 'FEDER%' AND FEDERACAO = ? LIMIT 1`,
+            [federacaoNome],
+          )[0];
+          if (fed?.id_singular) {
+            return {
+              novoNivel: "federacao",
+              novaCooperativa: fed.id_singular as string,
+            };
+          }
         }
+      } catch (error) {
+        console.warn(
+          "[transferencia] falha ao localizar federação destino:",
+          error,
+        );
       }
-    } catch (error) {
-      console.warn(
-        "[transferencia] falha ao localizar federação destino:",
-        error,
-      );
     }
     return null;
   }
@@ -1964,6 +1993,7 @@ app.put("/configuracoes/sistema", requireAuth, async (c) => {
   const theme = ["light", "dark", "system"].includes(payload?.theme)
     ? payload.theme
     : DEFAULT_SYSTEM_SETTINGS.theme;
+  const currentSettings = readSystemSettings();
   const deadlinesPayload = payload?.deadlines ?? {};
   const singularToFederacao = Math.max(
     1,
@@ -1979,6 +2009,9 @@ app.put("/configuracoes/sistema", requireAuth, async (c) => {
         DEFAULT_SYSTEM_SETTINGS.deadlines.federacaoToConfederacao,
     ) || DEFAULT_SYSTEM_SETTINGS.deadlines.federacaoToConfederacao,
   );
+  const pedidoMotivos = payload?.pedido_motivos !== undefined
+    ? sanitizeMotivos(payload?.pedido_motivos)
+    : currentSettings.pedido_motivos;
 
   const settings: SystemSettings = {
     theme,
@@ -1996,6 +2029,7 @@ app.put("/configuracoes/sistema", requireAuth, async (c) => {
       payload?.enableSelfRegistration ??
         DEFAULT_SYSTEM_SETTINGS.enableSelfRegistration,
     ),
+    pedido_motivos: pedidoMotivos,
   };
 
   try {
@@ -3283,8 +3317,8 @@ app.post("/pedidos/import", requireAuth, async (c) => {
       try {
         db.query(
           `INSERT INTO ${TBL("pedidos")}
-            (id, titulo, criado_por, criado_por_user, cooperativa_solicitante_id, cooperativa_responsavel_id, cidade_id, especialidades, quantidade, observacoes, prioridade, nivel_atual, status, data_criacao, data_ultima_alteracao, prazo_atual)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            (id, titulo, criado_por, criado_por_user, cooperativa_solicitante_id, cooperativa_responsavel_id, cidade_id, especialidades, quantidade, observacoes, prioridade, nivel_atual, status, data_criacao, data_ultima_alteracao, prazo_atual, motivo_categoria, beneficiarios_quantidade)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           [
             pedidoId,
             titulo,
@@ -3302,6 +3336,8 @@ app.post("/pedidos/import", requireAuth, async (c) => {
             agoraIso,
             agoraIso,
             prazoInicial,
+            null,
+            null,
           ],
         );
       } catch (error) {
@@ -3368,6 +3404,8 @@ app.post("/pedidos/import", requireAuth, async (c) => {
         data_criacao: agoraIso,
         data_ultima_alteracao: agoraIso,
         prazo_atual: prazoInicial,
+        motivo_categoria: null,
+        beneficiarios_quantidade: null,
         dias_restantes: computeDiasRestantes(prazoInicial, "novo"),
         responsavel_atual_id: null,
         responsavel_atual_nome: null,
@@ -3443,6 +3481,18 @@ app.post("/pedidos", requireAuth, async (c) => {
 
     const id = `ped_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const prazoInicial = computePrazoLimite("singular");
+    const motivoCategoriaRaw = typeof pedidoData.motivo_categoria === "string"
+      ? pedidoData.motivo_categoria.trim()
+      : "";
+    const motivoCategoria = motivoCategoriaRaw
+      ? motivoCategoriaRaw.slice(0, 150)
+      : null;
+    const beneficiariosQuantidadeRaw = Number(
+      pedidoData.beneficiarios_quantidade,
+    );
+    const beneficiariosQuantidade = Number.isFinite(beneficiariosQuantidadeRaw)
+      ? Math.max(0, Math.round(beneficiariosQuantidadeRaw))
+      : null;
 
     const novoPedido = {
       id,
@@ -3464,6 +3514,8 @@ app.post("/pedidos", requireAuth, async (c) => {
       data_ultima_alteracao: new Date().toISOString(),
       cooperativa_responsavel_id: undefined as any, // será resolvido pela cidade
       prioridade: pedidoData.prioridade || "media",
+      motivo_categoria: motivoCategoria,
+      beneficiarios_quantidade: beneficiariosQuantidade,
     };
 
     // Resolver cooperativa responsável pela cidade
@@ -3501,8 +3553,8 @@ app.post("/pedidos", requireAuth, async (c) => {
     try {
       db.query(
         `INSERT INTO ${TBL("pedidos")} 
-          (id, titulo, criado_por, criado_por_user, cooperativa_solicitante_id, cooperativa_responsavel_id, cidade_id, especialidades, quantidade, observacoes, prioridade, nivel_atual, status, data_criacao, data_ultima_alteracao, prazo_atual)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          (id, titulo, criado_por, criado_por_user, cooperativa_solicitante_id, cooperativa_responsavel_id, cidade_id, especialidades, quantidade, observacoes, prioridade, nivel_atual, status, data_criacao, data_ultima_alteracao, prazo_atual, motivo_categoria, beneficiarios_quantidade)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
           novoPedido.id,
           novoPedido.titulo,
@@ -3520,6 +3572,8 @@ app.post("/pedidos", requireAuth, async (c) => {
           novoPedido.data_criacao,
           novoPedido.data_ultima_alteracao,
           novoPedido.prazo_atual,
+          novoPedido.motivo_categoria || null,
+          novoPedido.beneficiarios_quantidade ?? null,
         ],
       );
     } catch (e) {
@@ -3663,6 +3717,8 @@ app.put("/pedidos/:id", requireAuth, async (c) => {
       "nivel_atual",
       "status",
       "prazo_atual",
+      "motivo_categoria",
+      "beneficiarios_quantidade",
     ];
     const whitelistResponsavel = [
       "status",
@@ -3690,6 +3746,18 @@ app.put("/pedidos/:id", requireAuth, async (c) => {
       // Normalizar campos especiais
       if (Array.isArray(allowed.especialidades)) {
         allowed.especialidades = JSON.stringify(allowed.especialidades);
+      }
+      if ("motivo_categoria" in allowed) {
+        const raw = typeof allowed.motivo_categoria === "string"
+          ? allowed.motivo_categoria.trim()
+          : "";
+        allowed.motivo_categoria = raw ? raw.slice(0, 150) : null;
+      }
+      if ("beneficiarios_quantidade" in allowed) {
+        const rawQtd = Number(allowed.beneficiarios_quantidade);
+        allowed.beneficiarios_quantidade = Number.isFinite(rawQtd)
+          ? Math.max(0, Math.round(rawQtd))
+          : null;
       }
       const cols = Object.keys(allowed);
       const placeholders = cols.map((c) => `${c} = ?`).join(", ");

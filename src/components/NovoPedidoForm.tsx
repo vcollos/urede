@@ -39,8 +39,10 @@ const especialidades = [
 export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
   const [cidades, setCidades] = useState<Cidade[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingCategorias, setIsLoadingCategorias] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [pedidoMotivos, setPedidoMotivos] = useState<string[]>([]);
   
   const [formData, setFormData] = useState({
     titulo: '',
@@ -48,7 +50,9 @@ export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
     quantidade: 1,
     observacoes: '',
     especialidades_selecionadas: [] as string[],
-    prioridade: 'media' as 'baixa' | 'media' | 'alta' | 'urgente'
+    prioridade: 'media' as 'baixa' | 'media' | 'alta' | 'urgente',
+    motivo_categoria: '',
+    beneficiarios_quantidade: '',
   });
 
   const [novaEspecialidade, setNovaEspecialidade] = useState('');
@@ -69,6 +73,22 @@ export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
     };
 
     loadCidades();
+  }, []);
+
+  useEffect(() => {
+    const loadCategorias = async () => {
+      try {
+        setIsLoadingCategorias(true);
+        const settings = await apiService.getSystemSettings();
+        setPedidoMotivos(settings?.pedido_motivos ?? []);
+      } catch (err) {
+        console.error('Erro ao carregar categorias de pedido:', err);
+      } finally {
+        setIsLoadingCategorias(false);
+      }
+    };
+
+    loadCategorias();
   }, []);
 
   const cidadeOptions = useMemo(() => {
@@ -119,13 +139,21 @@ export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
       setIsSubmitting(true);
       setError('');
 
+      const motivoCategoria = formData.motivo_categoria.trim();
+      const beneficiariosRaw = Number(formData.beneficiarios_quantidade);
+      const beneficiariosQuantidade = Number.isFinite(beneficiariosRaw)
+        ? Math.max(0, Math.round(beneficiariosRaw))
+        : undefined;
+
       const novoPedidoData = {
         titulo: formData.titulo,
         cidade_id: formData.cidade_id,
         especialidades: formData.especialidades_selecionadas,
         quantidade: formData.quantidade,
         observacoes: formData.observacoes,
-        prioridade: formData.prioridade
+        prioridade: formData.prioridade,
+        motivo_categoria: motivoCategoria ? motivoCategoria : undefined,
+        beneficiarios_quantidade: beneficiariosQuantidade,
       };
 
       const pedidoCriado = await apiService.createPedido(novoPedidoData);
@@ -149,12 +177,12 @@ export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
 
   return (
     <Dialog open onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader className="text-left">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <DialogTitle>Novo Pedido de Credenciamento</DialogTitle>
-              <DialogDescription>
+    <DialogContent className="sm:max-w-2xl max-h-[88vh] overflow-y-auto bg-white/95 border border-slate-200 shadow-[0_28px_80px_-40px_rgba(15,23,42,0.65)]">
+      <DialogHeader className="text-left">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <DialogTitle>Novo Pedido de Credenciamento</DialogTitle>
+            <DialogDescription>
                 Informe os dados do pedido para iniciar o credenciamento.
               </DialogDescription>
             </div>
@@ -282,6 +310,54 @@ export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
                   className="w-32"
                   disabled={isSubmitting}
                 />
+              </div>
+
+              {/* Beneficiários na cidade */}
+              <div className="space-y-2">
+                <Label htmlFor="beneficiarios_quantidade">Beneficiários na cidade</Label>
+                <Input
+                  id="beneficiarios_quantidade"
+                  type="number"
+                  min="0"
+                  value={formData.beneficiarios_quantidade}
+                  onChange={(e) => setFormData({ ...formData, beneficiarios_quantidade: e.target.value })}
+                  className="w-40"
+                  placeholder="Ex: 1200"
+                  disabled={isSubmitting}
+                />
+                <p className="text-xs text-gray-500">Informe o total estimado de beneficiários na localidade.</p>
+              </div>
+
+              {/* Categoria do pedido */}
+              <div className="space-y-2">
+                <Label htmlFor="motivo_categoria">Categoria do pedido</Label>
+                <Select
+                  value={formData.motivo_categoria || '__sem_categoria'}
+                  onValueChange={(value) =>
+                    setFormData({
+                      ...formData,
+                      motivo_categoria: value === '__sem_categoria' || value === '__none' ? '' : value
+                    })
+                  }
+                  disabled={isSubmitting || isLoadingCategorias}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={isLoadingCategorias ? 'Carregando categorias...' : 'Selecione a categoria'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__sem_categoria">Sem categoria</SelectItem>
+                    {pedidoMotivos.length === 0 && (
+                      <SelectItem value="__none" disabled>
+                        Nenhuma categoria cadastrada
+                      </SelectItem>
+                    )}
+                    {pedidoMotivos.map((motivo) => (
+                      <SelectItem key={motivo} value={motivo}>
+                        {motivo}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Observações */}
