@@ -11,6 +11,7 @@ export type SendBrevoEmailOptions = {
   params?: Record<string, unknown>;
   htmlContent?: string;
   textContent?: string;
+  templateId?: number | null;
 };
 
 const normalizeRecipients = (recipients: BrevoRecipient[] = []) =>
@@ -26,7 +27,9 @@ export const sendBrevoTransactionalEmail = async (options: SendBrevoEmailOptions
   const senderEmail = Deno.env.get('BREVO_SENDER_EMAIL');
   const senderName = Deno.env.get('BREVO_SENDER_NAME') || 'Urede Notificações';
   const templateIdRaw = Deno.env.get('BREVO_TEMPLATE_ID');
-  const templateId = templateIdRaw ? Number(templateIdRaw) : null;
+  const templateId = options.templateId !== undefined
+    ? options.templateId
+    : (templateIdRaw ? Number(templateIdRaw) : null);
 
   const to = normalizeRecipients(options.to);
   if (!apiKey || !senderEmail || to.length === 0) {

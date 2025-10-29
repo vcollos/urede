@@ -2,7 +2,14 @@ import { Hono } from "https://deno.land/x/hono@v4.3.11/mod.ts";
 import { cors, logger } from "https://deno.land/x/hono@v4.3.11/middleware.ts";
 import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 import { signJwt, verifyJwt } from "./lib/jwt.ts";
-import { getDb } from "./lib/sqlite.ts";
+import { getDb as getSqliteDb } from "./lib/sqlite.ts";
+import {
+  queryEntries as pgQueryEntries,
+  queryArray as pgQueryArray,
+  query as pgQuery,
+  execute as pgExecute,
+  transaction as pgTransaction,
+} from "./lib/postgres.ts";
 import { sendBrevoTransactionalEmail } from "./lib/brevo.ts";
 
 const app = new Hono();
@@ -46,9 +53,12 @@ app.use("*", logger(console.log));
 // Configurações gerais
 const DB_SCHEMA = Deno.env.get("DB_SCHEMA") || "public";
 const TABLE_PREFIX = Deno.env.get("TABLE_PREFIX") || "urede_";
-const TBL = (name: string) => `${TABLE_PREFIX}${name}`;
+const DB_DRIVER = (Deno.env.get("DB_DRIVER") || "sqlite").toLowerCase();
+const IS_POSTGRES = DB_DRIVER === "postgres";
+const TBL = (name: string) =>
+  IS_POSTGRES ? `${DB_SCHEMA}.${TABLE_PREFIX}${name}` : `${TABLE_PREFIX}${name}`;
 
-// Auth / DB local
+// Auth / DB
 const AUTH_PROVIDER = "local";
 const JWT_SECRET = Deno.env.get("JWT_SECRET") || "dev-secret-change-me";
 const SQLITE_PATH_RAW = Deno.env.get("SQLITE_PATH") || "./data/urede.db";
@@ -60,12 +70,55 @@ try {
     SQLITE_PATH = new URL(SQLITE_PATH_RAW.replace(/^\.\//, ""), root).pathname;
   }
 } catch {}
-const DB_DRIVER = (Deno.env.get("DB_DRIVER") || "sqlite").toLowerCase(); // sqlite
+type DbAdapter = {
+  query: (text: string, args?: unknown[]) => void;
+  queryEntries: <T = Record<string, unknown>>(text: string, args?: unknown[]) => T[];
+  queryArray: (text: string, args?: unknown[]) => unknown[][];
+  execute: (text: string, args?: unknown[]) => void;
+};
+
+type TransactionalDbAdapter = DbAdapter & {
+  transaction?: <T>(fn: (tx: DbAdapter) => T) => T;
+};
+
+const pgDb: TransactionalDbAdapter = {
+  query: (text: string, args: unknown[] = []) => pgQuery(text, args),
+  queryEntries: <T = Record<string, unknown>>(text: string, args: unknown[] = []) =>
+    pgQueryEntries<T>(text, args),
+  queryArray: (text: string, args: unknown[] = []) => pgQueryArray(text, args),
+  execute: (text: string, args: unknown[] = []) => pgExecute(text, args),
+};
+
+pgDb.transaction = <T>(fn: (tx: DbAdapter) => T) => pgTransaction(fn);
+const getDb = (path: string = SQLITE_PATH) =>
+  IS_POSTGRES ? pgDb : getSqliteDb(path);
+
+if (IS_POSTGRES) {
+  console.log("[db] usando driver postgres");
+} else {
+  console.log(`[db] abrindo banco sqlite em: ${SQLITE_PATH}`);
+}
 
 // Modo inseguro para desenvolvimento local: quando true, pulamos checagens de autenticação e permissões.
 // Defina INSECURE_MODE=true no arquivo database/functions/server/.env para habilitar.
 const INSECURE_MODE =
   (Deno.env.get("INSECURE_MODE") || "").toLowerCase() === "true";
+
+const APP_URL = Deno.env.get("APP_URL") || "http://localhost:5173";
+const DEFAULT_CONFEDERACAO_ID =
+  Deno.env.get("DEFAULT_CONFEDERACAO_ID") || "001";
+const EMAIL_CONFIRMATION_TIMEOUT_HOURS = Number(
+  Deno.env.get("EMAIL_CONFIRMATION_TIMEOUT_HOURS") ?? 24,
+);
+const APPROVAL_ESCALATION_TIMEOUT_HOURS = Number(
+  Deno.env.get("APPROVAL_ESCALATION_TIMEOUT_HOURS") ?? 48,
+);
+const BREVO_CONFIRMATION_TEMPLATE_ID = Number(
+  Deno.env.get("BREVO_CONFIRMATION_TEMPLATE_ID") ?? "",
+) || null;
+const BREVO_APPROVAL_TEMPLATE_ID = Number(
+  Deno.env.get("BREVO_APPROVAL_TEMPLATE_ID") ?? "",
+) || null;
 
 // Operação 100% local (SQLite)
 
@@ -212,8 +265,493 @@ const computePrazoLimite = (
 };
 
 // Carrega nomes de cidade e cooperativa para um conjunto de pedidos
-console.log(`[sqlite] abrindo banco em: ${SQLITE_PATH}`);
-const db = getDb(SQLITE_PATH);
+const db = getDb();
+
+const getConfederacaoId = (() => {
+  let cached: string | null = null;
+  return () => {
+    if (cached) return cached;
+    let candidate = DEFAULT_CONFEDERACAO_ID;
+    try {
+      const row = db.queryEntries<any>(
+        `SELECT id_singular FROM ${TBL("cooperativas")} WHERE UPPER(TIPO) LIKE 'CONFED%' LIMIT 1`,
+      )[0];
+      if (row?.id_singular) candidate = row.id_singular;
+      if (!candidate && row?.ID_SINGULAR) candidate = row.ID_SINGULAR;
+    } catch (_) {
+      /* noop */
+    }
+    cached = candidate || "001";
+    return cached;
+  };
+})();
+
+const nowIso = () => new Date().toISOString();
+const addHours = (hours: number) =>
+  new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+const generateToken = () => {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  }
+};
+
+const isDuplicateColumnError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  return /duplicate column|already exists|duplicate key/i.test(message);
+};
+
+const ensureAuthUsersSchema = () => {
+  try {
+    db.query(`CREATE TABLE IF NOT EXISTS auth_users (
+      email TEXT PRIMARY KEY,
+      password_hash TEXT NOT NULL,
+      nome TEXT,
+      display_name TEXT,
+      telefone TEXT,
+      whatsapp TEXT,
+      cargo TEXT,
+      cooperativa_id TEXT,
+      papel TEXT DEFAULT 'operador',
+      requested_papel TEXT,
+      ativo INTEGER DEFAULT 1,
+      data_cadastro TEXT DEFAULT (CURRENT_TIMESTAMP),
+      confirmation_token TEXT,
+      confirmation_expires_at TEXT,
+      email_confirmed_at TEXT,
+      approval_status TEXT,
+      approval_requested_at TEXT,
+      approved_by TEXT,
+      approved_at TEXT,
+      auto_approve INTEGER DEFAULT 0
+    )`);
+  } catch (error) {
+    console.warn("[auth_users] falha ao garantir tabela:", error);
+  }
+
+  const statements = IS_POSTGRES
+    ? [
+      "ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS confirmation_token TEXT",
+      "ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS confirmation_expires_at TEXT",
+      "ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS email_confirmed_at TEXT",
+      "ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS approval_status TEXT",
+      "ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS approval_requested_at TEXT",
+      "ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS approved_by TEXT",
+      "ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS approved_at TEXT",
+      "ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS requested_papel TEXT",
+      "ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS auto_approve INTEGER DEFAULT 0",
+    ]
+    : [
+      "ALTER TABLE auth_users ADD COLUMN confirmation_token TEXT",
+      "ALTER TABLE auth_users ADD COLUMN confirmation_expires_at TEXT",
+      "ALTER TABLE auth_users ADD COLUMN email_confirmed_at TEXT",
+      "ALTER TABLE auth_users ADD COLUMN approval_status TEXT",
+      "ALTER TABLE auth_users ADD COLUMN approval_requested_at TEXT",
+      "ALTER TABLE auth_users ADD COLUMN approved_by TEXT",
+      "ALTER TABLE auth_users ADD COLUMN approved_at TEXT",
+      "ALTER TABLE auth_users ADD COLUMN requested_papel TEXT",
+      "ALTER TABLE auth_users ADD COLUMN auto_approve INTEGER DEFAULT 0",
+    ];
+  for (const stmt of statements) {
+    try {
+      db.query(stmt);
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) {
+        console.warn("[auth_users] alteração falhou:", error);
+      }
+    }
+  }
+
+  try {
+    db.query(
+      `UPDATE auth_users SET approval_status = 'approved' WHERE approval_status IS NULL`,
+    );
+  } catch (error) {
+    console.warn("[auth_users] não foi possível definir approval_status:", error);
+  }
+  try {
+    db.query(
+      "UPDATE auth_users SET auto_approve = COALESCE(auto_approve, 0)",
+    );
+  } catch (_) {
+    /* ignore */
+  }
+  try {
+    db.query(
+      "UPDATE auth_users SET requested_papel = COALESCE(requested_papel, papel)",
+    );
+  } catch (_) {
+    /* ignore */
+  }
+  try {
+    db.query(
+      "UPDATE auth_users SET email_confirmed_at = COALESCE(email_confirmed_at, data_cadastro) WHERE email_confirmed_at IS NULL",
+    );
+  } catch (_) {
+    /* ignore */
+  }
+};
+
+const ensureUserApprovalRequestsTable = () => {
+  try {
+    db.query(
+      `CREATE TABLE IF NOT EXISTS user_approval_requests (
+        id TEXT PRIMARY KEY,
+        user_email TEXT NOT NULL,
+        cooperativa_id TEXT,
+        approver_cooperativa_id TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TEXT NOT NULL,
+        decided_at TEXT,
+        decided_by TEXT,
+        decision_notes TEXT
+      )`,
+    );
+  } catch (error) {
+    console.warn("[approvals] criação de tabela falhou:", error);
+  }
+
+  try {
+    db.query(
+      `CREATE INDEX IF NOT EXISTS idx_user_approval_requests_status ON user_approval_requests(status)`,
+    );
+  } catch (_) {
+    /* ignore */
+  }
+  try {
+    db.query(
+      `CREATE INDEX IF NOT EXISTS idx_user_approval_requests_approver ON user_approval_requests(approver_cooperativa_id, status)`,
+    );
+  } catch (_) {
+    /* ignore */
+  }
+};
+
+ensureAuthUsersSchema();
+ensureUserApprovalRequestsTable();
+
+const getCooperativaRowRaw = (id?: string | null) => {
+  if (!id) return null;
+  try {
+    return db.queryEntries<any>(
+      `SELECT * FROM ${TBL("cooperativas")} WHERE id_singular = ? LIMIT 1`,
+      [id],
+    )[0] ?? null;
+  } catch (error) {
+    console.warn("[cooperativas] falha ao buscar registro bruto:", error);
+    return null;
+  }
+};
+
+const countApprovedAdmins = (coopId?: string | null) => {
+  if (!coopId) return 0;
+  try {
+    const row = db.queryEntries<{ c: number }>(
+      "SELECT COUNT(*) AS c FROM auth_users WHERE cooperativa_id = ? AND papel = 'admin' AND approval_status = 'approved'",
+      [coopId],
+    )[0];
+    return Number(row?.c ?? 0);
+  } catch (error) {
+    console.warn("[auth] falha ao contar admins aprovados:", error);
+    return 0;
+  }
+};
+
+const hasApprovedAdmins = (coopId?: string | null) => {
+  return countApprovedAdmins(coopId) > 0;
+};
+
+const getApprovedAdminsForCoop = (coopId?: string | null) => {
+  if (!coopId) return [];
+  try {
+    return db.queryEntries<{ email: string; nome: string | null }>(
+      "SELECT email, COALESCE(nome, display_name) AS nome FROM auth_users WHERE cooperativa_id = ? AND papel = 'admin' AND approval_status = 'approved'",
+      [coopId],
+    ).map((row) => ({
+      email: row.email,
+      nome: row.nome ?? row.email,
+    }));
+  } catch (error) {
+    console.warn("[auth] falha ao buscar admins aprovados:", error);
+    return [];
+  }
+};
+
+const findFederationIdForCoop = (coopId?: string | null) => {
+  if (!coopId) return null;
+  const row = getCooperativaRowRaw(coopId);
+  if (!row) return null;
+  const tipo = (row.TIPO || row.tipo || "").toUpperCase();
+  if (tipo === "FEDERACAO") return row.ID_SINGULAR || row.id_singular || coopId;
+  if (tipo === "CONFEDERACAO") return null;
+
+  const fedName = row.FEDERACAO || row.federacao;
+  if (!fedName) return null;
+  try {
+    const fedRow = db.queryEntries<any>(
+      `SELECT * FROM ${TBL("cooperativas")} WHERE UPPER(UNIODONTO) = UPPER(?) OR id_singular = ? LIMIT 1`,
+      [fedName, fedName],
+    )[0];
+    if (!fedRow) return null;
+    return fedRow.ID_SINGULAR || fedRow.id_singular || null;
+  } catch (error) {
+    console.warn("[cooperativas] falha ao localizar federacao:", error);
+    return null;
+  }
+};
+
+type ApprovalTarget =
+  | { targetId: string; level: "singular" | "federacao" | "confederacao"; admins: { email: string; nome: string }[] }
+  | { targetId: null; level: "manual"; admins: { email: string; nome: string }[] };
+
+const findApprovalTarget = (coopId?: string | null): ApprovalTarget => {
+  const chain: { id: string | null; level: "singular" | "federacao" | "confederacao" }[] = [];
+  const row = getCooperativaRowRaw(coopId);
+  const tipo = (row?.TIPO || row?.tipo || "").toUpperCase();
+
+  if (tipo === "CONFEDERACAO") {
+    chain.push({ id: row?.ID_SINGULAR || row?.id_singular || coopId || getConfederacaoId(), level: "confederacao" });
+  } else if (tipo === "FEDERACAO") {
+    chain.push({ id: row?.ID_SINGULAR || row?.id_singular || coopId || null, level: "federacao" });
+    chain.push({ id: getConfederacaoId(), level: "confederacao" });
+  } else {
+    if (coopId) {
+      chain.push({ id: coopId, level: "singular" });
+    }
+    const fedId = findFederationIdForCoop(coopId);
+    if (fedId) {
+      chain.push({ id: fedId, level: "federacao" });
+    }
+    chain.push({ id: getConfederacaoId(), level: "confederacao" });
+  }
+
+  const visited = new Set<string>();
+  for (const step of chain) {
+    if (!step.id) continue;
+    if (visited.has(step.id)) continue;
+    visited.add(step.id);
+    if (hasApprovedAdmins(step.id)) {
+      return {
+        targetId: step.id,
+        level: step.level,
+        admins: getApprovedAdminsForCoop(step.id),
+      };
+    }
+  }
+
+  return { targetId: null, level: "manual", admins: [] };
+};
+
+const toBoolean = (value: unknown) =>
+  value === true || value === 1 || value === "1";
+
+const getAuthUser = (email: string) => {
+  try {
+    return db.queryEntries<any>(
+      "SELECT * FROM auth_users WHERE email = ? LIMIT 1",
+      [email],
+    )[0] ?? null;
+  } catch (error) {
+    console.error("[auth] falha ao obter usuário:", error);
+    return null;
+  }
+};
+
+const sendConfirmationEmail = async (
+  user: { email: string; nome?: string | null; display_name?: string | null },
+  token: string,
+) => {
+  const name = user.display_name || user.nome || user.email;
+  const confirmUrl = `${APP_URL.replace(/\/$/, "")}/confirm-email?token=${encodeURIComponent(token)}`;
+  const to = [{ email: user.email, name }];
+
+  if (BREVO_CONFIRMATION_TEMPLATE_ID) {
+    await sendBrevoTransactionalEmail({
+      to,
+      subject: "Confirme seu email",
+      params: {
+        confirm_url: confirmUrl,
+        name,
+      },
+      templateId: BREVO_CONFIRMATION_TEMPLATE_ID,
+    });
+  } else {
+    const htmlContent = `
+      <p>Olá ${name},</p>
+      <p>Recebemos o seu cadastro no sistema Urede. Para confirmar seu e-mail e concluir o processo, clique no link abaixo:</p>
+      <p><a href="${confirmUrl}">${confirmUrl}</a></p>
+      <p>Se você não solicitou este cadastro, ignore esta mensagem.</p>
+      <p>Atenciosamente,<br/>Equipe Urede</p>
+    `;
+    await sendBrevoTransactionalEmail({
+      to,
+      subject: "Confirme seu email",
+      htmlContent,
+      textContent:
+        `Olá ${name},\n\nConfirme o seu e-mail acessando: ${confirmUrl}\n\nSe você não solicitou este cadastro, ignore esta mensagem.\n\nEquipe Urede`,
+    });
+  }
+};
+
+const sendApprovalRequestEmails = async (
+  approvers: { email: string; nome: string }[],
+  user: { email: string; nome?: string | null; display_name?: string | null; cooperativa_id?: string | null },
+) => {
+  if (!approvers || approvers.length === 0) return;
+  const pendingUrl =
+    `${APP_URL.replace(/\/$/, "")}/admin/usuarios/pendentes`;
+  const requesterName = user.display_name || user.nome || user.email;
+
+  for (const approver of approvers) {
+    const to = [{ email: approver.email, name: approver.nome }];
+    const subject = "Aprovação pendente - novo usuário";
+    const htmlContent = `
+      <p>Olá ${approver.nome},</p>
+      <p>O usuário <strong>${requesterName} (${user.email})</strong> aguarda aprovação para acessar o sistema.</p>
+      <p>Acesse o painel para aprovar ou recusar: <a href="${pendingUrl}">${pendingUrl}</a></p>
+      <p>Atenciosamente,<br/>Equipe Urede</p>
+    `;
+    const textContent =
+      `Olá ${approver.nome},\n\nO usuário ${requesterName} (${user.email}) aguarda aprovação.\nAcesse ${pendingUrl} para decidir.\n\nEquipe Urede`;
+
+    if (BREVO_APPROVAL_TEMPLATE_ID) {
+      await sendBrevoTransactionalEmail({
+        to,
+        subject,
+        params: {
+          requester_email: user.email,
+          requester_name: requesterName,
+          pending_url: pendingUrl,
+        },
+        templateId: BREVO_APPROVAL_TEMPLATE_ID,
+      });
+    } else {
+      await sendBrevoTransactionalEmail({
+        to,
+        subject,
+        htmlContent,
+        textContent,
+      });
+    }
+  }
+};
+
+const enqueueApprovalRequest = (
+  user: {
+    email: string;
+    nome?: string | null;
+    display_name?: string | null;
+    cooperativa_id?: string | null;
+    requested_papel?: string | null;
+  },
+) => {
+  const target = findApprovalTarget(user.cooperativa_id);
+  if (!target.targetId) {
+    try {
+      db.query(
+        "UPDATE auth_users SET approval_status = 'pending_manual' WHERE email = ?",
+        [user.email],
+      );
+    } catch (error) {
+      console.warn("[approvals] falha ao marcar pendência manual:", error);
+    }
+    return;
+  }
+
+  try {
+    db.query(
+      "DELETE FROM user_approval_requests WHERE user_email = ?",
+      [user.email],
+    );
+  } catch (_) {
+    /* ignore */
+  }
+
+  const requestId = generateToken();
+  try {
+    db.query(
+      `INSERT INTO user_approval_requests (id, user_email, cooperativa_id, approver_cooperativa_id, status, created_at)
+       VALUES (?,?,?,?,?,?)`,
+      [
+        requestId,
+        user.email,
+        user.cooperativa_id || null,
+        target.targetId,
+        "pending",
+        nowIso(),
+      ],
+    );
+  } catch (error) {
+    console.error("[approvals] falha ao registrar solicitação:", error);
+  }
+
+  void sendApprovalRequestEmails(target.admins, user).catch((error) => {
+    console.warn("[approvals] falha ao enviar notificação:", error);
+  });
+};
+
+const sendApprovalResultEmail = async (
+  user: { email: string; nome?: string | null; display_name?: string | null },
+  status: "approved" | "rejected",
+  approverName?: string | null,
+  notes?: string | null,
+) => {
+  const name = user.display_name || user.nome || user.email;
+  const subject = status === "approved"
+    ? "Sua conta foi aprovada"
+    : "Sua conta não foi aprovada";
+  const approverText = approverName
+    ? `por ${approverName}`
+    : "pela administração";
+  const additional = notes ? `<p><strong>Observação:</strong> ${notes}</p>` : "";
+  const textAdditional = notes ? `\nObservação: ${notes}` : "";
+
+  if (BREVO_APPROVAL_TEMPLATE_ID) {
+    await sendBrevoTransactionalEmail({
+      to: [{ email: user.email, name }],
+      subject,
+      params: {
+        decision: status,
+        approver: approverName || approverText,
+        notes,
+        painel_url: `${APP_URL.replace(/\/$/, "")}/login`,
+      },
+      templateId: BREVO_APPROVAL_TEMPLATE_ID,
+    });
+    return;
+  }
+
+  const htmlContent = `
+    <p>Olá ${name},</p>
+    <p>Sua conta no sistema Urede foi <strong>${
+    status === "approved" ? "aprovada" : "rejeitada"
+  }</strong> ${approverText}.</p>
+    ${additional}
+    <p>Acesse o sistema para mais detalhes: <a href="${APP_URL}">${APP_URL}</a></p>
+    <p>Atenciosamente,<br/>Equipe Urede</p>
+  `;
+  const textContent =
+    `Olá ${name},\n\nSua conta foi ${
+      status === "approved" ? "aprovada" : "rejeitada"
+    } ${approverText}.${textAdditional}\n\nAcesse ${APP_URL} para mais detalhes.\n\nEquipe Urede`;
+
+  await sendBrevoTransactionalEmail({
+    to: [{ email: user.email, name }],
+    subject,
+    htmlContent,
+    textContent,
+  });
+};
+
+
+if (IS_POSTGRES) {
+  try {
+    db.query(`CREATE SCHEMA IF NOT EXISTS ${DB_SCHEMA}`);
+  } catch (error) {
+    console.warn("[schema] falha ao garantir schema:", error);
+  }
+}
 
 const ensurePedidoSchema = () => {
   const alters = [
@@ -619,6 +1157,7 @@ const registrarLogCobertura = (
     papel?: string;
   },
   detalhes?: string,
+  dbClient: DbAdapter | null = null,
 ) => {
   try {
     const id = safeRandomId("cov");
@@ -626,7 +1165,8 @@ const registrarLogCobertura = (
     const nome = userData.nome || userData.display_name || email;
     const papel = userData.papel || "";
     const timestamp = new Date().toISOString();
-    db.query(
+    const target = (dbClient ?? (db as unknown as DbAdapter)) as DbAdapter;
+    target.query(
       `INSERT INTO ${
         TBL("cobertura_logs")
       } (id, cidade_id, cooperativa_origem, cooperativa_destino, usuario_email, usuario_nome, usuario_papel, detalhes, timestamp)
@@ -659,6 +1199,10 @@ const ensureOperatorRecord = (user: {
   cooperativa_id?: string;
 }) => {
   if (!user?.email || !user.cooperativa_id) return;
+  if ((user as any)?.approval_status &&
+    (user as any).approval_status !== "approved") {
+    return;
+  }
   try {
     const existing = db.queryEntries<any>(
       `SELECT id FROM ${TBL("operadores")} WHERE email = ? LIMIT 1`,
@@ -1557,7 +2101,6 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
     // Se provider local, primeiro tentar em auth_users (SQLite)
     if (AUTH_PROVIDER === "local") {
       try {
-        const db = getDb(SQLITE_PATH);
         if (userEmail) {
           const row = db.queryEntries<{
             email: string;
@@ -1570,11 +2113,34 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
             papel: string | null;
             ativo: number | null;
             data_cadastro: string | null;
+            approval_status: string | null;
+            email_confirmed_at: string | null;
+            approval_requested_at: string | null;
+            approved_by: string | null;
+            approved_at: string | null;
+            requested_papel: string | null;
           }>(
-            `SELECT email, nome, COALESCE(display_name, nome) as display_name, telefone, whatsapp, cargo, cooperativa_id, papel, COALESCE(ativo,1) as ativo, COALESCE(data_cadastro, CURRENT_TIMESTAMP) as data_cadastro FROM auth_users WHERE email = ?`,
+            `SELECT email,
+                    nome,
+                    COALESCE(display_name, nome) AS display_name,
+                    telefone,
+                    whatsapp,
+                    cargo,
+                    cooperativa_id,
+                    papel,
+                    requested_papel,
+                    COALESCE(ativo,1) AS ativo,
+                    COALESCE(data_cadastro, CURRENT_TIMESTAMP) AS data_cadastro,
+                    approval_status,
+                    email_confirmed_at,
+                    approval_requested_at,
+                    approved_by,
+                    approved_at
+             FROM auth_users WHERE email = ?`,
             [userEmail],
           )[0];
           if (row) {
+            const approvalStatus = row.approval_status || "approved";
             const user = {
               id: userEmail,
               nome: row.nome || "Usuário",
@@ -1587,8 +2153,16 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
               papel: (row.papel as any) || "operador",
               ativo: !!row.ativo,
               data_cadastro: row.data_cadastro,
+               approval_status: approvalStatus,
+               email_confirmed_at: row.email_confirmed_at || null,
+               approval_requested_at: row.approval_requested_at || null,
+               approved_by: row.approved_by || null,
+               approved_at: row.approved_at || null,
+               requested_papel: row.requested_papel || null,
             } as any;
-            ensureOperatorRecord(user);
+            if (approvalStatus === "approved") {
+              ensureOperatorRecord(user);
+            }
             return user;
           }
         }
@@ -1609,6 +2183,11 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
           ...o,
           cooperativa_id: o.id_singular,
           papel: "operador",
+          approval_status: "approved",
+          email_confirmed_at: nowIso(),
+          approval_requested_at: null,
+          approved_by: null,
+          approved_at: null,
         } as any;
         ensureOperatorRecord({
           id: user.id,
@@ -1637,6 +2216,11 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
       papel: "operador",
       ativo: true,
       data_cadastro: new Date().toISOString(),
+      approval_status: "approved",
+      email_confirmed_at: nowIso(),
+      approval_requested_at: null,
+      approved_by: null,
+      approved_at: null,
     };
     ensureOperatorRecord(fallback as any);
     return fallback;
@@ -1736,47 +2320,33 @@ const escalarPedidos = async () => {
 // Rota de autenticação - Cadastro (JWT local)
 app.post("/auth/register", async (c) => {
   try {
-    const {
-      email,
-      password,
-      nome,
-      display_name,
-      telefone,
-      whatsapp,
-      cargo,
-      cooperativa_id,
-      papel,
-    } = await c.req.json();
+    const payload = await c.req.json();
+    const emailRaw = (payload?.email || "").trim().toLowerCase();
+    const password = payload?.password;
+    const nome = (payload?.nome || "").trim();
+    const displayName = (payload?.display_name || nome).trim();
+    const telefone = (payload?.telefone || "").trim();
+    const whatsapp = (payload?.whatsapp || "").trim();
+    const cargo = (payload?.cargo || "").trim();
+    const cooperativaId = (payload?.cooperativa_id || "").trim() || null;
+    const requestedBaseRole = payload?.papel || "operador";
 
     if (AUTH_PROVIDER !== "local") {
       return c.json({ error: "Cadastro local desabilitado" }, 400);
     }
-    if (!email || !password) {
+
+    if (!emailRaw || !password) {
       return c.json({ error: "Email e senha são obrigatórios" }, 400);
     }
 
-    const db = getDb(SQLITE_PATH);
-    db.execute(`CREATE TABLE IF NOT EXISTS auth_users (
-      email TEXT PRIMARY KEY,
-      password_hash TEXT NOT NULL,
-      nome TEXT,
-      display_name TEXT,
-      telefone TEXT,
-      whatsapp TEXT,
-      cargo TEXT,
-      cooperativa_id TEXT,
-      papel TEXT DEFAULT 'operador',
-      ativo INTEGER DEFAULT 1,
-      data_cadastro TEXT DEFAULT (CURRENT_TIMESTAMP)
-    )`);
-
-    const already = db.queryEntries<{ email: string }>(
-      `SELECT email FROM auth_users WHERE email = ?`,
-      [email],
+    const existing = db.queryEntries<{ email: string }>(
+      "SELECT email FROM auth_users WHERE email = ? LIMIT 1",
+      [emailRaw],
     )[0];
-    if (already) return c.json({ error: "Email já registrado" }, 400);
+    if (existing) {
+      return c.json({ error: "Email já registrado" }, 400);
+    }
 
-    // Verificar se há Authorization: se sim, aplicar regras de criação por papéis
     let requester: any = null;
     const authHeader = c.req.header("Authorization");
     const authzToken = authHeader?.startsWith("Bearer ")
@@ -1784,34 +2354,28 @@ app.post("/auth/register", async (c) => {
       : undefined;
     if (authzToken) {
       try {
-        const payload = await verifyJwt(JWT_SECRET, authzToken);
+        const tokenPayload = await verifyJwt(JWT_SECRET, authzToken);
         requester = await getUserData(
-          payload.sub as string,
-          payload.email as string,
+          tokenPayload.sub as string,
+          (tokenPayload.email as string) ?? undefined,
         );
-      } catch {}
+      } catch (_) {
+        requester = null;
+      }
     }
 
-    // Regras:
-    // - Sem Authorization (auto-registro): força papel 'operador' e exige cooperativa_id
-    // - Com Authorization:
-    //   * confederacao: pode criar para qualquer cooperativa, qualquer papel
-    //   * federacao: pode criar para sua federação e singulares da sua federação
-    //   * admin (singular): pode criar apenas para sua cooperativa
-    let finalPapel = (papel as any) || "operador";
-    let finalCoop = cooperativa_id || "";
+    let finalPapel = requestedBaseRole;
+    let finalCoop = cooperativaId || "";
 
     if (!requester) {
-      // Auto-registro público
       finalPapel = "operador";
       if (!finalCoop) {
         return c.json({ error: "cooperativa_id é obrigatório" }, 400);
       }
     } else {
       if (requester.papel === "confederacao") {
-        // Sem restrições
+        // Confederação pode criar sem restrições adicionais
       } else if (requester.papel === "federacao") {
-        // Verificar se destino pertence à sua federação ou é a própria federação
         if (!finalCoop) {
           return c.json({ error: "cooperativa_id é obrigatório" }, 400);
         }
@@ -1838,7 +2402,7 @@ app.post("/auth/register", async (c) => {
               error: "Sem permissão para criar usuário nesta cooperativa",
             }, 403);
           }
-        } catch {
+        } catch (_) {
           return c.json({ error: "Falha ao validar federação" }, 400);
         }
       } else if (requester.papel === "admin") {
@@ -1847,53 +2411,83 @@ app.post("/auth/register", async (c) => {
             error: "Admin de singular só cria usuários da sua operadora",
           }, 403);
         }
-      } else if (requester.papel === "operador") {
+      } else {
         return c.json({ error: "Operador não pode criar usuários" }, 403);
       }
     }
 
     const hash = await bcrypt.hash(password);
     const resolvedRole = deriveRoleForCooperativa(finalPapel, finalCoop);
+    const confirmationToken = generateToken();
+    const confirmationExpires = addHours(EMAIL_CONFIRMATION_TIMEOUT_HOURS);
+    const now = nowIso();
+    const autoApprove = finalCoop
+      ? countApprovedAdmins(finalCoop) === 0
+      : false;
+    const requestedRole = autoApprove ? "admin" : resolvedRole;
+    const storedRole = autoApprove ? "admin" : "operador";
+
     db.query(
-      `INSERT INTO auth_users (email, password_hash, nome, display_name, telefone, whatsapp, cargo, cooperativa_id, papel, ativo) VALUES (?,?,?,?,?,?,?,?,?,1)`,
-      [
+      `INSERT INTO auth_users (
         email,
+        password_hash,
+        nome,
+        display_name,
+        telefone,
+        whatsapp,
+        cargo,
+        cooperativa_id,
+        papel,
+        requested_papel,
+        ativo,
+        data_cadastro,
+        confirmation_token,
+        confirmation_expires_at,
+        email_confirmed_at,
+        approval_status,
+        approval_requested_at,
+        approved_by,
+        approved_at,
+        auto_approve
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        emailRaw,
         hash,
-        nome || "",
-        display_name || nome || "",
-        telefone || "",
-        whatsapp || "",
-        cargo || "",
-        finalCoop,
-        resolvedRole,
+        nome,
+        displayName || nome || emailRaw,
+        telefone,
+        whatsapp,
+        cargo,
+        finalCoop || null,
+        storedRole,
+        requestedRole,
+        1,
+        now,
+        confirmationToken,
+        confirmationExpires,
+        null,
+        "pending_confirmation",
+        null,
+        null,
+        null,
+        autoApprove ? 1 : 0,
       ],
     );
 
-    // Emitir token após cadastro
-    const token = await signJwt(JWT_SECRET, {
-      sub: email,
-      email,
-      nome: nome || "",
-      cooperativa_id: finalCoop || "",
-      papel: resolvedRole || "operador",
-    });
-    return c.json({
-      message: "Usuário criado com sucesso",
-      token,
-      user: {
-        id: email,
-        nome: nome || "",
-        display_name: display_name || nome || "",
-        email,
-        telefone: telefone || "",
-        whatsapp: whatsapp || "",
-        cargo: cargo || "",
-        cooperativa_id: finalCoop || "",
-        papel: resolvedRole,
-        ativo: true,
-        data_cadastro: new Date().toISOString(),
+    await sendConfirmationEmail(
+      { email: emailRaw, nome, display_name: displayName || nome },
+      confirmationToken,
+    );
+
+    return c.json(
+      {
+        message:
+          "Usuário criado com sucesso. Verifique seu e-mail para confirmar o cadastro.",
+        status: "pending_confirmation",
+        autoApprove: autoApprove ? true : false,
       },
-    });
+      201,
+    );
   } catch (error) {
     console.error("Erro no cadastro:", error);
     return c.json({ error: "Erro interno do servidor" }, 500);
@@ -1904,42 +2498,378 @@ app.post("/auth/register", async (c) => {
 app.post("/auth/login", async (c) => {
   try {
     const { email, password } = await c.req.json();
+    const emailNormalized = (email || "").trim().toLowerCase();
     if (AUTH_PROVIDER !== "local") {
       return c.json({ error: "Login local desabilitado" }, 400);
     }
-    if (!email || !password) {
+    if (!emailNormalized || !password) {
       return c.json({ error: "Email e senha são obrigatórios" }, 400);
     }
 
-    const db = getDb(SQLITE_PATH);
-    const row = db.queryEntries<
-      {
-        email: string;
-        password_hash: string;
-        nome: string | null;
-        display_name: string | null;
-        cooperativa_id: string | null;
-        papel: string | null;
-      }
-    >(
-      `SELECT email, password_hash, nome, display_name, cooperativa_id, papel FROM auth_users WHERE email = ?`,
-      [email],
+    const row = db.queryEntries<{
+      email: string;
+      password_hash: string;
+      nome: string | null;
+      display_name: string | null;
+      cooperativa_id: string | null;
+      papel: string | null;
+      requested_papel: string | null;
+      email_confirmed_at: string | null;
+      approval_status: string | null;
+    }>(
+      `SELECT email, password_hash, nome, display_name, cooperativa_id, papel, requested_papel, email_confirmed_at, approval_status
+       FROM auth_users WHERE email = ?`,
+      [emailNormalized],
     )[0];
     if (!row) return c.json({ error: "Credenciais inválidas" }, 401);
     const ok = await bcrypt.compare(password, row.password_hash);
     if (!ok) return c.json({ error: "Credenciais inválidas" }, 401);
 
+    if (!row.email_confirmed_at) {
+      return c.json({ error: "pending_confirmation" }, 403);
+    }
+
+    const approvalStatus = row.approval_status || "approved";
+    if (approvalStatus !== "approved") {
+      return c.json({ error: approvalStatus }, 403);
+    }
+
+    const effectiveRole = row.papel || row.requested_papel || "operador";
+
     const token = await signJwt(JWT_SECRET, {
-      sub: email,
-      email,
+      sub: row.email,
+      email: row.email,
       nome: row.nome || undefined,
       cooperativa_id: row.cooperativa_id || undefined,
-      papel: (row.papel as any) || "operador",
+      papel: effectiveRole as any,
     });
 
     return c.json({ token });
   } catch (error) {
     console.error("Erro no login:", error);
+    return c.json({ error: "Erro interno do servidor" }, 500);
+  }
+});
+
+app.post("/auth/confirm-email", async (c) => {
+  try {
+    let body: any = {};
+    try {
+      body = await c.req.json();
+    } catch {
+      /* ignore */
+    }
+    const token = (body?.token || c.req.query("token") || "").trim();
+    if (!token) {
+      return c.json({ error: "Token inválido" }, 400);
+    }
+
+    const row = db.queryEntries<{
+      email: string;
+      nome: string | null;
+      display_name: string | null;
+      cooperativa_id: string | null;
+      auto_approve: number | null;
+      requested_papel: string | null;
+      papel: string | null;
+      approval_status: string | null;
+      confirmation_expires_at: string | null;
+    }>(
+      `SELECT email, nome, display_name, cooperativa_id, auto_approve, requested_papel, papel, approval_status, confirmation_expires_at
+       FROM auth_users WHERE confirmation_token = ? LIMIT 1`,
+      [token],
+    )[0];
+
+    if (!row) {
+      return c.json({ error: "Token inválido ou já utilizado" }, 404);
+    }
+
+    if (row.confirmation_expires_at) {
+      const expiresAt = new Date(row.confirmation_expires_at);
+      if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() < Date.now()) {
+        return c.json({ error: "Token expirado" }, 400);
+      }
+    }
+
+    const now = nowIso();
+    const updates: { column: string; value: unknown }[] = [
+      { column: "email_confirmed_at", value: now },
+      { column: "confirmation_token", value: null },
+      { column: "confirmation_expires_at", value: null },
+    ];
+
+    const autoApprove = toBoolean(row.auto_approve);
+    if (autoApprove) {
+      updates.push({ column: "approval_status", value: "approved" });
+      updates.push({ column: "approved_at", value: now });
+      updates.push({ column: "approved_by", value: "system" });
+      updates.push({ column: "auto_approve", value: 0 });
+      updates.push({
+        column: "papel",
+        value: row.requested_papel || row.papel || "admin",
+      });
+    } else {
+      updates.push({ column: "approval_status", value: "pending_approval" });
+      updates.push({ column: "approval_requested_at", value: now });
+    }
+
+    const setClause = updates.map((entry) => `${entry.column} = ?`).join(", ");
+    const values = updates.map((entry) => entry.value);
+    db.query(
+      `UPDATE auth_users SET ${setClause} WHERE email = ?`,
+      [...values, row.email],
+    );
+
+    if (autoApprove) {
+      ensureOperatorRecord({
+        id: row.email,
+        nome: row.nome || row.email,
+        display_name: row.display_name || row.nome || row.email,
+        email: row.email,
+        telefone: "",
+        whatsapp: "",
+        cargo: "",
+        cooperativa_id: row.cooperativa_id || undefined,
+        approval_status: "approved",
+      });
+      return c.json({
+        message: "Email confirmado e conta ativada com sucesso.",
+        status: "approved",
+      });
+    }
+
+    enqueueApprovalRequest({
+      email: row.email,
+      nome: row.nome,
+      display_name: row.display_name,
+      cooperativa_id: row.cooperativa_id,
+      requested_papel: row.requested_papel || row.papel,
+    });
+
+    return c.json({
+      message:
+        "Email confirmado. Aguarde a aprovação do responsável pela sua cooperativa.",
+      status: "pending_approval",
+    });
+  } catch (error) {
+    console.error("[auth] erro ao confirmar email:", error);
+    return c.json({ error: "Erro interno do servidor" }, 500);
+  }
+});
+
+app.get("/auth/pending", requireAuth, async (c) => {
+  try {
+    const authUser = c.get("user");
+    const userData = await getUserData(
+      authUser.id,
+      authUser.email || authUser?.claims?.email,
+    );
+    if (!userData || userData.papel !== "admin" || !userData.cooperativa_id) {
+      return c.json([]);
+    }
+
+    const rows = db.queryEntries<any>(
+      `SELECT r.id,
+              r.user_email,
+              r.cooperativa_id,
+              r.created_at,
+              au.nome,
+              au.display_name,
+              au.requested_papel,
+              au.papel,
+              au.approval_status
+       FROM user_approval_requests r
+       LEFT JOIN auth_users au ON au.email = r.user_email
+       WHERE r.status = 'pending' AND r.approver_cooperativa_id = ?
+       ORDER BY r.created_at ASC`,
+      [userData.cooperativa_id],
+    );
+
+    const enriched = rows.map((row) => {
+      const cooperativaInfo = getCooperativaInfo(row.cooperativa_id);
+      return {
+        id: row.id,
+        email: row.user_email,
+        nome: row.nome || row.display_name || row.user_email,
+        cooperativa_id: row.cooperativa_id,
+        cooperativa_nome: cooperativaInfo?.uniodonto || null,
+        requested_papel: row.requested_papel || row.papel || "operador",
+        approval_status: row.approval_status || "pending_approval",
+        created_at: row.created_at,
+      };
+    });
+
+    return c.json(enriched);
+  } catch (error) {
+    console.error("[approvals] erro ao listar pendências:", error);
+    return c.json({ error: "Erro ao carregar solicitações" }, 500);
+  }
+});
+
+app.post("/auth/pending/:id/approve", requireAuth, async (c) => {
+  try {
+    const requestId = c.req.param("id");
+    const authUser = c.get("user");
+    const userData = await getUserData(
+      authUser.id,
+      authUser.email || authUser?.claims?.email,
+    );
+    if (!userData || userData.papel !== "admin" || !userData.cooperativa_id) {
+      return c.json({ error: "Acesso negado" }, 403);
+    }
+
+    const request = db.queryEntries<any>(
+      "SELECT * FROM user_approval_requests WHERE id = ? LIMIT 1",
+      [requestId],
+    )[0];
+    if (!request) {
+      return c.json({ error: "Solicitação não encontrada" }, 404);
+    }
+    if (request.status !== "pending") {
+      return c.json({ error: "Solicitação já processada" }, 400);
+    }
+    if (request.approver_cooperativa_id !== userData.cooperativa_id) {
+      return c.json({ error: "Acesso negado" }, 403);
+    }
+
+    let notes = "";
+    try {
+      const body = await c.req.json();
+      notes = (body?.notes || "").trim();
+    } catch {
+      /* ignore */
+    }
+
+    const now = nowIso();
+    db.query(
+      `UPDATE user_approval_requests
+         SET status = 'approved',
+             decided_at = ?,
+             decided_by = ?,
+             decision_notes = ?
+       WHERE id = ?`,
+      [now, userData.email, notes || null, requestId],
+    );
+
+    const targetUser = getAuthUser(request.user_email);
+    if (!targetUser) {
+      return c.json({ error: "Usuário associado não encontrado" }, 404);
+    }
+
+    const finalRole = targetUser.requested_papel || targetUser.papel || "operador";
+
+    db.query(
+      `UPDATE auth_users
+         SET approval_status = 'approved',
+             approved_at = ?,
+             approved_by = ?,
+             papel = COALESCE(requested_papel, papel)
+       WHERE email = ?`,
+      [now, userData.email, request.user_email],
+    );
+
+    ensureOperatorRecord({
+      id: targetUser.email,
+      nome: targetUser.nome || targetUser.display_name || targetUser.email,
+      display_name: targetUser.display_name || targetUser.nome || targetUser.email,
+      email: targetUser.email,
+      telefone: targetUser.telefone || "",
+      whatsapp: targetUser.whatsapp || "",
+      cargo: targetUser.cargo || "",
+      cooperativa_id: targetUser.cooperativa_id || undefined,
+      approval_status: "approved",
+    });
+
+    void sendApprovalResultEmail(
+      {
+        email: targetUser.email,
+        nome: targetUser.nome,
+        display_name: targetUser.display_name,
+      },
+      "approved",
+      userData.display_name || userData.nome || userData.email,
+      notes || undefined,
+    );
+
+    return c.json({ message: "Usuário aprovado com sucesso" });
+  } catch (error) {
+    console.error("[approvals] erro ao aprovar usuário:", error);
+    return c.json({ error: "Erro interno do servidor" }, 500);
+  }
+});
+
+app.post("/auth/pending/:id/reject", requireAuth, async (c) => {
+  try {
+    const requestId = c.req.param("id");
+    const authUser = c.get("user");
+    const userData = await getUserData(
+      authUser.id,
+      authUser.email || authUser?.claims?.email,
+    );
+    if (!userData || userData.papel !== "admin" || !userData.cooperativa_id) {
+      return c.json({ error: "Acesso negado" }, 403);
+    }
+
+    const request = db.queryEntries<any>(
+      "SELECT * FROM user_approval_requests WHERE id = ? LIMIT 1",
+      [requestId],
+    )[0];
+    if (!request) {
+      return c.json({ error: "Solicitação não encontrada" }, 404);
+    }
+    if (request.status !== "pending") {
+      return c.json({ error: "Solicitação já processada" }, 400);
+    }
+    if (request.approver_cooperativa_id !== userData.cooperativa_id) {
+      return c.json({ error: "Acesso negado" }, 403);
+    }
+
+    let notes = "";
+    try {
+      const body = await c.req.json();
+      notes = (body?.notes || "").trim();
+    } catch {
+      /* ignore */
+    }
+
+    const now = nowIso();
+    db.query(
+      `UPDATE user_approval_requests
+         SET status = 'rejected',
+             decided_at = ?,
+             decided_by = ?,
+             decision_notes = ?
+       WHERE id = ?`,
+      [now, userData.email, notes || null, requestId],
+    );
+
+    db.query(
+      `UPDATE auth_users
+         SET approval_status = 'rejected',
+             approved_at = NULL,
+             approved_by = ?,
+             auto_approve = 0
+       WHERE email = ?`,
+      [userData.email, request.user_email],
+    );
+
+    const targetUser = getAuthUser(request.user_email);
+    if (targetUser) {
+      void sendApprovalResultEmail(
+        {
+          email: targetUser.email,
+          nome: targetUser.nome,
+          display_name: targetUser.display_name,
+        },
+        "rejected",
+        userData.display_name || userData.nome || userData.email,
+        notes || undefined,
+      );
+    }
+
+    return c.json({ message: "Solicitação rejeitada com sucesso" });
+  } catch (error) {
+    console.error("[approvals] erro ao rejeitar usuário:", error);
     return c.json({ error: "Erro interno do servidor" }, 500);
   }
 });
@@ -2366,7 +3296,10 @@ app.get("/cooperativas/:id/cobertura/historico", requireAuth, async (c) => {
         TBL("cooperativas")
       } cd ON cd.id_singular = l.cooperativa_destino
         WHERE l.cooperativa_origem = ? OR l.cooperativa_destino = ?
-        ORDER BY datetime(l.timestamp) DESC
+        ORDER BY CASE
+          WHEN l.timestamp IS NULL OR l.timestamp = '' THEN ''
+          ELSE l.timestamp
+        END DESC
         LIMIT ?`,
       [cooperativaId, cooperativaId, limit] as any,
     ) || [];
@@ -2490,47 +3423,89 @@ app.put("/cooperativas/:id/cobertura", requireAuth, async (c) => {
     const alteredIds = new Set<string>();
 
     try {
-      db.execute("BEGIN");
+      if (IS_POSTGRES && typeof pgDb.transaction === "function") {
+        pgDb.transaction((tx) => {
+          for (const addition of additions) {
+            tx.query(
+              `UPDATE ${
+                TBL("cidades")
+              } SET id_singular = ? WHERE CD_MUNICIPIO_7 = ?`,
+              [cooperativaId, addition.cidadeId],
+            );
+            registrarLogCobertura(
+              addition.cidadeId,
+              addition.origem,
+              cooperativaId,
+              userData,
+              "assign",
+              tx,
+            );
+            alteredIds.add(addition.cidadeId);
+          }
 
-      for (const addition of additions) {
-        db.query(
-          `UPDATE ${
-            TBL("cidades")
-          } SET id_singular = ? WHERE CD_MUNICIPIO_7 = ?`,
-          [cooperativaId, addition.cidadeId],
-        );
-        registrarLogCobertura(
-          addition.cidadeId,
-          addition.origem,
-          cooperativaId,
-          userData,
-          "assign",
-        );
-        alteredIds.add(addition.cidadeId);
+          for (const removal of removals) {
+            tx.query(
+              `UPDATE ${
+                TBL("cidades")
+              } SET id_singular = NULL WHERE CD_MUNICIPIO_7 = ? AND id_singular = ?`,
+              [removal.cidadeId, cooperativaId],
+            );
+            registrarLogCobertura(
+              removal.cidadeId,
+              cooperativaId,
+              null,
+              userData,
+              "unassign",
+              tx,
+            );
+            alteredIds.add(removal.cidadeId);
+          }
+        });
+      } else {
+        db.execute("BEGIN");
+
+        for (const addition of additions) {
+          db.query(
+            `UPDATE ${
+              TBL("cidades")
+            } SET id_singular = ? WHERE CD_MUNICIPIO_7 = ?`,
+            [cooperativaId, addition.cidadeId],
+          );
+          registrarLogCobertura(
+            addition.cidadeId,
+            addition.origem,
+            cooperativaId,
+            userData,
+            "assign",
+          );
+          alteredIds.add(addition.cidadeId);
+        }
+
+        for (const removal of removals) {
+          db.query(
+            `UPDATE ${
+              TBL("cidades")
+            } SET id_singular = NULL WHERE CD_MUNICIPIO_7 = ? AND id_singular = ?`,
+            [removal.cidadeId, cooperativaId],
+          );
+          registrarLogCobertura(
+            removal.cidadeId,
+            cooperativaId,
+            null,
+            userData,
+            "unassign",
+          );
+          alteredIds.add(removal.cidadeId);
+        }
+
+        db.execute("COMMIT");
       }
-
-      for (const removal of removals) {
-        db.query(
-          `UPDATE ${
-            TBL("cidades")
-          } SET id_singular = NULL WHERE CD_MUNICIPIO_7 = ? AND id_singular = ?`,
-          [removal.cidadeId, cooperativaId],
-        );
-        registrarLogCobertura(
-          removal.cidadeId,
-          cooperativaId,
-          null,
-          userData,
-          "unassign",
-        );
-        alteredIds.add(removal.cidadeId);
-      }
-
-      db.execute("COMMIT");
     } catch (e) {
-      try {
-        db.execute("ROLLBACK");
-      } catch {}
+      if (!IS_POSTGRES) {
+        try {
+          db.execute("ROLLBACK");
+        } catch {}
+      }
       console.error("Erro ao atualizar cobertura:", e);
       return c.json({ error: "Erro ao atualizar cobertura" }, 500);
     }
@@ -3719,6 +4694,8 @@ app.put("/pedidos/:id", requireAuth, async (c) => {
       "prazo_atual",
       "motivo_categoria",
       "beneficiarios_quantidade",
+      "responsavel_atual_id",
+      "responsavel_atual_nome",
     ];
     const whitelistResponsavel = [
       "status",
@@ -3758,6 +4735,28 @@ app.put("/pedidos/:id", requireAuth, async (c) => {
         allowed.beneficiarios_quantidade = Number.isFinite(rawQtd)
           ? Math.max(0, Math.round(rawQtd))
           : null;
+      }
+      const touchedResponsavel = Object.prototype.hasOwnProperty.call(
+          allowed,
+          "responsavel_atual_id",
+        ) ||
+        Object.prototype.hasOwnProperty.call(
+          allowed,
+          "responsavel_atual_nome",
+        );
+      const responsavelAssumindo = touchedResponsavel &&
+        ((allowed.responsavel_atual_id ?? null) ||
+          (allowed.responsavel_atual_nome ?? null));
+      const responsavelLiberando = touchedResponsavel &&
+        !responsavelAssumindo;
+      if (touchedResponsavel && !Object.prototype.hasOwnProperty.call(allowed, "status")) {
+        if (responsavelAssumindo && pedido.status === "novo") {
+          allowed.status = "em_andamento";
+        } else if (
+          responsavelLiberando && pedido.status === "em_andamento"
+        ) {
+          allowed.status = "novo";
+        }
       }
       const cols = Object.keys(allowed);
       const placeholders = cols.map((c) => `${c} = ?`).join(", ");
@@ -4165,7 +5164,11 @@ app.get("/alertas", requireAuth, async (c) => {
       `SELECT id, pedido_id, pedido_titulo, destinatario_email, destinatario_nome, destinatario_cooperativa_id, tipo, mensagem, detalhes, lido, criado_em, disparado_por_email, disparado_por_nome
          FROM ${TBL("alertas")}
         WHERE LOWER(destinatario_email) = LOWER(?)
-        ORDER BY lido ASC, datetime(COALESCE(criado_em, CURRENT_TIMESTAMP)) DESC
+        ORDER BY lido ASC,
+          CASE
+            WHEN criado_em IS NULL OR criado_em = '' THEN ''
+            ELSE criado_em
+          END DESC
         LIMIT ?`,
       [email, limit],
     ) || [];

@@ -1,5 +1,5 @@
 import { apiRequest, setAuthToken, clearAuthToken, getAuthToken } from '../utils/api/client';
-import type { User } from '../types';
+import type { User, PendingUserApproval } from '../types';
 
 export interface LoginCredentials {
   email: string;
@@ -50,9 +50,6 @@ class AuthService {
         method: 'POST',
         body: JSON.stringify(registerData),
       });
-      if (response?.token) {
-        setAuthToken(response.token);
-      }
       return response;
     } catch (error) {
       console.error('Erro no registro:', error);
@@ -125,6 +122,52 @@ class AuthService {
     const unsubscribe = () => {};
     // Opcionalmente, poderíamos escutar storage events para multi-aba
     return { data: { subscription: { unsubscribe } } } as any;
+  }
+
+  async confirmEmail(token: string): Promise<{ message: string; status?: string }> {
+    try {
+      return await apiRequest('/auth/confirm-email', {
+        method: 'POST',
+        body: JSON.stringify({ token }),
+      });
+    } catch (error) {
+      console.error('Erro ao confirmar email:', error);
+      throw error;
+    }
+  }
+
+  async getPendingApprovals(): Promise<PendingUserApproval[]> {
+    try {
+      const result = await apiRequest('/auth/pending');
+      return Array.isArray(result) ? result : [];
+    } catch (error) {
+      console.error('Erro ao carregar aprovações pendentes:', error);
+      throw error;
+    }
+  }
+
+  async approvePending(id: string, notes?: string): Promise<void> {
+    try {
+      await apiRequest(`/auth/pending/${id}/approve`, {
+        method: 'POST',
+        body: notes ? JSON.stringify({ notes }) : undefined,
+      });
+    } catch (error) {
+      console.error('Erro ao aprovar usuário:', error);
+      throw error;
+    }
+  }
+
+  async rejectPending(id: string, notes?: string): Promise<void> {
+    try {
+      await apiRequest(`/auth/pending/${id}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ notes: notes || '' }),
+      });
+    } catch (error) {
+      console.error('Erro ao rejeitar usuário:', error);
+      throw error;
+    }
   }
 }
 

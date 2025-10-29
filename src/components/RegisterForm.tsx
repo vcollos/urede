@@ -30,6 +30,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingCoops, setIsLoadingCoops] = useState(true);
+  const [successMessage, setSuccessMessage] = useState('');
 
   const { register } = useAuth();
 
@@ -98,16 +99,21 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccessMessage('');
     setIsSubmitting(true);
 
     try {
       const cooperativaSelecionada = cooperativas.find((coop) => coop.id_singular === formData.cooperativa_id);
       const papelFinal = deriveRole(formData.papel, cooperativaSelecionada);
 
-      await register({
+      const response = await register({
         ...formData,
         papel: papelFinal,
       });
+      const autoApproveMessage = response?.autoApprove
+        ? 'Confirme seu e-mail; sua conta será ativada automaticamente assim que a confirmação for concluída.'
+        : 'Confirme seu e-mail; sua conta será encaminhada para aprovação.';
+      setSuccessMessage(response?.message || autoApproveMessage);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao criar conta');
     } finally {
@@ -134,6 +140,11 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
+          {successMessage && (
+            <Alert>
+              <AlertDescription>{successMessage}</AlertDescription>
+            </Alert>
+          )}
           
           <div className="space-y-2">
             <Label htmlFor="nome">Nome completo</Label>
@@ -144,7 +155,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
               onChange={(e) => updateFormData('nome', e.target.value)}
               placeholder="Seu nome completo"
               required
-              disabled={isSubmitting}
+              disabled={isSubmitting || !!successMessage}
             />
           </div>
           
@@ -157,7 +168,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
               onChange={(e) => updateFormData('display_name', e.target.value)}
               placeholder="Como você quer ser chamado"
               required
-              disabled={isSubmitting}
+              disabled={isSubmitting || !!successMessage}
             />
           </div>
           
@@ -170,7 +181,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
               onChange={(e) => updateFormData('email', e.target.value)}
               placeholder="seu.email@uniodonto.com.br"
               required
-              disabled={isSubmitting}
+              disabled={isSubmitting || !!successMessage}
             />
           </div>
           
@@ -184,7 +195,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
                 onChange={(e) => updateFormData('telefone', e.target.value)}
                 placeholder="(11) 3333-4444"
                 required
-                disabled={isSubmitting}
+                disabled={isSubmitting || !!successMessage}
               />
             </div>
             
@@ -197,7 +208,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
                 onChange={(e) => updateFormData('whatsapp', e.target.value)}
                 placeholder="(11) 99999-8888"
                 required
-                disabled={isSubmitting}
+                disabled={isSubmitting || !!successMessage}
               />
             </div>
           </div>
@@ -211,7 +222,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
               onChange={(e) => updateFormData('cargo', e.target.value)}
               placeholder="Ex: Coordenador de Credenciamento"
               required
-              disabled={isSubmitting}
+              disabled={isSubmitting || !!successMessage}
             />
           </div>
           
@@ -225,7 +236,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
               placeholder="••••••••"
               required
               minLength={6}
-              disabled={isSubmitting}
+              disabled={isSubmitting || !!successMessage}
             />
           </div>
           
@@ -235,7 +246,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
               value={formData.cooperativa_id} 
               onValueChange={(value) => updateFormData('cooperativa_id', value)}
               required
-              disabled={isSubmitting || isLoadingCoops}
+              disabled={isSubmitting || isLoadingCoops || !!successMessage}
             >
               <SelectTrigger>
                 <SelectValue placeholder={isLoadingCoops ? "Carregando..." : "Selecione sua cooperativa"} />
@@ -256,7 +267,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
               value={formData.papel} 
               onValueChange={(value) => updateFormData('papel', toBaseRole(value))}
               required
-              disabled={isSubmitting}
+              disabled={isSubmitting || !!successMessage}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Selecione seu papel" />
@@ -271,12 +282,12 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
           <Button 
             type="submit" 
             className="w-full" 
-            disabled={isSubmitting || isLoadingCoops}
+            disabled={isSubmitting || isLoadingCoops || !!successMessage}
           >
             {isSubmitting ? 'Criando conta...' : 'Criar conta'}
           </Button>
           
-          <div className="text-center">
+          <div className="text-center space-y-2">
             <Button 
               type="button"
               variant="link"
@@ -285,6 +296,11 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
             >
               Já tem uma conta? Faça login
             </Button>
+            {successMessage && (
+              <div className="text-xs text-gray-500">
+                Clique em "Faça login" após confirmar o seu e-mail.
+              </div>
+            )}
           </div>
         </form>
       </CardContent>
