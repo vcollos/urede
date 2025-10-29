@@ -18,6 +18,241 @@
   --md-muted-text: #5f6471;
 }
 
+/* Pedidos – tabela estilo lista */
+.pedidos-tabela {
+  position: relative;
+  border-radius: 28px;
+  padding: 1px;
+  background: linear-gradient(90deg, #eadfff 0%, #f3f7ff 48%, #e1ecff 100%);
+  box-shadow: 0 30px 80px -48px rgba(79, 70, 229, 0.55);
+}
+
+.pedidos-tabela__card {
+  border-radius: 27px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.pedidos-tabela__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  color: #475569;
+}
+
+.pedidos-tabela__head {
+  background: linear-gradient(90deg, #f3e8ff 0%, #f4f7ff 48%, #e9f0ff 100%);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #5b44b3;
+}
+
+.pedidos-tabela__head th {
+  padding: 18px 24px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.pedidos-tabela__actions {
+  text-align: right;
+}
+
+.pedidos-tabela__row {
+  cursor: pointer;
+  transition: background 0.25s var(--ease-in-out), box-shadow 0.25s var(--ease-in-out);
+}
+
+.pedidos-tabela__row:nth-child(odd) {
+  background: #ffffff;
+}
+
+.pedidos-tabela__row:nth-child(even) {
+  background: #fcfcff;
+}
+
+.pedidos-tabela__row.is-first {
+  background: linear-gradient(90deg, #eef5ff 0%, #f6faff 50%, #eef5ff 100%);
+}
+
+.pedidos-tabela__row:hover {
+  background: #e6eeff;
+  box-shadow: 0 18px 45px -32px rgba(79, 70, 229, 0.65);
+}
+
+.pedidos-tabela__cell {
+  padding: 20px 24px;
+  vertical-align: top;
+  width: max-content;
+  min-width: 120px;
+  max-width: 240px;
+}
+
+.pedidos-tabela__cell--title {
+  width: auto;
+  min-width: 220px;
+  max-width: 340px;
+}
+
+.pedidos-tabela__cell--city {
+  width: auto;
+  min-width: 160px;
+  max-width: 260px;
+}
+
+.pedidos-tabela__cell:nth-child(4),
+.pedidos-tabela__cell:nth-child(5) {
+  min-width: 140px;
+  max-width: 220px;
+}
+
+.pedidos-tabela__cell--actions {
+  padding-right: 32px;
+}
+
+.pedidos-tabela__cell--prazo,
+.pedidos-tabela__cell--actions {
+  text-align: right;
+}
+
+.pedidos-tabela__title {
+  font-weight: 600;
+  font-size: 14px;
+  color: #0f172a;
+  line-height: 1.4;
+}
+
+.pedidos-tabela__subtitle {
+  margin-top: 4px;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #8d91a8;
+}
+
+.pedidos-tabela__city {
+  font-weight: 500;
+  color: #1e293b;
+  line-height: 1.4;
+}
+
+.pedidos-tabela__country {
+  margin-top: 4px;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #adb1c4;
+}
+
+.pedidos-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pedidos-chips__empty {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.pedidos-chip,
+.pedidos-chip[data-slot='badge'] {
+  border-radius: 999px;
+  border: 0;
+  background: #ece5ff;
+  color: #5140c0;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  box-shadow: none;
+}
+
+.pedidos-chip--extra {
+  background: #f1f4ff;
+  color: #4b50be;
+}
+
+.pedidos-nivel-badge,
+.pedidos-status-badge {
+  border-radius: 999px;
+  border: 0;
+  padding: 6px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+  box-shadow: none;
+}
+
+.pedidos-nivel-badge--singular {
+  background: #e1f6e7;
+  color: #1d7a47;
+}
+
+.pedidos-nivel-badge--federacao {
+  background: #fef4e1;
+  color: #a36a02;
+}
+
+.pedidos-nivel-badge--confederacao {
+  background: #f7e6f3;
+  color: #98396e;
+}
+
+.pedidos-status-badge--novo {
+  background: #e6ecff;
+  color: #3d5bd4;
+}
+
+.pedidos-status-badge--em_andamento {
+  background: #fef2e5;
+  color: #c16a00;
+}
+
+.pedidos-status-badge--concluido {
+  background: #e3f9ed;
+  color: #1d7c4d;
+}
+
+.pedidos-status-badge--cancelado {
+  background: #f1e8ff;
+  color: #6f43d6;
+}
+
+.pedidos-prazo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  background: #e6e8ff;
+  color: #4b50be;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  letter-spacing: 0.04em;
+}
+
+.pedidos-prazo.is-critical {
+  background: #ffe9e7;
+  color: #d9480f;
+}
+
+.pedidos-prazo__icon {
+  width: 16px;
+  height: 16px;
+}
+
+.pedidos-detalhes {
+  font-weight: 600;
+  color: #5a33c7;
+  padding: 0;
+}
+
+.pedidos-detalhes:hover {
+  background: transparent;
+  color: #4524b3;
+}
+
 body {
   font-family: var(--md-font-sans);
   background: var(--background, #f8f7fb);
@@ -196,6 +431,25 @@ button[data-slot="button"] {
 .quick-action-button svg {
   width: 18px;
   height: 18px;
+}
+
+/* Alerts trigger */
+.alerts-trigger {
+  border: 1px solid rgba(123, 110, 246, 0.24) !important;
+  background: rgba(242, 240, 251, 0.85) !important;
+  color: #6C55D9 !important;
+}
+
+.alerts-trigger:hover {
+  background: rgba(231, 226, 255, 0.9) !important;
+}
+
+.alerts-trigger__icon {
+  color: #6C55D9;
+}
+
+.alerts-trigger--has-unread .alerts-trigger__icon {
+  color: #D9480F;
 }
 
 /* Utility */

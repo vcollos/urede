@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { Badge } from './ui/badge';
 import { apiService } from '../services/apiService';
 import type { SystemSettings, CooperativaConfig } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -17,6 +18,8 @@ export function ConfiguracoesView() {
   const [requireApproval, setRequireApproval] = useState(true);
   const [autoNotifyManagers, setAutoNotifyManagers] = useState(true);
   const [enableSelfRegistration, setEnableSelfRegistration] = useState(true);
+  const [pedidoMotivos, setPedidoMotivos] = useState<string[]>([]);
+  const [novoMotivo, setNovoMotivo] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -44,6 +47,7 @@ export function ConfiguracoesView() {
           setRequireApproval(settings.requireApproval);
           setAutoNotifyManagers(settings.autoNotifyManagers);
           setEnableSelfRegistration(settings.enableSelfRegistration);
+          setPedidoMotivos(settings.pedido_motivos ?? []);
         }
       } catch (error) {
         console.error('Erro ao carregar configurações:', error);
@@ -89,6 +93,24 @@ export function ConfiguracoesView() {
     };
   }, [canManageCooperativa, user?.cooperativa_id]);
 
+  const handleAddMotivo = () => {
+    const trimmed = novoMotivo.trim();
+    if (!trimmed) return;
+    const exists = pedidoMotivos.some(
+      (motivo) => motivo.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (exists) {
+      setNovoMotivo('');
+      return;
+    }
+    setPedidoMotivos((prev) => [...prev, trimmed]);
+    setNovoMotivo('');
+  };
+
+  const handleRemoveMotivo = (motivo: string) => {
+    setPedidoMotivos((prev) => prev.filter((item) => item !== motivo));
+  };
+
   const handleSave = async () => {
     if (!canManageSystem) return;
     try {
@@ -103,6 +125,7 @@ export function ConfiguracoesView() {
         requireApproval,
         autoNotifyManagers,
         enableSelfRegistration,
+        pedido_motivos: pedidoMotivos,
       };
       const saved = await apiService.updateSystemSettings(payload);
       setTheme(saved.theme);
@@ -113,6 +136,7 @@ export function ConfiguracoesView() {
       setRequireApproval(saved.requireApproval);
       setAutoNotifyManagers(saved.autoNotifyManagers);
       setEnableSelfRegistration(saved.enableSelfRegistration);
+      setPedidoMotivos(saved.pedido_motivos ?? []);
       setStatus({ type: 'success', message: 'Preferências salvas com sucesso.' });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Não foi possível salvar as preferências';
@@ -256,6 +280,56 @@ export function ConfiguracoesView() {
                   Permitir que novos usuários criem conta antes da aprovação
                 </label>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Categorias de pedidos</CardTitle>
+              <CardDescription>Defina os motivos exibidos ao solicitar um novo credenciamento.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  value={novoMotivo}
+                  onChange={(event) => setNovoMotivo(event.target.value)}
+                  placeholder="Adicionar nova categoria"
+                  className="flex-1"
+                  disabled={isSaving}
+                />
+                <Button
+                  type="button"
+                  onClick={handleAddMotivo}
+                  disabled={isSaving || !novoMotivo.trim()}
+                >
+                  Adicionar
+                </Button>
+              </div>
+              {pedidoMotivos.length === 0 ? (
+                <p className="text-sm text-gray-600">
+                  Nenhuma categoria cadastrada. Inclua aqui os motivos que os solicitantes poderão escolher.
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {pedidoMotivos.map((motivo) => (
+                    <Badge key={motivo} variant="secondary" className="flex items-center gap-2">
+                      {motivo}
+                      <button
+                        type="button"
+                        className="text-xs text-gray-500 hover:text-red-600"
+                        onClick={() => handleRemoveMotivo(motivo)}
+                        disabled={isSaving}
+                        aria-label={`Remover categoria ${motivo}`}
+                      >
+                        remover
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-gray-500">
+                Alterações nesta lista ficam disponíveis imediatamente para os solicitantes ao criar um pedido.
+              </p>
             </CardContent>
           </Card>
         </>

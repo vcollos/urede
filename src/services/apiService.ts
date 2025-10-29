@@ -102,6 +102,8 @@ class ApiService {
     quantidade: number;
     observacoes: string;
     prioridade?: 'baixa' | 'media' | 'alta' | 'urgente';
+    motivo_categoria?: string | null;
+    beneficiarios_quantidade?: number | null;
   }): Promise<Pedido> {
     try {
       return await apiRequest('/pedidos', {

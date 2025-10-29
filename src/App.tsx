@@ -82,10 +82,8 @@ function AppContent() {
       case 'pedidos':
         return (
           <PedidosLista
-            onCreatePedido={openNovoPedido}
             onViewPedido={(pedido) => setSelectedPedido(pedido)}
             presetFilter={pedidosPresetFilter}
-            onOpenImportacao={handleOpenImportacao}
           />
         );
       case 'importacao':

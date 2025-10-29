@@ -67,7 +67,9 @@ export interface Pedido {
   estado?: string;
   especialidades: string[];
   quantidade: number;
+  beneficiarios_quantidade?: number | null;
   observacoes: string;
+  motivo_categoria?: string | null;
   nivel_atual: 'singular' | 'federacao' | 'confederacao';
   prazo_atual: string;
   status: 'novo' | 'em_andamento' | 'concluido' | 'cancelado';
@@ -150,6 +152,7 @@ export interface SystemSettings {
   requireApproval: boolean;
   autoNotifyManagers: boolean;
   enableSelfRegistration: boolean;
+  pedido_motivos: string[];
 }
 
 export interface PedidoImportPayloadItem {

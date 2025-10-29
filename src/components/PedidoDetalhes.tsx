@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -16,6 +16,7 @@ import {
   History,
   Users,
   MoreVertical,
+  ExternalLink,
 } from 'lucide-react';
 import { Pedido, AuditoriaLog } from '../types';
 import { getNivelBadgeClass, getStatusBadgeClass } from '../utils/pedidoStyles';
@@ -138,6 +139,16 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
     }
     return false;
   };
+
+  const marketplanoUrl = useMemo(() => {
+    const city = pedido.cidade_nome?.trim();
+    const uf = pedido.estado?.trim();
+    if (!city && !uf) {
+      return 'https://marketplano.com.br';
+    }
+    const query = [city, uf].filter(Boolean).join(', ');
+    return `https://marketplano.com.br/busca?termo=${encodeURIComponent(query)}`;
+  }, [pedido.cidade_nome, pedido.estado]);
 
   const handleDelete = async () => {
     if (!canDelete() || isDeleting) return;
@@ -482,7 +493,37 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
                     Justificativa
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-4">
+                  <div className="flex flex-col gap-1">
+                    <a
+                      href={marketplanoUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-800"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      Consultar prestadores no Marketplano
+                    </a>
+                    <p className="text-xs text-gray-500">
+                      Abra para conferir se já existem prestadores Uniodonto ou parceiros disponíveis para a cidade solicitada.
+                    </p>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2 bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Categoria do pedido</p>
+                      <p className="text-sm font-medium text-gray-900">
+                        {pedido.motivo_categoria || 'Não informado'}
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Beneficiários na cidade</p>
+                      <p className="text-sm font-medium text-gray-900">
+                        {typeof pedido.beneficiarios_quantidade === 'number'
+                          ? pedido.beneficiarios_quantidade.toLocaleString('pt-BR')
+                          : 'Não informado'}
+                      </p>
+                    </div>
+                  </div>
                   {justificativaInicial ? (
                     <div
                       className="prose prose-sm max-w-none text-gray-700"
