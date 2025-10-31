@@ -1940,7 +1940,12 @@ app.put("/configuracoes/sistema", requireAuth, async (c) => {
   if (!userData) return c.json({ error: "Usuário não encontrado" }, 401);
 
   const papel = (userData.papel || "").toLowerCase();
-  if (papel !== "confederacao") {
+  let podeGerenciar = papel === "confederacao";
+  if (!podeGerenciar && papel === "admin" && userData.cooperativa_id) {
+    const info = getCooperativaInfo(userData.cooperativa_id);
+    podeGerenciar = info?.tipo === "CONFEDERACAO";
+  }
+  if (!podeGerenciar) {
     return c.json({ error: "Acesso negado" }, 403);
   }
 
