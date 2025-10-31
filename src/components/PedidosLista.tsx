@@ -32,6 +32,53 @@ interface PedidosListaProps {
   presetFilter?: PedidosFilterPreset | null;
 }
 
+const pedidosTableClasses = {
+  wrapper:
+    'relative rounded-[28px] bg-gradient-to-r from-[#eadfff] via-[#f3f7ff] to-[#e1ecff] p-[1px] shadow-[0_30px_80px_-48px_rgba(79,70,229,0.55)]',
+  card: 'rounded-[27px] bg-white overflow-hidden',
+  table: 'w-full border-collapse text-[13px] text-slate-600',
+  headRow:
+    'bg-[linear-gradient(90deg,#f3e8ff_0%,#f4f7ff_48%,#e9f0ff_100%)] text-[11px] uppercase tracking-[0.22em] text-[#5b44b3]',
+  headCell: 'px-6 py-4 text-left font-semibold',
+  headCellActions: 'px-6 py-4 text-right font-semibold',
+  row:
+    'odd:bg-white even:bg-[#fcfcff] cursor-pointer transition duration-200 hover:bg-[#e6eeff] hover:shadow-[0_18px_45px_-32px_rgba(79,70,229,0.65)]',
+  firstRow: 'bg-[linear-gradient(90deg,#eef5ff_0%,#f6faff_50%,#eef5ff_100%)]',
+  cell: 'px-6 py-5 align-top text-left min-w-[120px] max-w-[240px]',
+  cellTitle: 'min-w-[220px] max-w-[340px]',
+  cellCity: 'min-w-[160px] max-w-[260px]',
+  cellPrazo: 'text-right',
+  cellActions: 'text-right',
+  chips: 'flex flex-wrap gap-2',
+  chipsEmpty: 'text-xs text-slate-400',
+  prazo:
+    'inline-flex items-center gap-2 rounded-full bg-[#e6e8ff] px-3.5 py-1.5 text-[12px] font-semibold tracking-[0.04em] text-[#4b50be]',
+  prazoCritical: 'bg-[#ffe9e7] text-[#d9480f]',
+  title: 'text-sm font-semibold leading-snug text-slate-900',
+};
+
+const nivelBadgeClasses: Record<Pedido['nivel_atual'], string> = {
+  singular: 'bg-[#e1f6e7] text-[#1d7a47]',
+  federacao: 'bg-[#fef4e1] text-[#a36a02]',
+  confederacao: 'bg-[#f7e6f3] text-[#98396e]',
+};
+
+const statusBadgeClasses: Record<Pedido['status'], string> = {
+  novo: 'bg-[#e6ecff] text-[#3d5bd4]',
+  em_andamento: 'bg-[#fef2e5] text-[#c16a00]',
+  concluido: 'bg-[#e3f9ed] text-[#1d7c4d]',
+  cancelado: 'bg-[#f1e8ff] text-[#6f43d6]',
+};
+
+const badgeBaseClass =
+  'rounded-full border-0 px-4 py-[6px] text-xs font-semibold capitalize shadow-none';
+
+const chipBaseClass =
+  'rounded-full border-0 bg-[#ece5ff] px-3 py-[6px] text-[11px] font-medium leading-none text-[#5140c0] shadow-none';
+
+const chipExtraClass =
+  'rounded-full border-0 bg-[#f1f4ff] px-3 py-[6px] text-[11px] font-medium leading-none text-[#4b50be] shadow-none';
+
 export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) {
   const { user, isAuthenticated } = useAuth();
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
@@ -489,20 +536,20 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
     }
 
     return (
-      <div className="pedidos-tabela" role="region" aria-live="polite">
-        <div className="pedidos-tabela__card">
-          <table className="pedidos-tabela__table">
-            <thead className="pedidos-tabela__head">
+      <div className={pedidosTableClasses.wrapper} role="region" aria-live="polite">
+        <div className={pedidosTableClasses.card}>
+          <table className={pedidosTableClasses.table}>
+            <thead className={pedidosTableClasses.headRow}>
               <tr>
-                <th>Título</th>
-                <th>Cidade / UF</th>
-                <th>Especialidades</th>
-                <th>Solicitante</th>
-                <th>Responsável</th>
-                <th>Nível</th>
-                <th>Status</th>
-                <th>Prazo</th>
-                <th className="pedidos-tabela__actions">Ações</th>
+                <th className={pedidosTableClasses.headCell}>Título</th>
+                <th className={pedidosTableClasses.headCell}>Cidade / UF</th>
+                <th className={pedidosTableClasses.headCell}>Especialidades</th>
+                <th className={pedidosTableClasses.headCell}>Solicitante</th>
+                <th className={pedidosTableClasses.headCell}>Responsável</th>
+                <th className={pedidosTableClasses.headCell}>Nível</th>
+                <th className={pedidosTableClasses.headCell}>Status</th>
+                <th className={pedidosTableClasses.headCell}>Prazo</th>
+                <th className={pedidosTableClasses.headCellActions}>Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -514,72 +561,81 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
                 return (
                   <tr
                     key={pedido.id}
-                    className={cn('pedidos-tabela__row', {
-                      'is-first': index === 0,
-                    })}
+                    className={cn(
+                      pedidosTableClasses.row,
+                      index === 0 && pedidosTableClasses.firstRow,
+                    )}
                     onClick={() => onViewPedido(pedido)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        onViewPedido(pedido);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
                   >
-                    <td className="pedidos-tabela__cell pedidos-tabela__cell--title">
-                      <div className="pedidos-tabela__title">{pedido.titulo}</div>
+                    <td className={cn(pedidosTableClasses.cell, pedidosTableClasses.cellTitle)}>
+                      <div className={pedidosTableClasses.title}>{pedido.titulo}</div>
                     </td>
-                    <td className="pedidos-tabela__cell pedidos-tabela__cell--city">
-                      <div className="pedidos-tabela__city">
+                    <td className={cn(pedidosTableClasses.cell, pedidosTableClasses.cellCity)}>
+                      <div className="text-sm font-medium text-slate-800">
                         {pedido.cidade_nome && pedido.estado
                           ? `${pedido.cidade_nome} / ${pedido.estado}`
                           : pedido.cidade_nome || 'Cidade não informada'}
                       </div>
                     </td>
-                    <td className="pedidos-tabela__cell">
-                      <div className="pedidos-chips">
+                    <td className={pedidosTableClasses.cell}>
+                      <div className={pedidosTableClasses.chips}>
                         {especialidadesVisiveis.length === 0 ? (
-                          <span className="pedidos-chips__empty">—</span>
+                          <span className={pedidosTableClasses.chipsEmpty}>—</span>
                         ) : (
                           especialidadesVisiveis.map((esp, idx) => (
-                            <Badge key={`${pedido.id}-esp-${idx}`} variant="outline" className="pedidos-chip">
+                            <Badge key={`${pedido.id}-esp-${idx}`} variant="outline" className={chipBaseClass}>
                               {esp}
                             </Badge>
                           ))
                         )}
                         {especialidadesExtras > 0 && (
-                          <Badge variant="outline" className="pedidos-chip pedidos-chip--extra">
+                          <Badge variant="outline" className={chipExtraClass}>
                             +{especialidadesExtras}
                           </Badge>
                         )}
                       </div>
                     </td>
-                    <td className="pedidos-tabela__cell">
+                    <td className={pedidosTableClasses.cell}>
                       {pedido.cooperativa_solicitante_nome || '—'}
                     </td>
-                    <td className="pedidos-tabela__cell">
+                    <td className={pedidosTableClasses.cell}>
                       {pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome || '—'}
                     </td>
-                    <td className="pedidos-tabela__cell">
+                    <td className={pedidosTableClasses.cell}>
                       <Badge
                         variant="outline"
-                        className={cn('pedidos-nivel-badge', `pedidos-nivel-badge--${pedido.nivel_atual}`)}
+                        className={cn(badgeBaseClass, nivelBadgeClasses[pedido.nivel_atual])}
                       >
                         {pedido.nivel_atual}
                       </Badge>
                     </td>
-                    <td className="pedidos-tabela__cell">
+                    <td className={pedidosTableClasses.cell}>
                       <Badge
                         variant="outline"
-                        className={cn('pedidos-status-badge', `pedidos-status-badge--${pedido.status}`)}
+                        className={cn(badgeBaseClass, statusBadgeClasses[pedido.status])}
                       >
                         {pedido.status.replace('_', ' ')}
                       </Badge>
                     </td>
-                    <td className="pedidos-tabela__cell pedidos-tabela__cell--prazo">
-                      <div className={cn('pedidos-prazo', { 'is-critical': prazoCritico })}>
-                        <Clock className="pedidos-prazo__icon" />
+                    <td className={cn(pedidosTableClasses.cell, pedidosTableClasses.cellPrazo)}>
+                      <div className={cn(pedidosTableClasses.prazo, prazoCritico && pedidosTableClasses.prazoCritical)}>
+                        <Clock className="h-4 w-4" />
                         <span>{pedido.dias_restantes}d</span>
                       </div>
                     </td>
-                    <td className="pedidos-tabela__cell pedidos-tabela__cell--actions">
+                    <td className={cn(pedidosTableClasses.cell, pedidosTableClasses.cellActions)}>
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="pedidos-detalhes"
+                        className="h-auto px-0 text-[#5a33c7] font-semibold hover:bg-transparent hover:text-[#4524b3]"
                         onClick={(event) => {
                           event.stopPropagation();
                           onViewPedido(pedido);
@@ -599,7 +655,7 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
   };
 
   return (
-    <div className="section-stack">
+    <div className="grid gap-8">
       {/* Header */}
       <div className="space-y-1 max-w-3xl">
         <h1 className="text-3xl font-semibold text-gray-900">Pedidos de Credenciamento</h1>
@@ -609,8 +665,8 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
       </div>
 
       {/* Filtros */}
-      <Card className="filtros-card">
-        <CardContent>
+      <Card className="rounded-3xl border border-slate-200/70 bg-white/95 shadow-[0_24px_45px_-35px_rgba(88,71,192,0.35)] backdrop-blur-sm">
+        <CardContent className="space-y-4">
           {customFilter === 'vencendo' && (
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
               <div className="flex items-center gap-2 text-sm text-red-700">

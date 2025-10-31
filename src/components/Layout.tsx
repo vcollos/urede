@@ -12,23 +12,19 @@ import {
   Map,
   Plus,
   UploadCloud,
-  Home,
-  Star,
-  HelpCircle,
-  Search,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Avatar, AvatarFallback } from './ui/avatar';
 import { useAuth } from '../contexts/AuthContext';
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from './ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent } from './ui/dropdown-menu';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { UserProfileDialog } from './UserProfileDialog';
 import { cn } from './ui/utils';
 import brandWordmark from '../logo/urede_positivo.svg';
 import brandSymbol from '../logo/simbolo_uniodonto.svg';
 import { apiService } from '../services/apiService';
-import type { Alerta } from '../types';
+import type { Alerta, CooperativaConfig } from '../types';
 
 interface LayoutProps {
   children: ReactNode;
@@ -46,6 +42,7 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
   const [alertas, setAlertas] = useState<Alerta[]>([]);
   const [isLoadingAlertas, setIsLoadingAlertas] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
+  const [cooperativaTipo, setCooperativaTipo] = useState<CooperativaConfig['tipo'] | null>(null);
   const isMountedRef = useRef(true);
   const lastAlertIdsRef = useRef<Set<string>>(new Set());
   const hasRequestedNotificationRef = useRef(false);
@@ -229,10 +226,36 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
     }
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    if (!user?.cooperativa_id) {
+      setCooperativaTipo(null);
+      return;
+    }
+
+    const loadCooperativa = async () => {
+      try {
+        const config = await apiService.getCooperativaConfig(user.cooperativa_id);
+        if (active) {
+          setCooperativaTipo(config?.tipo ?? null);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar dados da cooperativa do usuário:', error);
+        if (active) {
+          setCooperativaTipo(null);
+        }
+      }
+    };
+
+    loadCooperativa();
+
+    return () => {
+      active = false;
+    };
+  }, [user?.cooperativa_id]);
+
   if (!user) return null;
   const canCreatePedido = ['operador', 'admin', 'confederacao'].includes(user.papel);
-  const showQuickCreatePedido = activeTab === 'pedidos' && canCreatePedido && typeof onCreatePedido === 'function';
-  const showQuickImportacao = activeTab === 'pedidos' && canCreatePedido && typeof onOpenImportacao === 'function';
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
     { id: 'pedidos', label: 'Pedidos', icon: FileText },
@@ -243,24 +266,38 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
     { id: 'configuracoes', label: 'Configurações', icon: Settings },
   ];
 
-  const getRoleBadgeColor = (papel: string) => {
-    switch (papel) {
-      case 'confederacao': return 'bg-[#FFE4F2] text-[#C23A82] border-transparent shadow-[0_10px_20px_-18px_rgba(194,58,130,0.6)]';
-      case 'federacao': return 'bg-[#E6EEFF] text-[#2956C4] border-transparent shadow-[0_10px_20px_-18px_rgba(41,86,196,0.55)]';
-      case 'admin': return 'bg-[#F0E9FF] text-[#6C55D9] border-transparent shadow-[0_10px_20px_-18px_rgba(108,85,217,0.6)]';
-      default: return 'bg-[#E6F8EE] text-[#1F7A47] border-transparent shadow-[0_10px_20px_-18px_rgba(31,122,71,0.55)]';
+  const cooperativaScopeLabel = (() => {
+    switch (cooperativaTipo) {
+      case 'CONFEDERACAO':
+        return 'Confederação';
+      case 'FEDERACAO':
+        return 'Federação';
+      case 'SINGULAR':
+        return 'Singular';
+      default:
+        return null;
     }
-  };
+  })();
 
-  const getRoleLabel = (papel: string) => {
-    switch (papel) {
-      case 'confederacao': return 'Confederação';
-      case 'federacao': return 'Federação';
-      case 'admin': return 'Administrador';
-      case 'operador': return 'Operador';
-      default: return papel;
+  const baseRoleLabel = user.papel === 'admin' ? 'Administrador' : 'Operador';
+  const roleDisplayLabel = cooperativaScopeLabel
+    ? `${baseRoleLabel} • ${cooperativaScopeLabel}`
+    : baseRoleLabel;
+
+  const roleBadgeClass = (() => {
+    switch (cooperativaTipo) {
+      case 'CONFEDERACAO':
+        return 'bg-[#FFE4F2] text-[#C23A82] border-transparent shadow-[0_10px_20px_-18px_rgba(194,58,130,0.6)]';
+      case 'FEDERACAO':
+        return 'bg-[#E6EEFF] text-[#2956C4] border-transparent shadow-[0_10px_20px_-18px_rgba(41,86,196,0.55)]';
+      case 'SINGULAR':
+        return 'bg-[#E6F8EE] text-[#1F7A47] border-transparent shadow-[0_10px_20px_-18px_rgba(31,122,71,0.55)]';
+      default:
+        return user.papel === 'admin'
+          ? 'bg-[#F0E9FF] text-[#6C55D9] border-transparent shadow-[0_10px_20px_-18px_rgba(108,85,217,0.6)]'
+          : 'bg-[#E6F8EE] text-[#1F7A47] border-transparent shadow-[0_10px_20px_-18px_rgba(31,122,71,0.55)]';
     }
-  };
+  })();
 
   const handleTabChange = (tab: string) => {
     onTabChange(tab);
@@ -373,102 +410,30 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
 
   return (
     <div className="min-h-screen w-full bg-[#F5F4FB] flex text-gray-900">
-      {/* Primary icon rail */}
-      <aside className="hidden xl:flex w-20 flex-col items-center justify-between py-8 bg-[#1C1E3A] text-white">
-        <div className="flex flex-col items-center gap-6">
-          <button
-            type="button"
-            onClick={() => handleTabChange('dashboard')}
-            className="p-3 rounded-2xl bg-white/10 hover:bg-white/20 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7B6EF6]"
-            aria-label="Ir para o dashboard"
-          >
-            <img src={brandSymbol} alt="Logo uRede" className="w-6 h-6" />
-          </button>
-          <button
-            type="button"
-            onClick={() => handleTabChange('dashboard')}
-            className="p-3 rounded-2xl bg-white/10 hover:bg-white/20 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7B6EF6]"
-            aria-label="Página inicial"
-          >
-            <Home className="w-5 h-5" />
-          </button>
-          {renderAlertsDropdown('p-3 rounded-2xl bg-white/10 hover:bg-white/20 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7B6EF6]')}
-          <button
-            type="button"
-            className="p-3 rounded-2xl bg-white/10 hover:bg-white/20 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7B6EF6]"
-            aria-label="Favoritos"
-          >
-            <Star className="w-5 h-5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => handleTabChange('operadores')}
-            className="p-3 rounded-2xl bg-white/10 hover:bg-white/20 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7B6EF6]"
-            aria-label="Usuários"
-          >
-            <Users className="w-5 h-5" />
-          </button>
-          <button
-            type="button"
-            className="p-3 rounded-2xl bg-white/10 hover:bg-white/20 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7B6EF6]"
-            aria-label="Buscar"
-          >
-            <Search className="w-5 h-5" />
-          </button>
-          <button
-            type="button"
-            className="p-3 rounded-2xl bg-white/10 hover:bg-white/20 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7B6EF6] mt-2"
-            aria-label="Ajuda"
-          >
-            <HelpCircle className="w-5 h-5" />
-          </button>
-        </div>
-        <div className="flex flex-col items-center gap-4">
-          <button
-            type="button"
-            onClick={() => setProfileDialogOpen(true)}
-            className="p-1 rounded-full bg-white/10 hover:bg-white/20"
-            aria-label="Abrir perfil"
-          >
-            <Avatar className="w-12 h-12 border-2 border-white/40 shadow-lg">
-              <AvatarFallback className="bg-[#7B6EF6] text-white">
-                {user.nome.split(' ').map((n) => n[0]).join('').slice(0, 2)}
-              </AvatarFallback>
-            </Avatar>
-          </button>
-          <button
-            type="button"
-            className="p-3 rounded-2xl bg-white/10 hover:bg-white/20 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7B6EF6]"
-            onClick={logout}
-            aria-label="Sair"
-          >
-            <LogOut className="w-5 h-5" />
-          </button>
-        </div>
-      </aside>
-
-      {/* Secondary navigation panel */}
+      {/* Navigation panel */}
       <aside className="hidden lg:flex w-72 flex-col bg-white/70 backdrop-blur border-r border-white/60">
         <div className="p-6 border-b border-white/60">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#EDE7FF] to-[#FCEBFF] flex items-center justify-center shadow-inner">
-              <img src={brandSymbol} alt="Uniodonto símbolo" className="w-7 h-7" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Bem-vindo(a)</p>
-              <p className="text-base font-semibold text-gray-900 line-clamp-1">
-                {user.nome}
-              </p>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#EDE7FF] to-[#FCEBFF] flex items-center justify-center shadow-inner">
+                <img src={brandSymbol} alt="Uniodonto símbolo" className="w-7 h-7" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Bem-vindo(a)</p>
+                <p className="text-base font-semibold text-gray-900 line-clamp-1">
+                  {user.nome}
+                </p>
+              </div>
             </div>
           </div>
           <Badge
             variant="outline"
             className={cn(
               'mt-4 w-fit rounded-full border-0 bg-[#F4EDFF] text-[#6C55D9] px-3 py-1 text-xs font-medium',
-              getRoleBadgeColor(user.papel)
+              roleBadgeClass
             )}
           >
-            {getRoleLabel(user.papel)}
+            {roleDisplayLabel}
           </Badge>
         </div>
 
@@ -514,11 +479,28 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
               </div>
               <div className="rounded-2xl bg-[#F3F6FF] p-4 border border-white shadow-inner">
                 <p className="text-sm font-semibold text-gray-800">Atalhos</p>
-                <ul className="mt-2 space-y-2 text-xs text-gray-600">
-                  <li>• Importar pedidos</li>
-                  <li>• Configurar alertas</li>
-                  <li>• Ajustar filas de atendimento</li>
-                </ul>
+                <div className="mt-3 space-y-2">
+                  {typeof onCreatePedido === 'function' && (
+                    <Button
+                      type="button"
+                      className="w-full justify-start gap-2 rounded-xl bg-white text-[#6C55D9] hover:bg-white/90"
+                      onClick={onCreatePedido}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Novo pedido
+                    </Button>
+                  )}
+                  {typeof onOpenImportacao === 'function' && (
+                    <Button
+                      type="button"
+                      className="w-full justify-start gap-2 rounded-xl border border-[#DBE3FF] bg-[#EEF2FF] text-[#3552C5] hover:bg-[#e1e7ff]"
+                      onClick={onOpenImportacao}
+                    >
+                      <UploadCloud className="h-4 w-4" />
+                      Importar pedidos
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -539,75 +521,46 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
       {/* Main content area */}
       <div className="flex-1 flex flex-col min-w-0">
         <header className="px-4 sm:px-6 pt-6 pb-4">
-          <div className="rounded-3xl bg-white shadow-[0_24px_60px_-32px_rgba(107,86,217,0.35)] border border-white/70 px-6 py-4 space-y-4">
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-              <button
-                type="button"
-                onClick={() => handleTabChange('dashboard')}
-                className="flex items-center gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7B6EF6]"
-                aria-label="Ir para o dashboard"
-              >
-                <img src={brandWordmark} alt="Portal uRede" className="h-10 w-auto" />
-              </button>
-              <div className="flex items-center gap-2 flex-wrap justify-end">
-                {(showQuickCreatePedido || showQuickImportacao) && (
-                  <div className="flex items-center gap-2">
-                    {showQuickImportacao && (
-                      <button
-                        type="button"
-                        className="quick-action-button"
-                        onClick={() => {
-                          if (typeof onOpenImportacao === 'function') onOpenImportacao();
-                        }}
-                      >
-                        <UploadCloud />
-                        <span className="hidden sm:inline">Pedidos em lote</span>
-                        <span className="sm:hidden">Lote</span>
-                      </button>
-                    )}
-                    {showQuickCreatePedido && (
-                      <button
-                        type="button"
-                        className="quick-action-button"
-                        onClick={onCreatePedido}
-                      >
-                        <Plus />
-                        <span className="hidden sm:inline">Novo Pedido</span>
-                        <span className="sm:hidden">Novo</span>
-                      </button>
-                    )}
-                  </div>
-                )}
-                {renderAlertsDropdown('!bg-[#F2F0FB] !text-[#6C55D9] border border-[#E4E0F9] hover:!bg-[#E7E2FF]')}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="rounded-full border-[#E4E0F9] text-[#6C55D9] hover:bg-[#F4F1FF]"
-                    >
-                      <User className="w-5 h-5" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => setProfileDialogOpen(true)}>
-                      Perfil do usuário
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={logout}>
-                      Sair
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+          <div className="rounded-3xl bg-white shadow-[0_24px_60px_-32px_rgba(107,86,217,0.35)] border border-white/70 px-6 py-4 flex items-center justify-between gap-4">
+            <button
+              type="button"
+              onClick={() => handleTabChange('dashboard')}
+              className="flex items-center gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7B6EF6]"
+              aria-label="Ir para o dashboard"
+            >
+              <img src={brandWordmark} alt="Portal uRede" className="h-10 w-auto" />
+            </button>
+            <div className="flex items-center gap-2">
+              {typeof onCreatePedido === 'function' && (
                 <Button
-                  variant="ghost"
-                  size="icon"
-                  className="bg-[#F2F0FB] rounded-full"
-                  onClick={() => setMobileNavOpen(true)}
-                  aria-label="Abrir menu"
+                  type="button"
+                  onClick={onCreatePedido}
+                  className="hidden md:inline-flex items-center gap-2 rounded-full bg-[#6C55D9] text-white shadow-md hover:bg-[#5843C4]"
                 >
-                  <Menu className="w-5 h-5" />
+                  <Plus className="h-4 w-4" />
+                  Novo pedido
                 </Button>
-              </div>
+              )}
+              {typeof onOpenImportacao === 'function' && (
+                <Button
+                  type="button"
+                  onClick={onOpenImportacao}
+                  className="hidden lg:inline-flex items-center gap-2 rounded-full border border-[#D9DEFF] bg-[#EEF1FF] text-[#3145C4] hover:bg-[#E0E6FF]"
+                >
+                  <UploadCloud className="h-4 w-4" />
+                  Importar pedidos
+                </Button>
+              )}
+              {renderAlertsDropdown('!bg-[#F2F0FB] !text-[#6C55D9] border border-[#E4E0F9] hover:!bg-[#E7E2FF]')}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="bg-[#F2F0FB] rounded-full lg:hidden"
+                onClick={() => setMobileNavOpen(true)}
+                aria-label="Abrir menu"
+              >
+                <Menu className="w-5 h-5" />
+              </Button>
             </div>
           </div>
         </header>
@@ -643,13 +596,13 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
                     {user.nome.split(' ').map((n) => n[0]).join('')}
                   </AvatarFallback>
                 </Avatar>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">{user.nome}</p>
-                  <Badge variant="outline" className={`text-xs ${getRoleBadgeColor(user.papel)}`}>
-                    {getRoleLabel(user.papel)}
-                  </Badge>
-                </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate">{user.nome}</p>
+                <Badge variant="outline" className={`text-xs ${roleBadgeClass}`}>
+                  {roleDisplayLabel}
+                </Badge>
               </div>
+            </div>
 
               <div className="space-y-2">
                 {menuItems.map((item) => {

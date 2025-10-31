@@ -42,6 +42,7 @@
         "npm:@radix-ui/react-tooltip@^1.1.8",
         "npm:@types/node@^20.10.0",
         "npm:@vitejs/plugin-react-swc@^3.10.2",
+        "npm:autoprefixer@^10.4.21",
         "npm:class-variance-authority@~0.7.1",
         "npm:clsx@*",
         "npm:cmdk@^1.1.1",
@@ -52,6 +53,7 @@
         "npm:lucide-react@0.487",
         "npm:marked@^12.0.2",
         "npm:next-themes@~0.4.6",
+        "npm:postcss@^8.5.6",
         "npm:react-day-picker@^8.10.1",
         "npm:react-dom@^18.3.1",
         "npm:react-hook-form@^7.55.0",
@@ -60,8 +62,11 @@
         "npm:recharts@^2.15.2",
         "npm:sonner@^2.0.3",
         "npm:tailwind-merge@*",
+        "npm:tailwindcss-animate@^1.0.7",
+        "npm:tailwindcss@^3.4.13",
         "npm:vaul@^1.1.2",
-        "npm:vite@^6.3.6"
+        "npm:vite@^6.3.6",
+        "npm:xlsx@~0.18.5"
       ]
     }
   }

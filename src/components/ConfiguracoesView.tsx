@@ -6,11 +6,19 @@ import { Badge } from './ui/badge';
 import { apiService } from '../services/apiService';
 import type { SystemSettings, CooperativaConfig } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from 'next-themes';
 
 export function ConfiguracoesView() {
   const { user } = useAuth();
+  const { theme: activeTheme, setTheme: applyTheme } = useTheme();
   const isConfederacao = user?.papel === 'confederacao';
-  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('light');
+  const isAdmin = user?.papel === 'admin';
+  const [themePreference, setThemePreference] = useState<'light' | 'dark' | 'system'>(() => {
+    if (activeTheme === 'light' || activeTheme === 'dark' || activeTheme === 'system') {
+      return activeTheme;
+    }
+    return 'light';
+  });
   const [deadlines, setDeadlines] = useState({
     singularToFederacao: '30',
     federacaoToConfederacao: '30',
@@ -28,10 +36,24 @@ export function ConfiguracoesView() {
   const [isSavingCoopConfig, setIsSavingCoopConfig] = useState(false);
   const [coopStatus, setCoopStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  const canManageSystem = isConfederacao;
+  const isConfederacaoAdmin = Boolean(isAdmin && cooperativaConfig?.tipo === 'CONFEDERACAO');
+  const canManageSystem = isConfederacao || isConfederacaoAdmin;
+  const awaitingConfederacaoCheck = Boolean(
+    isAdmin && user?.cooperativa_id && !isConfederacao && !isConfederacaoAdmin && isLoadingCoopConfig
+  );
   const canManageCooperativa = Boolean(
     user && user.cooperativa_id && !isConfederacao && (user.papel === 'admin' || user.papel === 'federacao')
   );
+
+  const handleSelectTheme = (value: 'light' | 'dark' | 'system') => {
+    setThemePreference(value);
+    applyTheme(value);
+  };
+  const themeOptions = [
+    { id: 'light', label: 'Claro', description: 'Ideal para ambientes bem iluminados.' },
+    { id: 'dark', label: 'Escuro', description: 'Reduz o cansaço visual em ambientes com pouca luz.' },
+    { id: 'system', label: 'Automático', description: 'Segue a preferência configurada no dispositivo.' },
+  ] as const;
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -39,7 +61,8 @@ export function ConfiguracoesView() {
         setIsLoading(true);
         const settings = await apiService.getSystemSettings();
         if (settings) {
-          setTheme(settings.theme);
+          setThemePreference(settings.theme);
+          applyTheme(settings.theme);
           setDeadlines({
             singularToFederacao: settings.deadlines.singularToFederacao.toString(),
             federacaoToConfederacao: settings.deadlines.federacaoToConfederacao.toString(),
@@ -58,7 +81,18 @@ export function ConfiguracoesView() {
     };
 
     loadSettings();
-  }, []);
+  }, [applyTheme]);
+
+  useEffect(() => {
+    if (!activeTheme) return;
+    if (activeTheme !== 'light' && activeTheme !== 'dark' && activeTheme !== 'system') {
+      return;
+    }
+    if (activeTheme === themePreference) {
+      return;
+    }
+    setThemePreference(activeTheme);
+  }, [activeTheme, themePreference]);
 
   useEffect(() => {
     if (!canManageCooperativa || !user?.cooperativa_id) {
@@ -117,7 +151,7 @@ export function ConfiguracoesView() {
       setIsSaving(true);
       setStatus(null);
       const payload: SystemSettings = {
-        theme,
+        theme: themePreference,
         deadlines: {
           singularToFederacao: Math.max(1, Number(deadlines.singularToFederacao) || 1),
           federacaoToConfederacao: Math.max(1, Number(deadlines.federacaoToConfederacao) || 1),
@@ -128,7 +162,7 @@ export function ConfiguracoesView() {
         pedido_motivos: pedidoMotivos,
       };
       const saved = await apiService.updateSystemSettings(payload);
-      setTheme(saved.theme);
+      handleSelectTheme(saved.theme);
       setDeadlines({
         singularToFederacao: saved.deadlines.singularToFederacao.toString(),
         federacaoToConfederacao: saved.deadlines.federacaoToConfederacao.toString(),
@@ -179,8 +213,8 @@ export function ConfiguracoesView() {
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h1 className="text-2xl font-bold text-gray-900">Configurações do sistema</h1>
-        <p className="text-gray-600">Ajuste o comportamento global da plataforma para todos os usuários.</p>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">Configurações do sistema</h1>
+        <p className="text-gray-600 dark:text-slate-400">Ajuste o comportamento global da plataforma para todos os usuários.</p>
       </div>
 
       {canManageSystem ? (
@@ -192,21 +226,19 @@ export function ConfiguracoesView() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-3">
-                {[
-                  { id: 'light', label: 'Claro', description: 'Ideal para ambientes bem iluminados.' },
-                  { id: 'dark', label: 'Escuro', description: 'Reduz o cansaço visual em ambientes com pouca luz.' },
-                  { id: 'system', label: 'Automático', description: 'Segue a preferência configurada no dispositivo.' },
-                ].map((option) => (
+                {themeOptions.map((option) => (
                   <button
                     key={option.id}
                     type="button"
-                    onClick={() => setTheme(option.id as typeof theme)}
+                    onClick={() => handleSelectTheme(option.id)}
                     className={`rounded-lg border p-4 text-left transition ${
-                      theme === option.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300'
+                      themePreference === option.id
+                        ? 'border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-400/10'
+                        : 'border-gray-200 hover:border-blue-300 dark:border-slate-700 dark:hover:border-blue-400/60'
                     }`}
                   >
-                    <span className="font-semibold text-gray-900">{option.label}</span>
-                    <p className="text-sm text-gray-500">{option.description}</p>
+                    <span className="font-semibold text-gray-900 dark:text-slate-100">{option.label}</span>
+                    <p className="text-sm text-gray-500 dark:text-slate-400">{option.description}</p>
                   </button>
                 ))}
               </div>
@@ -221,7 +253,7 @@ export function ConfiguracoesView() {
             <CardContent className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700" htmlFor="prazo-singular">
+                  <label className="text-sm font-medium text-gray-700 dark:text-slate-200" htmlFor="prazo-singular">
                     Singular → Federação (dias)
                   </label>
                   <Input
@@ -234,7 +266,7 @@ export function ConfiguracoesView() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700" htmlFor="prazo-federacao">
+                  <label className="text-sm font-medium text-gray-700 dark:text-slate-200" htmlFor="prazo-federacao">
                     Federação → Confederação (dias)
                   </label>
                   <Input
@@ -248,11 +280,11 @@ export function ConfiguracoesView() {
                 </div>
               </div>
 
-              <div className="space-y-3 rounded-md border border-gray-200 bg-gray-50 p-4 text-sm">
+              <div className="space-y-3 rounded-md border border-gray-200 bg-gray-50 p-4 text-sm dark:border-slate-800 dark:bg-slate-900/60">
                 <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
-                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-slate-600"
                     checked={requireApproval}
                     onChange={(event) => setRequireApproval(event.target.checked)}
                     disabled={!canManageSystem || isLoading || isSaving}
@@ -262,7 +294,7 @@ export function ConfiguracoesView() {
                 <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
-                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-slate-600"
                     checked={autoNotifyManagers}
                     onChange={(event) => setAutoNotifyManagers(event.target.checked)}
                     disabled={!canManageSystem || isLoading || isSaving}
@@ -272,7 +304,7 @@ export function ConfiguracoesView() {
                 <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
-                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-slate-600"
                     checked={enableSelfRegistration}
                     onChange={(event) => setEnableSelfRegistration(event.target.checked)}
                     disabled={!canManageSystem || isLoading || isSaving}
@@ -306,7 +338,7 @@ export function ConfiguracoesView() {
                 </Button>
               </div>
               {pedidoMotivos.length === 0 ? (
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-gray-600 dark:text-slate-400">
                   Nenhuma categoria cadastrada. Inclua aqui os motivos que os solicitantes poderão escolher.
                 </p>
               ) : (
@@ -316,7 +348,7 @@ export function ConfiguracoesView() {
                       {motivo}
                       <button
                         type="button"
-                        className="text-xs text-gray-500 hover:text-red-600"
+                        className="text-xs text-gray-500 hover:text-red-600 dark:text-slate-500 dark:hover:text-red-400"
                         onClick={() => handleRemoveMotivo(motivo)}
                         disabled={isSaving}
                         aria-label={`Remover categoria ${motivo}`}
@@ -327,20 +359,36 @@ export function ConfiguracoesView() {
                   ))}
                 </div>
               )}
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-500 dark:text-slate-500">
                 Alterações nesta lista ficam disponíveis imediatamente para os solicitantes ao criar um pedido.
               </p>
             </CardContent>
           </Card>
         </>
+      ) : awaitingConfederacaoCheck ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Verificando permissões</CardTitle>
+            <CardDescription>
+              Aguarde um instante enquanto confirmamos o vínculo com a Confederação.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-gray-600 dark:text-slate-400">
+              Caso a tela não carregue em alguns segundos, atualize a página ou contate o suporte.
+            </p>
+          </CardContent>
+        </Card>
       ) : (
         <Card>
           <CardHeader>
             <CardTitle>Configurações do fluxo de aprovação</CardTitle>
-            <CardDescription>Disponível apenas para a Confederação.</CardDescription>
+            <CardDescription>
+              Disponível apenas para a Confederação ou administradores vinculados à Confederação.
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-600 dark:text-slate-400">
               Entre em contato com a Confederação para ajustar prazos e regras de aprovação.
             </p>
           </CardContent>
@@ -356,25 +404,25 @@ export function ConfiguracoesView() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="rounded-md border border-gray-200 bg-gray-50 p-4">
+            <div className="rounded-md border border-gray-200 bg-gray-50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
               <label className="flex items-start gap-3">
                 <input
                   type="checkbox"
-                  className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-slate-600"
                   checked={cooperativaConfig.auto_recusar}
                   onChange={(event) => handleToggleAutoRecusar(event.target.checked)}
                   disabled={isLoadingCoopConfig || isSavingCoopConfig}
                 />
                 <div>
-                  <p className="font-medium text-gray-900">Recusar pedidos automaticamente</p>
-                  <p className="text-sm text-gray-600">
+                  <p className="font-medium text-gray-900 dark:text-slate-100">Recusar pedidos automaticamente</p>
+                  <p className="text-sm text-gray-600 dark:text-slate-400">
                     Quando ativado, qualquer pedido direcionado para {cooperativaConfig.nome} será transferido
                     imediatamente para o próximo nível hierárquico.
                   </p>
                 </div>
               </label>
               {isSavingCoopConfig && (
-                <p className="mt-3 text-sm text-gray-500">Aplicando preferência...</p>
+                <p className="mt-3 text-sm text-gray-500 dark:text-slate-500">Aplicando preferência...</p>
               )}
               {coopStatus && (
                 <p className={`mt-3 text-sm ${coopStatus.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
@@ -393,7 +441,7 @@ export function ConfiguracoesView() {
             <CardDescription>A Confederação recebe escalonamentos automaticamente e não pode recusar pedidos.</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-600 dark:text-slate-400">
               Você já está no nível máximo da hierarquia. Transferências automáticas não se aplicam à Confederação.
             </p>
           </CardContent>

@@ -8,7 +8,7 @@ import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
 import { Plus, X } from 'lucide-react';
 import { apiService } from '../services/apiService';
-import { Cidade, Pedido } from '../types';
+import { Cidade, Pedido, SystemSettings } from '../types';
 import {
   Dialog,
   DialogContent,
@@ -43,6 +43,8 @@ export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [pedidoMotivos, setPedidoMotivos] = useState<string[]>([]);
+  const [deadlines, setDeadlines] = useState<SystemSettings['deadlines'] | null>(null);
+  const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   
   const [formData, setFormData] = useState({
     titulo: '',
@@ -79,12 +81,17 @@ export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
     const loadCategorias = async () => {
       try {
         setIsLoadingCategorias(true);
+        setIsLoadingSettings(true);
         const settings = await apiService.getSystemSettings();
         setPedidoMotivos(settings?.pedido_motivos ?? []);
+        if (settings?.deadlines) {
+          setDeadlines(settings.deadlines);
+        }
       } catch (err) {
         console.error('Erro ao carregar categorias de pedido:', err);
       } finally {
         setIsLoadingCategorias(false);
+        setIsLoadingSettings(false);
       }
     };
 
@@ -173,6 +180,25 @@ export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const singularToFederacaoDays = deadlines?.singularToFederacao;
+  const federacaoToConfederacaoDays = deadlines?.federacaoToConfederacao;
+  const formatPrazo = (days?: number | null) => {
+    if (typeof days !== 'number' || !Number.isFinite(days)) {
+      return null;
+    }
+    const normalized = Math.max(1, Math.round(days));
+    return `${normalized} dia${normalized === 1 ? '' : 's'}`;
+  };
+  const singularPrazoText = formatPrazo(singularToFederacaoDays);
+  const federacaoPrazoText = formatPrazo(federacaoToConfederacaoDays);
+  const prazoResumoText = isLoadingSettings ? 'seguindo as configurações do sistema (carregando prazos...)' : 'conforme definido nas configurações do sistema';
+  const prazoEscalonamento = (prazo?: string | null) => {
+    if (prazo) {
+      return ` (+ ${prazo})`;
+    }
+    return isLoadingSettings ? ' (carregando prazos...)' : ' (seguindo o prazo configurado)';
   };
 
   return (
@@ -379,9 +405,15 @@ export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
                 <h4 className="font-medium text-blue-900 mb-2">Informações do Sistema</h4>
                 <ul className="text-sm text-blue-800 space-y-1">
                   <li>• O pedido será roteado automaticamente para a cooperativa responsável pela cidade</li>
-                  <li>• Prazo inicial: 30 dias para a Singular responsável</li>
-                  <li>• Se não atendido, será escalado automaticamente para Federação (+ 30 dias)</li>
-                  <li>• Por último, será escalado para Confederação (+ 30 dias)</li>
+                  <li>
+                    • Prazo inicial: {singularPrazoText ?? prazoResumoText} para a Singular responsável
+                  </li>
+                  <li>
+                    • Se não atendido, será escalado automaticamente para Federação{prazoEscalonamento(singularPrazoText)}
+                  </li>
+                  <li>
+                    • Por último, será escalado para Confederação{prazoEscalonamento(federacaoPrazoText)}
+                  </li>
                 </ul>
               </div>
 

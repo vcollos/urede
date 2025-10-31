@@ -1,3 +1,3 @@
 Credenciamento e Suprimento App@0.1.0
-4988da9
-2025-10-28T19:13:00.744Z
+37eebb5
+2025-10-31T15:04:22.288Z
