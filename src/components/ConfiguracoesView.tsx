@@ -6,19 +6,11 @@ import { Badge } from './ui/badge';
 import { apiService } from '../services/apiService';
 import type { SystemSettings, CooperativaConfig } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { useTheme } from 'next-themes';
 
 export function ConfiguracoesView() {
   const { user } = useAuth();
-  const { theme: activeTheme, setTheme: applyTheme } = useTheme();
   const isConfederacao = user?.papel === 'confederacao';
   const isAdmin = user?.papel === 'admin';
-  const [themePreference, setThemePreference] = useState<'light' | 'dark' | 'system'>(() => {
-    if (activeTheme === 'light' || activeTheme === 'dark' || activeTheme === 'system') {
-      return activeTheme;
-    }
-    return 'light';
-  });
   const [deadlines, setDeadlines] = useState({
     singularToFederacao: '30',
     federacaoToConfederacao: '30',
@@ -45,24 +37,12 @@ export function ConfiguracoesView() {
     user && user.cooperativa_id && !isConfederacao && (user.papel === 'admin' || user.papel === 'federacao')
   );
 
-  const handleSelectTheme = (value: 'light' | 'dark' | 'system') => {
-    setThemePreference(value);
-    applyTheme(value);
-  };
-  const themeOptions = [
-    { id: 'light', label: 'Claro', description: 'Ideal para ambientes bem iluminados.' },
-    { id: 'dark', label: 'Escuro', description: 'Reduz o cansaço visual em ambientes com pouca luz.' },
-    { id: 'system', label: 'Automático', description: 'Segue a preferência configurada no dispositivo.' },
-  ] as const;
-
   useEffect(() => {
     const loadSettings = async () => {
       try {
         setIsLoading(true);
         const settings = await apiService.getSystemSettings();
         if (settings) {
-          setThemePreference(settings.theme);
-          applyTheme(settings.theme);
           setDeadlines({
             singularToFederacao: settings.deadlines.singularToFederacao.toString(),
             federacaoToConfederacao: settings.deadlines.federacaoToConfederacao.toString(),
@@ -81,18 +61,7 @@ export function ConfiguracoesView() {
     };
 
     loadSettings();
-  }, [applyTheme]);
-
-  useEffect(() => {
-    if (!activeTheme) return;
-    if (activeTheme !== 'light' && activeTheme !== 'dark' && activeTheme !== 'system') {
-      return;
-    }
-    if (activeTheme === themePreference) {
-      return;
-    }
-    setThemePreference(activeTheme);
-  }, [activeTheme, themePreference]);
+  }, []);
 
   useEffect(() => {
     if (!canManageCooperativa || !user?.cooperativa_id) {
@@ -151,7 +120,7 @@ export function ConfiguracoesView() {
       setIsSaving(true);
       setStatus(null);
       const payload: SystemSettings = {
-        theme: themePreference,
+        theme: 'light',
         deadlines: {
           singularToFederacao: Math.max(1, Number(deadlines.singularToFederacao) || 1),
           federacaoToConfederacao: Math.max(1, Number(deadlines.federacaoToConfederacao) || 1),
@@ -162,7 +131,6 @@ export function ConfiguracoesView() {
         pedido_motivos: pedidoMotivos,
       };
       const saved = await apiService.updateSystemSettings(payload);
-      handleSelectTheme(saved.theme);
       setDeadlines({
         singularToFederacao: saved.deadlines.singularToFederacao.toString(),
         federacaoToConfederacao: saved.deadlines.federacaoToConfederacao.toString(),
@@ -219,32 +187,6 @@ export function ConfiguracoesView() {
 
       {canManageSystem ? (
         <>
-          <Card>
-            <CardHeader>
-              <CardTitle>Tema da interface</CardTitle>
-              <CardDescription>Escolha o tema padrão exibido ao acessar o sistema.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-3">
-                {themeOptions.map((option) => (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => handleSelectTheme(option.id)}
-                    className={`rounded-lg border p-4 text-left transition ${
-                      themePreference === option.id
-                        ? 'border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-400/10'
-                        : 'border-gray-200 hover:border-blue-300 dark:border-slate-700 dark:hover:border-blue-400/60'
-                    }`}
-                  >
-                    <span className="font-semibold text-gray-900 dark:text-slate-100">{option.label}</span>
-                    <p className="text-sm text-gray-500 dark:text-slate-400">{option.description}</p>
-                  </button>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
           <Card>
             <CardHeader>
               <CardTitle>Fluxo de aprovação</CardTitle>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AuthScreen } from './components/AuthScreen';
 import { Layout } from './components/Layout';
@@ -15,7 +15,6 @@ import { PedidosImportPage } from './components/PedidosImportPage';
 import { ConfirmEmailScreen } from './components/ConfirmEmailScreen';
 import { Button } from './components/ui/button';
 import { apiService } from './services/apiService';
-import { useTheme } from 'next-themes';
 
 // Componente interno que usa o AuthContext
 function AppContent() {
@@ -24,7 +23,6 @@ function AppContent() {
   const [showNovoPedido, setShowNovoPedido] = useState(false);
   const [selectedPedido, setSelectedPedido] = useState<Pedido | null>(null);
   const [pedidosPresetFilter, setPedidosPresetFilter] = useState<PedidosFilterPreset | null>(null);
-  const { setTheme: applyTheme } = useTheme();
   const openNovoPedido = () => setShowNovoPedido(true);
 
   const pathname = typeof window !== 'undefined' ? window.location.pathname : '/';
@@ -128,29 +126,6 @@ function AppContent() {
       alert('Não foi possível carregar o pedido selecionado. Tente novamente.');
     }
   };
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      return;
-    }
-
-    let isActive = true;
-    const syncThemePreference = async () => {
-      try {
-        const settings = await apiService.getSystemSettings();
-        if (!isActive || !settings?.theme) return;
-        applyTheme(settings.theme);
-      } catch (error) {
-        console.error('Erro ao aplicar tema padrão:', error);
-      }
-    };
-
-    void syncThemePreference();
-
-    return () => {
-      isActive = false;
-    };
-  }, [isAuthenticated, applyTheme]);
 
   const renderContent = () => {
     switch (activeTab) {
