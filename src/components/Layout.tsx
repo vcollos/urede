@@ -507,14 +507,24 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
         </nav>
 
         <div className="px-6 py-5 border-t border-white/60">
-          <button
-            type="button"
-            onClick={logout}
-            className="w-full flex items-center justify-center gap-2 rounded-full bg-[#1C1E3A] text-white py-3 font-semibold shadow-lg hover:bg-[#24264d]"
-          >
-            <LogOut className="w-4 h-4" />
-            Sair
-          </button>
+          <div className="space-y-3">
+            <Button
+              type="button"
+              onClick={() => setProfileDialogOpen(true)}
+              className="w-full justify-center gap-2 rounded-full border border-[#DBE0FF] bg-white text-[#4C3FB3] font-semibold shadow-sm hover:bg-white/95"
+            >
+              <User className="w-4 h-4" />
+              Meu perfil
+            </Button>
+            <button
+              type="button"
+              onClick={logout}
+              className="w-full flex items-center justify-center gap-2 rounded-full bg-[#1C1E3A] text-white py-3 font-semibold shadow-lg hover:bg-[#24264d]"
+            >
+              <LogOut className="w-4 h-4" />
+              Sair
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -630,7 +640,18 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
                 })}
               </div>
 
-              <div className="pt-2 border-t border-gray-200">
+              <div className="pt-2 border-t border-gray-200 space-y-2">
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start text-gray-700"
+                  onClick={() => {
+                    setProfileDialogOpen(true);
+                    setMobileNavOpen(false);
+                  }}
+                >
+                  <User className="w-4 h-4 mr-3" />
+                  Meu perfil
+                </Button>
                 <Button variant="ghost" className="w-full justify-start text-gray-700" onClick={logout}>
                   <LogOut className="w-4 h-4 mr-3" />
                   Sair
