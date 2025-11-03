@@ -15,6 +15,7 @@ import { PedidosImportPage } from './components/PedidosImportPage';
 import { ConfirmEmailScreen } from './components/ConfirmEmailScreen';
 import { Button } from './components/ui/button';
 import { apiService } from './services/apiService';
+import { DocumentacaoUsuariosApp } from './documentacao/usuarios';
 
 // Componente interno que usa o AuthContext
 function AppContent() {
@@ -26,6 +27,9 @@ function AppContent() {
   const openNovoPedido = () => setShowNovoPedido(true);
 
   const pathname = typeof window !== 'undefined' ? window.location.pathname : '/';
+  if (pathname.startsWith('/documentacao/usuarios')) {
+    return <DocumentacaoUsuariosApp />;
+  }
   if (pathname.startsWith('/confirm-email')) {
     return (
       <ConfirmEmailScreen

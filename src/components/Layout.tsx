@@ -578,6 +578,17 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
         <main className="flex-1 overflow-y-auto px-4 sm:px-6 pb-10">
           {children}
         </main>
+        <footer className="px-4 sm:px-6 pb-8 text-sm text-gray-500">
+          <div className="rounded-2xl border border-[#ECEBFF] bg-white/80 px-4 py-3 shadow-[0_10px_30px_-24px_rgba(108,85,217,0.8)] flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <span className="font-medium text-gray-600">Precisa de orientação?</span>
+            <a
+              href="/documentacao/usuarios"
+              className="inline-flex items-center text-[#6C55D9] font-semibold hover:text-[#5644c3]"
+            >
+              Acesse a documentação do sistema
+            </a>
+          </div>
+        </footer>
       </div>
 
       <Dialog open={isMobileNavOpen} onOpenChange={setMobileNavOpen}>

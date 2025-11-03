@@ -1,0 +1,1 @@
+export { DocumentacaoUsuariosApp } from './DocumentacaoUsuariosApp';
