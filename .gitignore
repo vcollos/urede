@@ -8,6 +8,7 @@ build/
 
 # Env files
 .env
+.env.local
 database/functions/server/.env
 database/.temp/
 database/functions/server/index\ 2.ts
