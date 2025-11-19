@@ -12,6 +12,7 @@ import type {
   CooperativaConfig,
   PedidoImportPayload,
   PedidoImportResponse,
+  ReportsOverview,
 } from '../types';
 
 class ApiService {
@@ -261,6 +262,14 @@ class ApiService {
       body: JSON.stringify(settings),
     });
     return response?.settings ?? settings;
+  }
+
+  async getReportsOverview(params?: { start?: string; end?: string }): Promise<ReportsOverview> {
+    const searchParams = new URLSearchParams();
+    if (params?.start) searchParams.set('start', params.start);
+    if (params?.end) searchParams.set('end', params.end);
+    const qs = searchParams.toString();
+    return await apiRequest(`/reports/overview${qs ? `?${qs}` : ''}`);
   }
 }
 

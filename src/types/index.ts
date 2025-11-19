@@ -207,3 +207,39 @@ export interface PedidoImportResponse {
   errors: PedidoImportError[];
   imported: Pedido[];
 }
+
+export interface ReportsOverviewRange {
+  start: string;
+  end: string;
+}
+
+export interface ReportCreationPoint {
+  date: string;
+  total: number;
+  concluidos: number;
+}
+
+export interface ReportResponseEntry {
+  cooperativa_id: string | null;
+  cooperativa_nome?: string | null;
+  total: number;
+  responded: number;
+  tempo_medio_min: number | null;
+}
+
+export interface ReportsOverview {
+  range: ReportsOverviewRange;
+  creationSeries: ReportCreationPoint[];
+  responseByCooperativa: ReportResponseEntry[];
+  statusBreakdown: Record<string, number>;
+  nivelResumo: Record<string, number>;
+  performanceSummary: {
+    totalPedidos: number;
+    mediaRespostaMin: number | null;
+    mediaConclusaoMin: number | null;
+    concluido: number;
+    em_andamento: number;
+    novo: number;
+    cancelado: number;
+  };
+}

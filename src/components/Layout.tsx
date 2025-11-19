@@ -12,6 +12,7 @@ import {
   Map,
   Plus,
   UploadCloud,
+  PieChart,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -258,6 +259,7 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
   const canCreatePedido = ['operador', 'admin', 'confederacao'].includes(user.papel);
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+    { id: 'relatorios', label: 'Relatórios', icon: PieChart },
     { id: 'pedidos', label: 'Pedidos', icon: FileText },
     ...(canCreatePedido ? [{ id: 'importacao', label: 'Pedidos em lote', icon: UploadCloud }] : []),
     { id: 'cooperativas', label: 'Cooperativas', icon: Building2 },

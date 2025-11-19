@@ -1093,6 +1093,36 @@ const getVisibleCooperativas = (userData: any): Set<string> | null => {
   return new Set(id);
 };
 
+const buildCooperativaScopeClause = (
+  userData: any,
+  column = "cooperativa_solicitante_id",
+) => {
+  const visible = getVisibleCooperativas(userData);
+  if (visible === null) {
+    return { clause: "", params: [] as string[] };
+  }
+  const ids = Array.from(visible).filter((value) =>
+    typeof value === "string" && value.trim().length > 0
+  );
+  if (ids.length === 0) {
+    return { clause: "1=0", params: [] as string[] };
+  }
+  const placeholders = ids.map(() => "?").join(",");
+  return {
+    clause: `${column} IN (${placeholders})`,
+    params: ids,
+  };
+};
+
+const isMissingColumnError = (error: unknown, column: string) => {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return (
+    message.includes(`no such column: ${column.toLowerCase()}`) ||
+    message.includes(`column "${column.toLowerCase()}" does not exist`)
+  );
+};
+
 const isCooperativaVisible = (userData: any, cooperativaId: string) => {
   const visible = getVisibleCooperativas(userData);
   if (visible === null) return true;
@@ -5469,6 +5499,226 @@ app.get("/dashboard/stats", requireAuth, async (c) => {
   } catch (error) {
     console.error("Erro ao gerar estatísticas:", error);
     return c.json({ error: "Erro ao gerar estatísticas" }, 500);
+  }
+});
+
+app.get("/reports/overview", requireAuth, async (c) => {
+  try {
+    const authUser = c.get("user");
+    const userData = await getUserData(
+      authUser.id,
+      authUser.email || authUser?.claims?.email,
+    );
+    if (!userData) {
+      return c.json({ error: "Usuário não autenticado" }, 401);
+    }
+
+    const now = new Date();
+    const defaultStart = new Date(now.getTime() - 29 * 24 * 60 * 60 * 1000);
+    const startParam = c.req.query("start");
+    const endParam = c.req.query("end");
+    const parsedStart = startParam ? new Date(startParam) : defaultStart;
+    const parsedEnd = endParam ? new Date(endParam) : now;
+    if (Number.isNaN(parsedStart.getTime())) parsedStart.setTime(defaultStart.getTime());
+    if (Number.isNaN(parsedEnd.getTime())) parsedEnd.setTime(now.getTime());
+    if (parsedStart.getTime() > parsedEnd.getTime()) {
+      const tmp = parsedStart.getTime();
+      parsedStart.setTime(parsedEnd.getTime());
+      parsedEnd.setTime(tmp);
+    }
+    const maxRangeMs = 365 * 24 * 60 * 60 * 1000;
+    if ((parsedEnd.getTime() - parsedStart.getTime()) > maxRangeMs) {
+      parsedStart.setTime(parsedEnd.getTime() - maxRangeMs);
+    }
+    const rangeStart = new Date(parsedStart);
+    rangeStart.setHours(0, 0, 0, 0);
+    const rangeEnd = new Date(parsedEnd);
+    rangeEnd.setHours(23, 59, 59, 999);
+    const startIso = rangeStart.toISOString();
+    const endIso = rangeEnd.toISOString();
+
+    const scope = buildCooperativaScopeClause(userData, "cooperativa_solicitante_id");
+    let rowsIncludeExcluido = false;
+    let rawRows: any[] = [];
+    const baseParams = [startIso, endIso, ...scope.params];
+    const whereClause = `data_criacao BETWEEN ? AND ? ${scope.clause ? `AND ${scope.clause}` : ""}`;
+    const baseSelect = `SELECT id, data_criacao, data_ultima_alteracao, status, nivel_atual,
+              cooperativa_solicitante_id, cooperativa_responsavel_id`;
+    try {
+      rawRows = db.queryEntries<any>(
+        `${baseSelect}, excluido
+           FROM ${TBL("pedidos")}
+          WHERE ${whereClause}
+            AND (excluido IS NULL OR excluido = 0 OR excluido = '0' OR excluido = 'false')`,
+        baseParams,
+      ) || [];
+      rowsIncludeExcluido = true;
+    } catch (error) {
+      if (!isMissingColumnError(error, "excluido")) throw error;
+      rawRows = db.queryEntries<any>(
+        `${baseSelect}
+           FROM ${TBL("pedidos")}
+          WHERE ${whereClause}`,
+        baseParams,
+      ) || [];
+    }
+    const rows = rowsIncludeExcluido
+      ? rawRows
+      : rawRows.filter((row) => row.excluido === undefined || row.excluido === null);
+
+    const cooperativaIds = Array.from(
+      new Set(
+        rows
+          .map((row) =>
+            typeof row.cooperativa_responsavel_id === "string"
+              ? row.cooperativa_responsavel_id.trim()
+              : "",
+          )
+          .filter((value) => value.length > 0),
+      ),
+    );
+    const cooperativaNomeMap: Record<string, string> = {};
+    if (cooperativaIds.length) {
+      try {
+        const placeholders = cooperativaIds.map(() => "?").join(",");
+        const coopRows = db.queryEntries<any>(
+          `SELECT id_singular, UNIODONTO, uniodonto
+             FROM ${TBL("cooperativas")}
+            WHERE id_singular IN (${placeholders})`,
+          cooperativaIds,
+        ) || [];
+        for (const coop of coopRows) {
+          const id = coop.id_singular ?? coop.ID_SINGULAR;
+          if (!id) continue;
+          const nome = coop.UNIODONTO ?? coop.uniodonto ?? coop.nome ?? "";
+          cooperativaNomeMap[id] = nome;
+        }
+      } catch (error) {
+        console.warn("[reports] falha ao buscar nomes de cooperativas:", error);
+      }
+    }
+
+    const creationMap = new Map<string, { total: number; concluidos: number }>();
+    const responseMap = new Map<
+      string,
+      { cooperativa_id: string | null; total: number; responded: number; tempoTotalMin: number }
+    >();
+    const statusBreakdown: Record<string, number> = {
+      novo: 0,
+      em_andamento: 0,
+      concluido: 0,
+      cancelado: 0,
+    };
+    const nivelResumo: Record<string, number> = {
+      singular: 0,
+      federacao: 0,
+      confederacao: 0,
+    };
+    let totalRespostaMin = 0;
+    let countResposta = 0;
+    let totalConclusaoMin = 0;
+    let countConclusao = 0;
+
+    const toDateKey = (value?: string | null) => {
+      if (!value) return null;
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return null;
+      return parsed.toISOString().slice(0, 10);
+    };
+
+    const diffMinutes = (start?: string | null, end?: string | null) => {
+      if (!start || !end) return null;
+      const startDate = new Date(start);
+      const endDate = new Date(end);
+      if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return null;
+      const diff = endDate.getTime() - startDate.getTime();
+      if (!Number.isFinite(diff) || diff < 0) return null;
+      return diff / (1000 * 60);
+    };
+
+    for (const row of rows) {
+      const dayKey = toDateKey(row.data_criacao);
+      if (dayKey) {
+        const entry = creationMap.get(dayKey) ?? { total: 0, concluidos: 0 };
+        entry.total += 1;
+        if ((row.status || "").toLowerCase() === "concluido") {
+          entry.concluidos += 1;
+        }
+        creationMap.set(dayKey, entry);
+      }
+
+      const statusKey = (row.status || "novo").toLowerCase();
+      statusBreakdown[statusKey] = (statusBreakdown[statusKey] ?? 0) + 1;
+
+      const nivelKey = (row.nivel_atual || "singular").toLowerCase();
+      nivelResumo[nivelKey] = (nivelResumo[nivelKey] ?? 0) + 1;
+
+      const coopKey = row.cooperativa_responsavel_id || "sem_atribuicao";
+      if (!responseMap.has(coopKey)) {
+        responseMap.set(coopKey, {
+          cooperativa_id: row.cooperativa_responsavel_id ?? null,
+          total: 0,
+          responded: 0,
+          tempoTotalMin: 0,
+        });
+      }
+      const responseEntry = responseMap.get(coopKey)!;
+      responseEntry.total += 1;
+
+      const deltaMin = diffMinutes(row.data_criacao, row.data_ultima_alteracao);
+      if (deltaMin !== null) {
+        responseEntry.responded += 1;
+        responseEntry.tempoTotalMin += deltaMin;
+        totalRespostaMin += deltaMin;
+        countResposta += 1;
+        if ((row.status || "").toLowerCase() === "concluido") {
+          totalConclusaoMin += deltaMin;
+          countConclusao += 1;
+        }
+      }
+    }
+
+    const creationSeries = Array.from(creationMap.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, values]) => ({
+        date,
+        total: values.total,
+        concluidos: values.concluidos,
+      }));
+
+    const responseByCooperativa = Array.from(responseMap.values())
+      .map((entry) => ({
+        cooperativa_id: entry.cooperativa_id,
+        cooperativa_nome: entry.cooperativa_id
+          ? cooperativaNomeMap[entry.cooperativa_id] ?? null
+          : null,
+        total: entry.total,
+        responded: entry.responded,
+        tempo_medio_min: entry.responded ? entry.tempoTotalMin / entry.responded : null,
+      }))
+      .sort((a, b) => b.total - a.total);
+
+    const performanceSummary = {
+      totalPedidos: rows.length,
+      mediaRespostaMin: countResposta ? totalRespostaMin / countResposta : null,
+      mediaConclusaoMin: countConclusao ? totalConclusaoMin / countConclusao : null,
+      concluido: statusBreakdown.concluido ?? 0,
+      em_andamento: statusBreakdown.em_andamento ?? 0,
+      novo: statusBreakdown.novo ?? 0,
+      cancelado: statusBreakdown.cancelado ?? 0,
+    };
+
+    return c.json({
+      range: { start: startIso, end: endIso },
+      creationSeries,
+      responseByCooperativa,
+      statusBreakdown,
+      nivelResumo,
+      performanceSummary,
+    });
+  } catch (error) {
+    console.error("Erro ao gerar relatório:", error);
+    return c.json({ error: "Erro ao gerar relatório" }, 500);
   }
 });
 

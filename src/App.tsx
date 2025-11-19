@@ -16,6 +16,7 @@ import { ConfirmEmailScreen } from './components/ConfirmEmailScreen';
 import { Button } from './components/ui/button';
 import { apiService } from './services/apiService';
 import { DocumentacaoUsuariosApp } from './documentacao/usuarios';
+import { ReportsView } from './components/ReportsView';
 
 // Componente interno que usa o AuthContext
 function AppContent() {
@@ -152,6 +153,8 @@ function AppContent() {
         return <CidadesView />;
       case 'configuracoes':
         return <ConfiguracoesView />;
+      case 'relatorios':
+        return <ReportsView />;
       default:
         return <Dashboard onNavigateToPedidos={navigateToPedidosWithFilter} />;
     }
