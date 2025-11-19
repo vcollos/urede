@@ -50,6 +50,10 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     whatsapp: '',
     ativo: true,
     papel: 'operador' as 'operador' | 'admin',
+    definir_senha: false,
+    senha_provisoria: '',
+    confirmar_senha: '',
+    forcar_troca_senha: true,
   });
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -61,6 +65,9 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     telefone: '',
     whatsapp: '',
     id_singular: '',
+    senha_provisoria: '',
+    confirmar_senha: '',
+    forcar_troca_senha: true,
   });
   const fetchPendingApprovals = useCallback(async () => {
     if (!user || user.papel !== 'admin' || user.approval_status !== 'approved') {
@@ -231,6 +238,10 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
       whatsapp: operador.whatsapp || '',
       ativo: operador.ativo,
       papel: toBaseRole(operador.papel),
+      definir_senha: false,
+      senha_provisoria: '',
+      confirmar_senha: '',
+      forcar_troca_senha: true,
     });
     setSaveError('');
     setIsEditOpen(true);
@@ -248,6 +259,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     if (!editingOperador) return;
     setIsSaving(true);
     setSaveError('');
+    const canResetPassword = canCreate && editingOperador.email !== user?.email;
 
     try {
       const payload: any = {
@@ -261,6 +273,23 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
       if (canManageRoles) {
         const coop = cooperativas.find((c) => c.id_singular === editingOperador.id_singular);
         payload.papel = deriveRole(editForm.papel, coop);
+      }
+
+      if (canResetPassword && editForm.definir_senha) {
+        const novaSenha = editForm.senha_provisoria.trim();
+        const confirmacao = editForm.confirmar_senha.trim();
+        if (!novaSenha || novaSenha.length < 8) {
+          setSaveError('Defina uma senha provisória com pelo menos 8 caracteres.');
+          setIsSaving(false);
+          return;
+        }
+        if (novaSenha !== confirmacao) {
+          setSaveError('A confirmação da senha provisória não confere.');
+          setIsSaving(false);
+          return;
+        }
+        payload.senha_temporaria = novaSenha;
+        payload.forcar_troca_senha = editForm.forcar_troca_senha;
       }
 
       const updated = await apiService.updateOperador(editingOperador.id, payload);
@@ -283,6 +312,9 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
       telefone: '',
       whatsapp: '',
       id_singular: defaultSingular,
+      senha_provisoria: '',
+      confirmar_senha: '',
+      forcar_troca_senha: true,
     });
     setCreateError('');
     setIsCreateOpen(true);
@@ -292,7 +324,17 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     if (isCreating) return;
     setIsCreateOpen(false);
     setCreateError('');
-    setCreateForm((prev) => ({ ...prev, nome: '', email: '', cargo: '', telefone: '', whatsapp: '' }));
+    setCreateForm((prev) => ({
+      ...prev,
+      nome: '',
+      email: '',
+      cargo: '',
+      telefone: '',
+      whatsapp: '',
+      senha_provisoria: '',
+      confirmar_senha: '',
+      forcar_troca_senha: true,
+    }));
   };
 
   const handleCreateSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -301,6 +343,21 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     setCreateError('');
 
     try {
+      const senhaTemporaria = createForm.senha_provisoria.trim();
+      const confirmacao = createForm.confirmar_senha.trim();
+
+      if (!senhaTemporaria || senhaTemporaria.length < 8) {
+        setCreateError('Defina uma senha provisória com pelo menos 8 caracteres.');
+        setIsCreating(false);
+        return;
+      }
+
+      if (senhaTemporaria !== confirmacao) {
+        setCreateError('A confirmação da senha provisória não confere.');
+        setIsCreating(false);
+        return;
+      }
+
       const payload = {
         nome: createForm.nome.trim(),
         email: createForm.email.trim().toLowerCase(),
@@ -308,6 +365,8 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
         telefone: createForm.telefone.trim(),
         whatsapp: createForm.whatsapp.trim(),
         id_singular: createForm.id_singular,
+        senha_temporaria: senhaTemporaria,
+        forcar_troca_senha: createForm.forcar_troca_senha,
       };
 
       if (!payload.id_singular) {
@@ -326,6 +385,9 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
         telefone: '',
         whatsapp: '',
         id_singular: payload.id_singular,
+        senha_provisoria: '',
+        confirmar_senha: '',
+        forcar_troca_senha: true,
       });
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Erro ao criar operador');
@@ -705,6 +767,74 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
                   onCheckedChange={(value) => setEditForm((prev) => ({ ...prev, ativo: value }))}
                 />
               </div>
+
+              {editingOperador && canCreate && editingOperador.email !== user?.email && (
+                <div className="rounded-lg border border-gray-200 p-3 space-y-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-700">Definir nova senha provisória</p>
+                      <p className="text-xs text-gray-500">
+                        Use quando o operador ainda não possui acesso ou perdeu a senha. Compartilhe manualmente.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={editForm.definir_senha}
+                      onCheckedChange={(checked) =>
+                        setEditForm((prev) => ({
+                          ...prev,
+                          definir_senha: checked,
+                          senha_provisoria: checked ? prev.senha_provisoria : '',
+                          confirmar_senha: checked ? prev.confirmar_senha : '',
+                        }))
+                      }
+                    />
+                  </div>
+
+                  {editForm.definir_senha && (
+                    <div className="space-y-3">
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="operador-senha-prov">Senha provisória *</Label>
+                          <Input
+                            id="operador-senha-prov"
+                            type="password"
+                            minLength={8}
+                            value={editForm.senha_provisoria}
+                            onChange={(e) => setEditForm((prev) => ({ ...prev, senha_provisoria: e.target.value }))}
+                            required={editForm.definir_senha}
+                          />
+                          <p className="text-xs text-gray-500">Mínimo de 8 caracteres.</p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="operador-senha-confirma">Confirmar senha *</Label>
+                          <Input
+                            id="operador-senha-confirma"
+                            type="password"
+                            minLength={8}
+                            value={editForm.confirmar_senha}
+                            onChange={(e) => setEditForm((prev) => ({ ...prev, confirmar_senha: e.target.value }))}
+                            required={editForm.definir_senha}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-lg border border-gray-100 bg-gray-50 p-3">
+                        <div>
+                          <p className="text-sm font-medium text-gray-700">Exigir troca no primeiro acesso</p>
+                          <p className="text-xs text-gray-500">
+                            Obriga o operador a escolher uma nova senha após usar a provisória.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={editForm.forcar_troca_senha}
+                          onCheckedChange={(checked) =>
+                            setEditForm((prev) => ({ ...prev, forcar_troca_senha: checked }))
+                          }
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {saveError && (
@@ -807,6 +937,50 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
                 <p className="text-xs text-gray-500">
                   O operador inicia com acesso padrão. Administradores podem ampliar o nível posteriormente.
                 </p>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="novo-senha-prov">Senha provisória *</Label>
+                  <Input
+                    id="novo-senha-prov"
+                    type="password"
+                    minLength={8}
+                    value={createForm.senha_provisoria}
+                    onChange={(e) => setCreateForm((prev) => ({ ...prev, senha_provisoria: e.target.value }))}
+                    placeholder="Mínimo de 8 caracteres"
+                    required
+                  />
+                  <p className="text-xs text-gray-500">
+                    Compartilhe essa senha com o operador para o primeiro acesso.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="novo-senha-confirmacao">Confirmar senha *</Label>
+                  <Input
+                    id="novo-senha-confirmacao"
+                    type="password"
+                    minLength={8}
+                    value={createForm.confirmar_senha}
+                    onChange={(e) => setCreateForm((prev) => ({ ...prev, confirmar_senha: e.target.value }))}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-start justify-between rounded-lg border border-gray-200 p-3 gap-4 flex-col sm:flex-row sm:items-center">
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Exigir troca de senha no primeiro acesso</p>
+                  <p className="text-xs text-gray-500">
+                    Ative para forçar o operador a definir uma nova senha após entrar com a provisória.
+                  </p>
+                </div>
+                <Switch
+                  checked={createForm.forcar_troca_senha}
+                  onCheckedChange={(checked) =>
+                    setCreateForm((prev) => ({ ...prev, forcar_troca_senha: checked }))
+                  }
+                />
               </div>
             </div>
 

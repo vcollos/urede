@@ -12,14 +12,15 @@ import {
 } from "./lib/postgres.ts";
 import { sendBrevoTransactionalEmail } from "./lib/brevo.ts";
 
-const app = new Hono();
-
 // Configurar CORS controlado por ambiente
 // ALLOWED_ORIGINS pode ser uma lista separada por vírgula (ex.: "https://app.vercel.app,https://admin.vercel.app")
 const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") || "*")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
+
+const app = new Hono();
+console.log("[cors] allowed origins", ALLOWED_ORIGINS);
 
 const isOriginAllowed = (origin?: string | null): boolean => {
   if (!origin) return true; // permitir chamadas server-to-server e curl
@@ -324,7 +325,8 @@ const ensureAuthUsersSchema = () => {
       approval_requested_at TEXT,
       approved_by TEXT,
       approved_at TEXT,
-      auto_approve INTEGER DEFAULT 0
+      auto_approve INTEGER DEFAULT 0,
+      must_change_password INTEGER DEFAULT 0
     )`);
   } catch (error) {
     console.warn("[auth_users] falha ao garantir tabela:", error);
@@ -341,6 +343,7 @@ const ensureAuthUsersSchema = () => {
       "ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS approved_at TEXT",
       "ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS requested_papel TEXT",
       "ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS auto_approve INTEGER DEFAULT 0",
+      "ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS must_change_password INTEGER DEFAULT 0",
     ]
     : [
       "ALTER TABLE auth_users ADD COLUMN confirmation_token TEXT",
@@ -352,6 +355,7 @@ const ensureAuthUsersSchema = () => {
       "ALTER TABLE auth_users ADD COLUMN approved_at TEXT",
       "ALTER TABLE auth_users ADD COLUMN requested_papel TEXT",
       "ALTER TABLE auth_users ADD COLUMN auto_approve INTEGER DEFAULT 0",
+      "ALTER TABLE auth_users ADD COLUMN must_change_password INTEGER DEFAULT 0",
     ];
   for (const stmt of statements) {
     try {
@@ -2165,7 +2169,8 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
                     email_confirmed_at,
                     approval_requested_at,
                     approved_by,
-                    approved_at
+                    approved_at,
+                    must_change_password
              FROM auth_users WHERE email = ?`,
             [userEmail],
           )[0];
@@ -2183,12 +2188,13 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
               papel: (row.papel as any) || "operador",
               ativo: !!row.ativo,
               data_cadastro: row.data_cadastro,
-               approval_status: approvalStatus,
-               email_confirmed_at: row.email_confirmed_at || null,
-               approval_requested_at: row.approval_requested_at || null,
-               approved_by: row.approved_by || null,
-               approved_at: row.approved_at || null,
-               requested_papel: row.requested_papel || null,
+              approval_status: approvalStatus,
+              email_confirmed_at: row.email_confirmed_at || null,
+              approval_requested_at: row.approval_requested_at || null,
+              approved_by: row.approved_by || null,
+              approved_at: row.approved_at || null,
+              requested_papel: row.requested_papel || null,
+              must_change_password: !!row.must_change_password,
             } as any;
             if (approvalStatus === "approved") {
               ensureOperatorRecord(user);
@@ -2478,8 +2484,9 @@ app.post("/auth/register", async (c) => {
         approval_requested_at,
         approved_by,
         approved_at,
-        auto_approve
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        auto_approve,
+        must_change_password
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         emailRaw,
         hash,
@@ -2501,6 +2508,7 @@ app.post("/auth/register", async (c) => {
         null,
         null,
         autoApprove ? 1 : 0,
+        0,
       ],
     );
 
@@ -3152,10 +3160,10 @@ app.post("/auth/change-password", requireAuth, async (c) => {
     }
 
     const newHash = await bcrypt.hash(newPassword);
-    db.query("UPDATE auth_users SET password_hash = ? WHERE email = ?", [
-      newHash,
-      userEmail,
-    ]);
+    db.query(
+      "UPDATE auth_users SET password_hash = ?, must_change_password = 0 WHERE email = ?",
+      [newHash, userEmail],
+    );
 
     return c.json({ message: "Senha atualizada com sucesso" });
   } catch (error) {
@@ -3671,6 +3679,10 @@ app.post("/operadores", requireAuth, async (c) => {
     let idSingular =
       (body.id_singular || body.cooperativa_id || userData.cooperativa_id || "")
         .trim();
+    const senhaTemporaria = typeof body.senha_temporaria === "string"
+      ? body.senha_temporaria.trim()
+      : "";
+    const forcarTrocaSenha = body.forcar_troca_senha === false ? false : true;
 
     if (!nome || !email) {
       return c.json({ error: "Nome e email são obrigatórios" }, 400);
@@ -3696,6 +3708,12 @@ app.post("/operadores", requireAuth, async (c) => {
     }
 
     const now = new Date().toISOString();
+    if (senhaTemporaria && senhaTemporaria.length < 8) {
+      return c.json(
+        { error: "A senha provisória deve ter pelo menos 8 caracteres" },
+        400,
+      );
+    }
     try {
       db.query(
         `INSERT INTO ${
@@ -3709,14 +3727,89 @@ app.post("/operadores", requireAuth, async (c) => {
       return c.json({ error: "Erro ao criar operador" }, 500);
     }
 
-    try {
-      const derivedRole = deriveRoleForCooperativa("operador", idSingular);
-      db.query(
-        `UPDATE auth_users SET cooperativa_id = COALESCE(?, cooperativa_id), papel = COALESCE(papel, ?) WHERE email = ?`,
-        [idSingular, derivedRole, email],
-      );
-    } catch (e) {
-      console.warn("[operadores] sincronização com auth_users falhou:", e);
+    const derivedRole = deriveRoleForCooperativa("operador", idSingular);
+    if (senhaTemporaria) {
+      try {
+        const passwordHash = await bcrypt.hash(senhaTemporaria);
+        const mustChange = forcarTrocaSenha ? 1 : 0;
+        const existingAuth = getAuthUser(email);
+        if (existingAuth) {
+          db.query(
+            `UPDATE auth_users SET
+              password_hash = ?,
+              cooperativa_id = ?,
+              papel = COALESCE(papel, ?),
+              requested_papel = COALESCE(requested_papel, ?),
+              approval_status = 'approved',
+              email_confirmed_at = COALESCE(email_confirmed_at, ?),
+              approved_at = COALESCE(approved_at, ?),
+              must_change_password = ?,
+              ativo = 1
+             WHERE email = ?`,
+            [
+              passwordHash,
+              idSingular,
+              derivedRole,
+              derivedRole,
+              now,
+              now,
+              mustChange,
+              email,
+            ],
+          );
+        } else {
+          db.query(
+            `INSERT INTO auth_users (
+              email,
+              password_hash,
+              nome,
+              display_name,
+              telefone,
+              whatsapp,
+              cargo,
+              cooperativa_id,
+              papel,
+              requested_papel,
+              ativo,
+              data_cadastro,
+              email_confirmed_at,
+              approval_status,
+              must_change_password
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            [
+              email,
+              passwordHash,
+              nome,
+              nome || email,
+              telefone,
+              whatsapp,
+              cargo,
+              idSingular,
+              derivedRole,
+              derivedRole,
+              1,
+              now,
+              now,
+              "approved",
+              mustChange,
+            ],
+          );
+        }
+      } catch (error) {
+        console.warn(
+          "[operadores] não foi possível registrar credenciais provisórias:",
+          error,
+        );
+      }
+    } else {
+      try {
+        db.query(
+          `UPDATE auth_users SET cooperativa_id = COALESCE(?, cooperativa_id), papel = COALESCE(papel, ?) WHERE email = ?`,
+          [idSingular, derivedRole, email],
+        );
+      } catch (e) {
+        console.warn("[operadores] sincronização com auth_users falhou:", e);
+      }
     }
 
     const inserted = db.queryEntries<any>(
@@ -3798,11 +3891,35 @@ app.put("/operadores/:id", requireAuth, async (c) => {
     }
 
     const body = await c.req.json();
+    const senhaTemporaria = typeof body.senha_temporaria === "string"
+      ? body.senha_temporaria.trim()
+      : "";
+    const forcarTrocaSenha = body.forcar_troca_senha === false ? false : true;
     const allowed: Record<string, any> = {};
     const whitelist = ["nome", "telefone", "whatsapp", "cargo", "ativo"];
     const canEditRole = isConfAdmin || userData.papel === "admin";
     if (canEditRole) {
       whitelist.push("papel");
+    }
+
+    const canManageCredentials = !isSelf &&
+      (isConfAdmin ||
+        (isFederacaoAdmin && visible) ||
+        (isSingularAdmin && operador.id_singular === userData.cooperativa_id));
+
+    if (senhaTemporaria) {
+      if (!canManageCredentials) {
+        return c.json(
+          { error: "Acesso negado para definir senha para este operador" },
+          403,
+        );
+      }
+      if (senhaTemporaria.length < 8) {
+        return c.json(
+          { error: "A senha provisória deve ter pelo menos 8 caracteres" },
+          400,
+        );
+      }
     }
 
     for (const key of whitelist) {
@@ -3872,6 +3989,98 @@ app.put("/operadores/:id", requireAuth, async (c) => {
         console.warn(
           "[operadores] não foi possível atualizar papel em auth_users:",
           e,
+        );
+      }
+    }
+
+    if (senhaTemporaria && canManageCredentials) {
+      try {
+        const now = new Date().toISOString();
+        const mustChange = forcarTrocaSenha ? 1 : 0;
+        const passwordHash = await bcrypt.hash(senhaTemporaria);
+        const authUser = getAuthUser(operador.email);
+        const resolvedRole = allowed.papel ||
+          authUser?.papel ||
+          deriveRoleForCooperativa("operador", operador.id_singular);
+        const resolvedNome = "nome" in allowed
+          ? allowed.nome
+          : operador.nome;
+        const resolvedTelefone = "telefone" in allowed
+          ? allowed.telefone
+          : operador.telefone;
+        const resolvedWhatsapp = "whatsapp" in allowed
+          ? allowed.whatsapp
+          : operador.whatsapp;
+        const resolvedCargo = "cargo" in allowed
+          ? allowed.cargo
+          : operador.cargo;
+
+        if (authUser) {
+          db.query(
+            `UPDATE auth_users SET
+              password_hash = ?,
+              must_change_password = ?,
+              cooperativa_id = COALESCE(?, cooperativa_id),
+              papel = COALESCE(?, papel),
+              requested_papel = COALESCE(requested_papel, ?),
+              approval_status = 'approved',
+              ativo = 1,
+              email_confirmed_at = COALESCE(email_confirmed_at, ?),
+              approved_at = COALESCE(approved_at, ?)
+             WHERE email = ?`,
+            [
+              passwordHash,
+              mustChange,
+              operador.id_singular,
+              resolvedRole,
+              resolvedRole,
+              now,
+              now,
+              operador.email,
+            ],
+          );
+        } else {
+          db.query(
+            `INSERT INTO auth_users (
+              email,
+              password_hash,
+              nome,
+              display_name,
+              telefone,
+              whatsapp,
+              cargo,
+              cooperativa_id,
+              papel,
+              requested_papel,
+              ativo,
+              data_cadastro,
+              email_confirmed_at,
+              approval_status,
+              must_change_password
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            [
+              operador.email,
+              passwordHash,
+              resolvedNome,
+              resolvedNome || operador.email,
+              resolvedTelefone || "",
+              resolvedWhatsapp || "",
+              resolvedCargo || "",
+              operador.id_singular,
+              resolvedRole,
+              resolvedRole,
+              1,
+              now,
+              now,
+              "approved",
+              mustChange,
+            ],
+          );
+        }
+      } catch (error) {
+        console.warn(
+          "[operadores] não foi possível definir senha provisória:",
+          error,
         );
       }
     }

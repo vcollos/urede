@@ -94,7 +94,8 @@ CREATE TABLE IF NOT EXISTS auth_users (
   cooperativa_id TEXT,
   papel TEXT DEFAULT 'operador',
   ativo INTEGER DEFAULT 1,
-  data_cadastro TEXT DEFAULT (CURRENT_TIMESTAMP)
+  data_cadastro TEXT DEFAULT (CURRENT_TIMESTAMP),
+  must_change_password INTEGER DEFAULT 0
 );
 
 -- Logs de cobertura de cidades por cooperativa

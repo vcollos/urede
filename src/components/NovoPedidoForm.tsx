@@ -6,7 +6,7 @@ import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
-import { Plus, X } from 'lucide-react';
+import { Check, ChevronsUpDown, Plus, X } from 'lucide-react';
 import { apiService } from '../services/apiService';
 import { Cidade, Pedido, SystemSettings } from '../types';
 import {
@@ -17,6 +17,8 @@ import {
   DialogDescription,
   DialogClose,
 } from './ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from './ui/command';
 
 interface NovoPedidoFormProps {
   onClose: () => void;
@@ -45,6 +47,7 @@ export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
   const [pedidoMotivos, setPedidoMotivos] = useState<string[]>([]);
   const [deadlines, setDeadlines] = useState<SystemSettings['deadlines'] | null>(null);
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
+  const [isCidadeSelectOpen, setIsCidadeSelectOpen] = useState(false);
   
   const [formData, setFormData] = useState({
     titulo: '',
@@ -98,14 +101,12 @@ export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
     loadCategorias();
   }, []);
 
-  const cidadeOptions = useMemo(() => {
-    if (!cidades.length) return [] as JSX.Element[];
-    return cidades.map((cidade) => (
-      <SelectItem key={cidade.cd_municipio_7} value={cidade.cd_municipio_7}>
-        {cidade.nm_cidade}, {cidade.uf_municipio} ({cidade.nm_regiao})
-      </SelectItem>
-    ));
-  }, [cidades]);
+  const cidadeSelecionada = useMemo(() => {
+    if (!formData.cidade_id) return null;
+    return cidades.find((cidade) => cidade.cd_municipio_7 === formData.cidade_id) ?? null;
+  }, [formData.cidade_id, cidades]);
+
+  const cidadePlaceholder = isLoading ? 'Carregando cidades...' : 'Selecione a cidade';
 
   const especialidadeOptions = useMemo(() => (
     especialidades
@@ -238,18 +239,69 @@ export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
               {/* Cidade */}
               <div className="space-y-2">
                 <Label htmlFor="cidade">Cidade de Atendimento *</Label>
-                <Select 
-                  value={formData.cidade_id} 
-                  onValueChange={(value) => setFormData({ ...formData, cidade_id: value })}
-                  disabled={isSubmitting || isLoading}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={isLoading ? "Carregando cidades..." : "Selecione a cidade"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {cidadeOptions}
-                  </SelectContent>
-                </Select>
+                <Popover open={isCidadeSelectOpen} onOpenChange={setIsCidadeSelectOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      id="cidade"
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={isCidadeSelectOpen}
+                      className="w-full justify-between text-left font-normal"
+                      disabled={isSubmitting || isLoading}
+                    >
+                      <span className="line-clamp-1">
+                        {cidadeSelecionada
+                          ? `${cidadeSelecionada.nm_cidade}, ${cidadeSelecionada.uf_municipio} (${cidadeSelecionada.nm_regiao})`
+                          : cidadePlaceholder}
+                      </span>
+                      <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="start"
+                    className="w-[min(560px,calc(100vw-2rem))] p-0"
+                  >
+                    <Command className="[&_[cmdk-input-wrapper]]:px-4 [&_[cmdk-input]]:h-11">
+                      <CommandInput
+                        placeholder="Busque pelo nome da cidade..."
+                        disabled={isLoading}
+                      />
+                      <CommandList className="max-h-80 overflow-y-auto">
+                        <CommandEmpty>
+                          {isLoading ? 'Carregando cidades...' : 'Nenhuma cidade encontrada.'}
+                        </CommandEmpty>
+                        <CommandGroup>
+                          {cidades.map((cidade) => (
+                            <CommandItem
+                              key={cidade.cd_municipio_7}
+                              value={`${cidade.nm_cidade} ${cidade.uf_municipio} ${cidade.nm_regiao}`}
+                              onSelect={() => {
+                                setFormData({ ...formData, cidade_id: cidade.cd_municipio_7 });
+                                setIsCidadeSelectOpen(false);
+                              }}
+                              className="items-start gap-3 px-3 py-2"
+                            >
+                              <div className="flex flex-col text-left leading-tight">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium text-sm">{cidade.nm_cidade}</span>
+                                  <Badge variant="secondary" className="text-[11px]">
+                                    {cidade.uf_municipio}
+                                  </Badge>
+                                </div>
+                                <span className="text-xs text-muted-foreground">
+                                  {cidade.nm_regiao}
+                                </span>
+                              </div>
+                              {cidadeSelecionada?.cd_municipio_7 === cidade.cd_municipio_7 && (
+                                <Check className="ml-auto mt-1 size-4 text-primary" />
+                              )}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
 
               {/* Especialidades */}
@@ -386,14 +438,14 @@ export function NovoPedidoForm({ onClose, onSubmit }: NovoPedidoFormProps) {
                 </Select>
               </div>
 
-              {/* Observações */}
+              {/* Justificativa */}
               <div className="space-y-2">
-                <Label htmlFor="observacoes">Observações</Label>
+                <Label htmlFor="observacoes">Justificativa</Label>
                 <Textarea
                   id="observacoes"
                   value={formData.observacoes}
                   onChange={(e) => setFormData({ ...formData, observacoes: e.target.value })}
-                  placeholder="Detalhes adicionais sobre a necessidade do credenciamento..."
+                  placeholder="Detalhe a justificativa e informações adicionais sobre a necessidade do credenciamento..."
                   rows={4}
                   className="resize-none"
                   disabled={isSubmitting}

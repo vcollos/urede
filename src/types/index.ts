@@ -18,6 +18,7 @@ export interface User {
   approved_by?: string | null;
   approved_at?: string | null;
   requested_papel?: 'admin' | 'operador' | 'federacao' | 'confederacao' | null;
+  must_change_password?: boolean;
 }
 
 export interface Cooperativa {

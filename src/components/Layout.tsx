@@ -22,6 +22,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent } from './ui/dro
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { UserProfileDialog } from './UserProfileDialog';
 import { cn } from './ui/utils';
+import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import brandWordmark from '../logo/urede_positivo.svg';
 import brandSymbol from '../logo/simbolo_uniodonto.svg';
 import { apiService } from '../services/apiService';
@@ -578,6 +579,25 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
         </header>
 
         <main className="flex-1 overflow-y-auto px-4 sm:px-6 pb-10">
+          {user?.must_change_password && (
+            <Alert className="mb-6 border-amber-200 bg-amber-50/80">
+              <AlertTitle>Altere sua senha provisória</AlertTitle>
+              <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm">
+                <span>
+                  Você entrou com uma senha temporária. Atualize-a para continuar usando o portal com segurança.
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0"
+                  onClick={() => setProfileDialogOpen(true)}
+                >
+                  Atualizar senha
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
           {children}
         </main>
         <footer className="px-4 sm:px-6 pb-8 text-sm text-gray-500">

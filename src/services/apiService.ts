@@ -63,6 +63,8 @@ class ApiService {
     telefone?: string;
     whatsapp?: string;
     id_singular: string;
+    senha_temporaria?: string;
+    forcar_troca_senha?: boolean;
   }): Promise<Operador> {
     try {
       return await apiRequest('/operadores', {
@@ -75,7 +77,13 @@ class ApiService {
     }
   }
 
-  async updateOperador(operadorId: string, updateData: Partial<Operador>): Promise<Operador> {
+  async updateOperador(
+    operadorId: string,
+    updateData: Partial<Operador> & {
+      senha_temporaria?: string;
+      forcar_troca_senha?: boolean;
+    }
+  ): Promise<Operador> {
     try {
       return await apiRequest(`/operadores/${operadorId}`, {
         method: 'PUT',
