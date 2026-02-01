@@ -2,7 +2,6 @@ import { Hono } from "https://deno.land/x/hono@v4.3.11/mod.ts";
 import { cors, logger } from "https://deno.land/x/hono@v4.3.11/middleware.ts";
 import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 import { signJwt, verifyJwt } from "./lib/jwt.ts";
-import { getDb as getSqliteDb } from "./lib/sqlite.ts";
 import {
   queryEntries as pgQueryEntries,
   queryArray as pgQueryArray,
@@ -91,8 +90,19 @@ const pgDb: TransactionalDbAdapter = {
 };
 
 pgDb.transaction = <T>(fn: (tx: DbAdapter) => T) => pgTransaction(fn);
-const getDb = (path: string = SQLITE_PATH) =>
-  IS_POSTGRES ? pgDb : getSqliteDb(path);
+let sqliteGetDb: ((path: string) => DbAdapter) | null = null;
+if (!IS_POSTGRES) {
+  const sqliteModule = await import("./lib/sqlite.ts");
+  sqliteGetDb = sqliteModule.getDb;
+}
+
+const getDb = (path: string = SQLITE_PATH) => {
+  if (IS_POSTGRES) return pgDb;
+  if (!sqliteGetDb) {
+    throw new Error("[db] driver sqlite não carregado");
+  }
+  return sqliteGetDb(path);
+};
 
 if (IS_POSTGRES) {
   console.log("[db] usando driver postgres");
@@ -765,6 +775,7 @@ const ensurePedidoSchema = () => {
     `ALTER TABLE ${TBL("pedidos")} ADD COLUMN data_conclusao TEXT`,
     `ALTER TABLE ${TBL("pedidos")} ADD COLUMN motivo_categoria TEXT`,
     `ALTER TABLE ${TBL("pedidos")} ADD COLUMN beneficiarios_quantidade INTEGER`,
+    `ALTER TABLE ${TBL("pedidos")} ADD COLUMN excluido BOOLEAN`,
   ];
   for (const stmt of alters) {
     try {
@@ -4940,6 +4951,7 @@ app.put("/pedidos/:id", requireAuth, async (c) => {
       "beneficiarios_quantidade",
       "responsavel_atual_id",
       "responsavel_atual_nome",
+      "excluido",
     ];
     const whitelistResponsavel = [
       "status",
@@ -5753,12 +5765,14 @@ app.get("/reports/overview", requireAuth, async (c) => {
     const whereClause = `data_criacao BETWEEN ? AND ? ${scope.clause ? `AND ${scope.clause}` : ""}`;
     const baseSelect = `SELECT id, data_criacao, data_ultima_alteracao, status, nivel_atual,
               cooperativa_solicitante_id, cooperativa_responsavel_id`;
+    const excluidoFilter =
+      "COALESCE(CAST(excluido AS TEXT), '0') NOT IN ('1','true','t','yes')";
     try {
       rawRows = db.queryEntries<any>(
         `${baseSelect}, excluido
            FROM ${TBL("pedidos")}
           WHERE ${whereClause}
-            AND (excluido IS NULL OR excluido = 0 OR excluido = '0' OR excluido = 'false')`,
+            AND ${excluidoFilter}`,
         baseParams,
       ) || [];
       rowsIncludeExcluido = true;

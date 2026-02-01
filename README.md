@@ -30,6 +30,31 @@ Notas:
 - Rotas protegidas usam JWT local (gerado pelo próprio backend em `/auth/register` e `/auth/login`).
 - Tabelas do SQLite usam prefixo `urede_`. Os CSVs em `bases_csv/` alimentam `urede_cooperativas`, `urede_cidades` e `urede_operadores`.
 
+## Deploy (Supabase + Vercel)
+
+1) **Supabase (Postgres)**
+- Crie um projeto dedicado e execute `db/postgres_schema.sql` no SQL Editor.
+- Importe `bases_csv/*.csv` para `urede_cooperativas`, `urede_cidades`, `urede_operadores` (via `COPY` ou UI).
+
+2) **Supabase Edge Function (API)**
+- Use `supabase/functions/api/index.ts` como entrypoint.
+- Variaveis recomendadas:
+  - `DB_DRIVER=postgres`
+  - `DATABASE_DB_URL=postgresql://...` (use string com `sslmode=require`)
+  - `DB_SCHEMA=public`
+  - `TABLE_PREFIX=urede_`
+  - `JWT_SECRET=...`
+  - `APP_URL=https://<seu-app>.vercel.app`
+  - `ALLOWED_ORIGINS=https://<seu-app>.vercel.app,https://<preview>.vercel.app`
+  - `BREVO_*` (opcional, para e-mails transacionais)
+
+3) **Vercel (Frontend)**
+- Configure `VITE_API_BASE_URL=https://<projeto>.supabase.co/functions/v1/api`.
+- Deploy normalmente (`npm run build`).
+
+4) **Escalonamento (cron)**
+- Agende POST `/` com header `x-cron: true` e body `{ "task": "escalar" }`.
+
 ## Estrutura relevante
 
 - `scripts/create-sqlite-db.sh`: cria o banco local lendo `db/sqlite_schema.sql`.
