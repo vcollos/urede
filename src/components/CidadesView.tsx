@@ -49,6 +49,7 @@ export function CidadesView() {
         cidade.regional_saude,
         cidade.id_singular,
         cidade.nm_singular,
+        cidade.reg_ans,
       ]
         .filter(Boolean)
         .map((value) => normalize(String(value)));
@@ -103,12 +104,13 @@ export function CidadesView() {
                       <TableHead>Habitantes</TableHead>
                       <TableHead>Singular</TableHead>
                       <TableHead>Cooperativa (ID)</TableHead>
+                      <TableHead>Reg. ANS</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filtered.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={8} className="py-6 text-center text-gray-500 dark:text-slate-400">
+                        <TableCell colSpan={10} className="py-6 text-center text-gray-500 dark:text-slate-400">
                           Nenhuma cidade encontrada.
                         </TableCell>
                       </TableRow>
@@ -126,6 +128,7 @@ export function CidadesView() {
                           <TableCell>{cidade.cidades_habitantes?.toLocaleString('pt-BR') ?? '—'}</TableCell>
                           <TableCell>{cidade.nm_singular || '—'}</TableCell>
                           <TableCell>{cidade.id_singular || '—'}</TableCell>
+                          <TableCell>{cidade.reg_ans || '—'}</TableCell>
                         </TableRow>
                       ))
                     )}

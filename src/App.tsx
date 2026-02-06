@@ -17,6 +17,7 @@ import { Button } from './components/ui/button';
 import { apiService } from './services/apiService';
 import { DocumentacaoUsuariosApp } from './documentacao/usuarios';
 import { ReportsView } from './components/ReportsView';
+import { PrestadoresView } from './components/PrestadoresView';
 
 // Componente interno que usa o AuthContext
 function AppContent() {
@@ -151,6 +152,8 @@ function AppContent() {
         return <OperadoresLista />;
       case 'cidades':
         return <CidadesView />;
+      case 'prestadores':
+        return <PrestadoresView />;
       case 'configuracoes':
         return <ConfiguracoesView />;
       case 'relatorios':

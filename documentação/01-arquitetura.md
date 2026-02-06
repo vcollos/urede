@@ -39,9 +39,11 @@ graph LR
 
 - **Frontend (React 18 + Vite 6):** SPA que controla autenticação, dashboards, lista de pedidos, formulários, importação em lote e páginas de documentação para usuários.
 - **API (Deno 1.41 + Hono 4):** única aplicação `database/functions/server/index.tsx` que expõe endpoints REST com autenticação JWT local, RBAC e integrações externas (Brevo, scheduler).
-- **Banco:** ambiente padrão roda em Postgres gerenciado (`DB_DRIVER=postgres` + `DATABASE_DB_URL`). SQLite (`data/urede.db`) permanece como opção apenas para desenvolvimento isolado.
+- **Banco:** ambiente padrão roda em Postgres gerenciado (`DB_DRIVER=postgres` + `DATABASE_DB_URL`) no schema `urede`. SQLite (`data/urede.db`) permanece como opção apenas para desenvolvimento isolado.
 - **Alertas e e-mail:** eventos de pedido geram registros em `urede_alertas` e notificações via Brevo (configurável por variáveis de ambiente).
 - **Escalonamento:** executado automaticamente a cada hora (timer local) ou via POST `/` com header `x-cron: true`, roteando pedidos entre Singular → Federação → Confederação com base em SLAs configuráveis.
+- **Dados institucionais e prestadores:** tabelas `cooperativa_*`, `plantao_*`, `prestadores*` são tratadas como informativas; leitura e ampla, escrita depende de hierarquia e RLS.
+- **Identificadores canonicos:** `reg_ans` e o identificador oficial de operadora; niveis institucionais derivam de `papel_rede`.
 
 ## 1.3 Tecnologias principais
 
@@ -49,7 +51,7 @@ graph LR
 | --- | --- | --- |
 | UI | React 18.3, Vite, TypeScript, Tailwind 3.4, shadcn/ui, Radix UI, lucide-react | Notificações nativas do navegador, suporte a markdown (DOMPurify + marked) e importação XLSX. |
 | API | Deno, Hono, bcrypt, djwt, drivers Postgres/SQLite, Brevo SDK | Arquivo monolítico com helpers internos (RBAC, auditoria, escalonamento). |
-| Dados | Postgres (produção) / SQLite opcional (dev) | Schema definido em `db/sqlite_schema.sql` e migrado para Postgres. Prefixo de tabelas configurável (`TABLE_PREFIX`). |
+| Dados | Postgres (produção) / SQLite opcional (dev) | Schema `urede` no Postgres (tabelas `urede_*` + institucionais/prestadores). Prefixo configurável (`TABLE_PREFIX`). |
 | Scripts | bash, Node.js | `scripts/create-sqlite-db.sh`, `scripts/import-csv-sqlite.sh`, `scripts/write-health.mjs`. |
 
 ## 1.4 Estrutura do repositório
@@ -73,7 +75,7 @@ graph LR
 ## 1.5 Fluxo de execução
 1. O usuário acessa `App.tsx`, que consulta `AuthContext` para recuperar sessão (`auth_token` em `localStorage`).
 2. Requisições utilizam `src/utils/api/client.ts`, que deriva `VITE_API_BASE_URL` automaticamente (localhost, domínio Collos ou variável explícita) e injeta `Authorization: Bearer <token>`.
-3. A API valida o token (djwt + `JWT_SECRET`), carrega os dados do usuário diretamente das tabelas `auth_users`/`operadores` e aplica RBAC (`requireAuth` + `requireRole`).
+3. A API valida o token (djwt + `JWT_SECRET`), carrega os dados do usuário diretamente das tabelas `auth_users`/`operadores` e aplica RBAC (`requireAuth` + `requireRole`). O JWT inclui `cooperativa_id` e `papel_usuario` (admin/operador); o nivel institucional e derivado de `cooperativas.papel_rede`.
 4. Os módulos temáticos (auth, cooperativas, pedidos, alertas, dashboard) executam queries síncronas contra Postgres (ou SQLite em modo local) usando os adaptadores `lib/postgres.ts` / `lib/sqlite.ts`.
 5. Operações relevantes disparam `dispatchPedidoAlert`, registram auditoria (`urede_auditoria_logs`) e enviam e-mails transacionais Brevo, garantindo rastreabilidade.
 6. O escalonador (timer local ou endpoint cron) executa `escalarPedidos` e `autoEscalateIfNeeded`, atualizando prazos e responsáveis conforme regras configuradas em `urede_settings` e `cooperativa_settings`.
@@ -100,7 +102,7 @@ sequenceDiagram
 ## 1.6 Considerações de deployment
 - **Frontend:** `npm run build` gera artefatos em `build/` (configurado em `vercel.json` para deploy estático). Portas padrão para desenvolvimento: 3400.
 - **Backend:** `npm run server:dev` executa o servidor Deno localmente e tenta as portas `PORT`, `PORT_FALLBACKS` ou `[8300-8303]`. Para produção é possível empacotar em container Deno ou rodar como Edge Function (export `app.fetch`).
-- **Banco:** produção aponta para Postgres (`DB_DRIVER=postgres`, `DATABASE_DB_URL`). Ambientes de laboratório podem usar `./data/urede.db` com `DB_DRIVER=sqlite`. Os adaptadores convertem `?` para placeholders `$1...$n` automaticamente.
+- **Banco:** producao aponta para Postgres (`DB_DRIVER=postgres`, `DATABASE_DB_URL`) no schema `urede`. Ambientes de laboratorio podem usar `./data/urede.db` com `DB_DRIVER=sqlite`. Os adaptadores convertem `?` para placeholders `$1...$n` automaticamente.
 - **Escalonamento:** recomenda-se um scheduler confiável (ex.: Cloud Scheduler, cron Kubernetes) chamando `POST /` com header `x-cron: true` e body `{"task":"escalar"}` para garantir execução mesmo se o processo Deno reiniciar.
 - **Documentação interna:** `src/documentacao/usuarios` é empacotada junto da SPA e pode ser servida via `/documentacao/usuarios` (contexto útil para treinamentos).
 

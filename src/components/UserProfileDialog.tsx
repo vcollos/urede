@@ -11,22 +11,16 @@ import type { User } from '../types';
 import { cn } from './ui/utils';
 
 const roleLabel: Record<string, string> = {
-  confederacao: 'Confederação',
-  federacao: 'Federação',
   admin: 'Administrador',
   operador: 'Operador',
 };
 
 const roleBadgeClass: Record<string, string> = {
-  confederacao: 'bg-red-100 text-red-800 border-red-200',
-  federacao: 'bg-blue-100 text-blue-800 border-blue-200',
   admin: 'bg-purple-100 text-purple-800 border-purple-200',
   operador: 'bg-green-100 text-green-800 border-green-200',
 };
 
 const roleIcon: Record<string, JSX.Element> = {
-  confederacao: <ShieldCheck className="w-4 h-4" />,
-  federacao: <ShieldCheck className="w-4 h-4" />,
   admin: <ShieldCheck className="w-4 h-4" />,
   operador: <UserCircle2 className="w-4 h-4" />,
 };
@@ -73,7 +67,7 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
     setPasswordStatus(null);
   }, [user, open]);
 
-  const papel = useMemo(() => user?.papel ?? 'operador', [user?.papel]);
+  const papel = useMemo(() => user?.papel_usuario ?? user?.papel ?? 'operador', [user?.papel_usuario, user?.papel]);
   const papelLabel = roleLabel[papel] ?? papel;
 
   const handleProfileSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -284,4 +278,3 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
     </Dialog>
   );
 }
-

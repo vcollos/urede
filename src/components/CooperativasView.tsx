@@ -16,6 +16,7 @@ import { Building2, Users, MapPin, Search, LayoutGrid, Loader2, History, ArrowLe
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCircleMinus, faCirclePlus } from '@fortawesome/free-solid-svg-icons';
 import { cn } from './ui/utils';
+import { InstitutionalSection } from './InstitutionalSection';
 
 // Representa o escopo de cobertura que o usuário pode administrar.
 interface CoberturaScope {
@@ -29,20 +30,28 @@ const resolveScope = (userPapel: string | undefined, userCooperativaId: string |
 
   const papel = userPapel.toLowerCase();
   const userCoop = cooperativas.find((coop) => coop.id_singular === userCooperativaId) || null;
-  const tipo = userCoop?.tipo;
+  const tipo = (userCoop?.papel_rede ?? userCoop?.tipo ?? '').toUpperCase();
+
+  if (papel !== 'admin') {
+    return { level: 'none', manageable: new Set() };
+  }
 
   // Confederação gerencia tudo.
-  if (papel === 'confederacao' || tipo === 'CONFEDERACAO') {
+  if (tipo === 'CONFEDERACAO') {
     return { level: 'confederacao', manageable: null };
   }
 
   // Federação gerencia cooperativas filiadas.
-  if (papel === 'federacao' || tipo === 'FEDERACAO') {
-    const federacaoNome = userCoop?.uniodonto;
+  if (tipo === 'FEDERACAO') {
+    const federacaoNome = userCoop?.singular || userCoop?.uniodonto;
     const ids = new Set<string>();
     if (userCooperativaId) ids.add(userCooperativaId);
     cooperativas.forEach((coop) => {
-      if (coop.federacao === federacaoNome || coop.id_singular === userCooperativaId) {
+      if (
+        coop.id_singular === userCooperativaId
+        || (userCooperativaId && coop.federacao_id === userCooperativaId)
+        || (federacaoNome && (coop.federacao_nome === federacaoNome || coop.federacao === federacaoNome))
+      ) {
         ids.add(coop.id_singular);
       }
     });
@@ -50,7 +59,7 @@ const resolveScope = (userPapel: string | undefined, userCooperativaId: string |
   }
 
   // Administradores de singulares só editam a própria cooperativa.
-  if (papel === 'admin' && tipo === 'SINGULAR' && userCooperativaId) {
+  if (tipo === 'SINGULAR' && userCooperativaId) {
     return { level: 'singular', manageable: new Set([userCooperativaId]) };
   }
 
@@ -67,9 +76,10 @@ const canManageSelected = (scope: CoberturaScope, cooperativaId: string | undefi
 
 // Traduz o tipo técnico para exibição amigável.
 const formatCooperativaTipo = (tipo: string) => {
-  if (tipo === 'CONFEDERACAO') return 'Confederação';
-  if (tipo === 'FEDERACAO') return 'Federação';
-  if (tipo === 'SINGULAR') return 'Singular';
+  const value = (tipo || '').toUpperCase();
+  if (value === 'CONFEDERACAO') return 'Confederação';
+  if (value === 'FEDERACAO') return 'Federação';
+  if (value === 'SINGULAR') return 'Singular';
   return tipo || '—';
 };
 
@@ -98,7 +108,7 @@ export function CooperativasView() {
   // Referência ao caminho anterior para restaurar a URL ao sair do detalhe.
   const previousPathRef = useRef<string | null>(null);
   const [selectedCoop, setSelectedCoop] = useState<Cooperativa | null>(null);
-  const [detailTab, setDetailTab] = useState<'overview' | 'coverage' | 'history'>('overview');
+  const [detailTab, setDetailTab] = useState<'overview' | 'coverage' | 'institucional' | 'history'>('overview');
 
   // Estados relacionados à edição de cobertura de cidades.
   const [coverageDraft, setCoverageDraft] = useState<string[]>([]);
@@ -168,31 +178,52 @@ export function CooperativasView() {
     return counts;
   }, [cidades]);
 
+  const getCoopNome = (coop?: Cooperativa | null) => coop?.singular || coop?.uniodonto || '';
+  const getCoopRazao = (coop?: Cooperativa | null) => coop?.razao_social || coop?.raz_social || '';
+  const getCoopCnpj = (coop?: Cooperativa | null) => coop?.cnpj_padrao || coop?.cnpj || '';
+  const getCoopRegAns = (coop?: Cooperativa | null) => coop?.reg_ans || coop?.codigo_ans || '';
+  const getCoopTipo = (coop?: Cooperativa | null) => coop?.papel_rede || coop?.tipo || '';
+
   // Aplica filtro de busca na tabela principal.
   const filteredCooperativas = useMemo(() => {
     const sorted = [...cooperativas].sort((a, b) =>
-      a.uniodonto.localeCompare(b.uniodonto, 'pt-BR', { sensitivity: 'base' })
+      getCoopNome(a).localeCompare(getCoopNome(b), 'pt-BR', { sensitivity: 'base' })
     );
     if (!searchTerm) return sorted;
     const query = searchTerm.toLowerCase();
     return sorted.filter((coop) =>
-      coop.uniodonto.toLowerCase().includes(query) ||
-      coop.raz_social.toLowerCase().includes(query) ||
-      coop.id_singular.toLowerCase().includes(query)
+      getCoopNome(coop).toLowerCase().includes(query) ||
+      getCoopRazao(coop).toLowerCase().includes(query) ||
+      coop.id_singular.toLowerCase().includes(query) ||
+      getCoopRegAns(coop).toLowerCase().includes(query)
     );
   }, [cooperativas, searchTerm]);
 
   // Calcula o escopo de edição sempre que usuário ou cooperativas mudarem.
-  const scope = useMemo(() => resolveScope(user?.papel, user?.cooperativa_id, cooperativas), [user?.papel, user?.cooperativa_id, cooperativas]);
+  const scope = useMemo(
+    () => resolveScope(user?.papel_usuario ?? user?.papel, user?.cooperativa_id, cooperativas),
+    [user?.papel_usuario, user?.papel, user?.cooperativa_id, cooperativas]
+  );
 
   // Mapas auxiliares para renderização rápida.
   const cooperativaNomeMap = useMemo(() => {
     const map = new Map<string, string>();
     cooperativas.forEach((coop) => {
-      map.set(coop.id_singular, coop.uniodonto);
+      map.set(coop.id_singular, getCoopNome(coop));
     });
     return map;
   }, [cooperativas]);
+
+  const getFederacaoNome = useCallback(
+    (coop?: Cooperativa | null) => {
+      if (!coop) return '—';
+      if (coop.federacao_id && cooperativaNomeMap.has(coop.federacao_id)) {
+        return cooperativaNomeMap.get(coop.federacao_id) || '—';
+      }
+      return coop.federacao_nome || coop.federacao || '—';
+    },
+    [cooperativaNomeMap],
+  );
 
   const cidadeMap = useMemo(() => {
     const map = new Map<string, Cidade>();
@@ -547,7 +578,7 @@ export function CooperativasView() {
           <div>
             <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900">
               <Building2 className="w-5 h-5" />
-              {selectedCoop.uniodonto}
+              {getCoopNome(selectedCoop)}
             </h1>
             <p className="text-gray-600">
               Gerencie informações, cobertura e histórico de alterações desta cooperativa.
@@ -560,9 +591,10 @@ export function CooperativasView() {
           onValueChange={(value) => setDetailTab(value as typeof detailTab)}
           className="flex flex-col gap-6"
         >
-          <TabsList className="grid w-full max-w-xl grid-cols-3 gap-2">
+          <TabsList className="grid w-full max-w-2xl grid-cols-4 gap-2">
             <TabsTrigger value="overview">Visão Geral</TabsTrigger>
             <TabsTrigger value="coverage">Cobertura de cidades</TabsTrigger>
+            <TabsTrigger value="institucional">Institucional</TabsTrigger>
             <TabsTrigger value="history">Histórico</TabsTrigger>
           </TabsList>
 
@@ -577,15 +609,17 @@ export function CooperativasView() {
                   <CardContent className="space-y-2 text-sm">
                     <div>
                       <span className="text-gray-500">CNPJ</span>
-                      <p className="font-medium text-gray-900">{selectedCoop.cnpj || '—'}</p>
+                      <p className="font-medium text-gray-900">{getCoopCnpj(selectedCoop) || '—'}</p>
                     </div>
                     <div>
                       <span className="text-gray-500">Código ANS</span>
-                      <p className="font-medium text-gray-900">{selectedCoop.codigo_ans || '—'}</p>
+                      <p className="font-medium text-gray-900">{getCoopRegAns(selectedCoop) || '—'}</p>
                     </div>
                     <div>
                       <span className="text-gray-500">Data de fundação</span>
-                      <p className="font-medium text-gray-900">{selectedCoop.data_fundacao || '—'}</p>
+                      <p className="font-medium text-gray-900">
+                        {selectedCoop.data_fundacao_padrao || selectedCoop.data_fundacao || '—'}
+                      </p>
                     </div>
                   </CardContent>
                 </Card>
@@ -597,11 +631,13 @@ export function CooperativasView() {
                   <CardContent className="space-y-2 text-sm">
                     <div>
                       <span className="text-gray-500">Tipo</span>
-                      <p className="font-medium text-gray-900">{selectedCoop.tipo_label ?? formatCooperativaTipo(selectedCoop.tipo)}</p>
+                      <p className="font-medium text-gray-900">
+                        {selectedCoop.tipo_label ?? formatCooperativaTipo(getCoopTipo(selectedCoop))}
+                      </p>
                     </div>
                     <div>
                       <span className="text-gray-500">Federação</span>
-                      <p className="font-medium text-gray-900">{selectedCoop.federacao || '—'}</p>
+                      <p className="font-medium text-gray-900">{getFederacaoNome(selectedCoop)}</p>
                     </div>
                     <div>
                       <span className="text-gray-500">Software</span>
@@ -869,6 +905,86 @@ export function CooperativasView() {
             </div>
           </TabsContent>
 
+          <TabsContent value="institucional" className="mt-0">
+            <div className="space-y-4">
+              {!canEditSelected && (
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                  Apenas administradores dentro do escopo hierárquico podem editar dados institucionais.
+                </div>
+              )}
+              <InstitutionalSection
+                table="cooperativa_contatos"
+                label="Contatos"
+                description="Telefones, e-mails e canais principais da cooperativa."
+                cooperativaId={selectedCoop.id_singular}
+                canEdit={canEditSelected}
+              />
+              <InstitutionalSection
+                table="cooperativa_enderecos"
+                label="Endereços"
+                description="Endereços oficiais e pontos de atendimento."
+                cooperativaId={selectedCoop.id_singular}
+                canEdit={canEditSelected}
+              />
+              <InstitutionalSection
+                table="cooperativa_diretores"
+                label="Diretoria"
+                description="Diretores e cargos institucionais."
+                cooperativaId={selectedCoop.id_singular}
+                canEdit={canEditSelected}
+              />
+              <InstitutionalSection
+                table="cooperativa_conselhos"
+                label="Conselhos"
+                description="Conselhos administrativos e fiscais."
+                cooperativaId={selectedCoop.id_singular}
+                canEdit={canEditSelected}
+              />
+              <InstitutionalSection
+                table="cooperativa_auditores"
+                label="Auditoria"
+                description="Auditores responsáveis e contatos."
+                cooperativaId={selectedCoop.id_singular}
+                canEdit={canEditSelected}
+              />
+              <InstitutionalSection
+                table="cooperativa_ouvidores"
+                label="Ouvidoria"
+                description="Ouvidores e canais de atendimento."
+                cooperativaId={selectedCoop.id_singular}
+                canEdit={canEditSelected}
+              />
+              <InstitutionalSection
+                table="cooperativa_lgpd"
+                label="LGPD"
+                description="Responsáveis e contatos de proteção de dados."
+                cooperativaId={selectedCoop.id_singular}
+                canEdit={canEditSelected}
+              />
+              <InstitutionalSection
+                table="cooperativa_plantao"
+                label="Plantão"
+                description="Cadastros principais de plantão da cooperativa."
+                cooperativaId={selectedCoop.id_singular}
+                canEdit={canEditSelected}
+              />
+              <InstitutionalSection
+                table="plantao_telefones"
+                label="Telefones do plantão"
+                description="Canais de contato vinculados ao plantão."
+                cooperativaId={selectedCoop.id_singular}
+                canEdit={canEditSelected}
+              />
+              <InstitutionalSection
+                table="plantao_horarios"
+                label="Horários do plantão"
+                description="Escalas e horários de atendimento."
+                cooperativaId={selectedCoop.id_singular}
+                canEdit={canEditSelected}
+              />
+            </div>
+          </TabsContent>
+
           <TabsContent value="history" className="mt-0">
             {/* Tabela com o histórico de movimentos de cobertura */}
             <div className="space-y-4">
@@ -944,7 +1060,7 @@ export function CooperativasView() {
                 <DialogTitle className="text-lg">Confirmar transferência</DialogTitle>
                 <DialogDescription>
                   Tem certeza que deseja remover {transferPrompt.cityName} da Uniodonto &ldquo;{transferPrompt.originCoopName}&rdquo;?
-                  A cidade passará a pertencer a {selectedCoop.uniodonto}.
+                  A cidade passará a pertencer a {getCoopNome(selectedCoop)}.
                 </DialogDescription>
               </DialogHeader>
               <div className="mt-6 flex flex-wrap items-center gap-2">
@@ -1014,6 +1130,7 @@ export function CooperativasView() {
                   filteredCooperativas.map((coop) => {
                     const cidadesCount = cidadeCountMap.get(coop.id_singular) ?? 0;
                     const operadoresCount = operadorCountMap.get(coop.id_singular) ?? 0;
+                    const coopTipo = getCoopTipo(coop);
                     return (
                       <TableRow
                         key={coop.id_singular}
@@ -1022,8 +1139,8 @@ export function CooperativasView() {
                       >
                         <TableCell>
                           <div className="flex flex-col">
-                            <span className="font-medium text-gray-900">{coop.uniodonto}</span>
-                            <span className="text-xs text-gray-500">{coop.raz_social}</span>
+                            <span className="font-medium text-gray-900">{getCoopNome(coop)}</span>
+                            <span className="text-xs text-gray-500">{getCoopRazao(coop) || '—'}</span>
                           </div>
                         </TableCell>
                         <TableCell>
@@ -1031,12 +1148,12 @@ export function CooperativasView() {
                             variant="outline"
                             className={cn(
                               'text-xs capitalize',
-                              coop.tipo === 'SINGULAR' && 'bg-green-100 text-green-800 border-green-200',
-                              coop.tipo === 'FEDERACAO' && 'bg-blue-100 text-blue-800 border-blue-200',
-                              coop.tipo === 'CONFEDERACAO' && 'bg-red-100 text-red-800 border-red-200'
+                              coopTipo === 'SINGULAR' && 'bg-green-100 text-green-800 border-green-200',
+                              coopTipo === 'FEDERACAO' && 'bg-blue-100 text-blue-800 border-blue-200',
+                              coopTipo === 'CONFEDERACAO' && 'bg-red-100 text-red-800 border-red-200'
                             )}
                           >
-                            {coop.tipo_label ?? formatCooperativaTipo(coop.tipo)}
+                            {coop.tipo_label ?? formatCooperativaTipo(coopTipo)}
                           </Badge>
                         </TableCell>
                         <TableCell className="hidden md:table-cell">
@@ -1055,7 +1172,7 @@ export function CooperativasView() {
                           {coop.software || '—'}
                         </TableCell>
                         <TableCell className="hidden lg:table-cell text-gray-600">
-                          {coop.cnpj || '—'}
+                          {getCoopCnpj(coop) || '—'}
                         </TableCell>
                         <TableCell className="text-right">
                           <Button size="sm" variant="outline" onClick={(event) => { event.stopPropagation(); handleOpenDetails(coop); }}>

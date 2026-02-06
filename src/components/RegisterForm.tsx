@@ -47,40 +47,62 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
         const cooperativasFallback: Cooperativa[] = [
           {
             id_singular: 'SING001',
+            singular: 'Uniodonto São Paulo',
             uniodonto: 'Uniodonto São Paulo',
+            cnpj_padrao: '12.345.678/0001-01',
             cnpj: '12.345.678/0001-01',
             cro_operadora: 'CRO-SP',
+            data_fundacao_padrao: '1995-03-15',
             data_fundacao: '1995-03-15',
+            razao_social: 'Cooperativa Odontológica de São Paulo',
             raz_social: 'Cooperativa Odontológica de São Paulo',
+            reg_ans: 'ANS-SP-001',
             codigo_ans: 'ANS-SP-001',
+            federacao_id: 'FED001',
+            federacao_nome: 'Uniodonto São Paulo',
             federacao: 'Uniodonto São Paulo',
             software: 'Sistema Próprio',
+            papel_rede: 'SINGULAR',
             tipo: 'SINGULAR',
             op_pr: 'Operadora'
           },
           {
             id_singular: 'FED001',
+            singular: 'Federação São Paulo',
             uniodonto: 'Federação São Paulo',
+            cnpj_padrao: '98.765.432/0001-01',
             cnpj: '98.765.432/0001-01',
             cro_operadora: 'CRO-SP',
+            data_fundacao_padrao: '1990-01-10',
             data_fundacao: '1990-01-10',
+            razao_social: 'Federação das Cooperativas Odontológicas de São Paulo',
             raz_social: 'Federação das Cooperativas Odontológicas de São Paulo',
+            reg_ans: 'ANS-SP-FED',
             codigo_ans: 'ANS-SP-FED',
+            federacao_nome: 'Uniodonto São Paulo',
             federacao: 'Uniodonto São Paulo',
             software: 'Sistema Integrado',
+            papel_rede: 'FEDERACAO',
             tipo: 'FEDERACAO',
             op_pr: 'Institucional'
           },
           {
             id_singular: 'CONF001',
+            singular: 'Confederação Nacional',
             uniodonto: 'Confederação Nacional',
+            cnpj_padrao: '11.222.333/0001-01',
             cnpj: '11.222.333/0001-01',
             cro_operadora: 'CFO',
+            data_fundacao_padrao: '1985-05-20',
             data_fundacao: '1985-05-20',
+            razao_social: 'Confederação Nacional das Cooperativas Odontológicas',
             raz_social: 'Confederação Nacional das Cooperativas Odontológicas',
+            reg_ans: 'ANS-BR-CONF',
             codigo_ans: 'ANS-BR-CONF',
+            federacao_nome: 'Nacional',
             federacao: 'Nacional',
             software: 'Sistema Nacional',
+            papel_rede: 'CONFEDERACAO',
             tipo: 'CONFEDERACAO',
             op_pr: 'Institucional'
           }
@@ -103,8 +125,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
     setIsSubmitting(true);
 
     try {
-      const cooperativaSelecionada = cooperativas.find((coop) => coop.id_singular === formData.cooperativa_id);
-      const papelFinal = deriveRole(formData.papel, cooperativaSelecionada);
+      const papelFinal = deriveRole(formData.papel);
 
       const response = await register({
         ...formData,
@@ -254,7 +275,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
               <SelectContent>
                 {cooperativas.map((coop) => (
                   <SelectItem key={coop.id_singular} value={coop.id_singular}>
-                    {coop.uniodonto} ({coop.tipo})
+                    {(coop.singular || coop.uniodonto)} ({coop.papel_rede || coop.tipo})
                   </SelectItem>
                 ))}
               </SelectContent>

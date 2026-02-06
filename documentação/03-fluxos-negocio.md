@@ -34,7 +34,7 @@ sequenceDiagram
   API->>urede_operadores: garante registro do operador
 ```
 
-- **Papéis resultantes:** `operador`, `admin`, `federacao`, `confederacao`. A lógica `deriveRole` avalia o tipo da cooperativa selecionada.
+- **Papéis resultantes:** `operador`, `admin`. O nivel institucional e derivado de `cooperativas.papel_rede`.
 - **Recuperação de sessão:** `AuthContext` executa `authService.getSession()` (token no `localStorage`), chama `/auth/me` e mantém `user.approval_status` sincronizado.
 
 ## 3.3 Ciclo de vida do pedido
@@ -47,7 +47,7 @@ sequenceDiagram
   - Transferir manualmente (`POST /pedidos/:id/transferir`).
 - **Escalonamento automático:**
   - Timer local + endpoint `/` chamam `escalarPedidos`.
-  - `computeEscalationTarget` identifica destino: `singular → federação` (com base no campo `FEDERACAO` da cooperativa) e `federação → confederação` (primeira `TIPO LIKE 'CONFEDER%'`).
+  - `computeEscalationTarget` identifica destino: `singular → federacao` (via `federacao_id`) e `federacao → confederacao` (primeira cooperativa com `papel_rede=CONFEDERACAO`).
   - `applyEscalation` atualiza `nivel_atual`, `cooperativa_responsavel_id`, `prazo_atual` e zera o responsável atual.
   - `dispatchPedidoAlert` registra evento (`urede_alertas`) e envia e-mail notificando envolvidos (responsáveis, criador, admins da cooperativa destino).
 - **Conclusão:** ao mudar para `concluido`, o backend calcula `dias_para_concluir` (diferença entre criação e conclusão) e mantém histórico em `urede_auditoria_logs`.
@@ -87,9 +87,9 @@ stateDiagram-v2
 - **Objetivo:** manter mapa de quais cooperativas atendem cada cidade, com rastreabilidade.
 - **Tabelas:** `urede_cidades` (cidade→cooperativa padrão) e `urede_cobertura_logs` (histórico das transferências, com autor/papel e timestamp).
 - **Permissões:**
-  - `confederacao`: gerencia qualquer cooperativa.
-  - `federacao`: gerencia singulares vinculadas via `FEDERACAO`.
-  - `admin` singular: gerencia apenas a própria cooperativa.
+  - `admin` confederacao: gerencia qualquer cooperativa.
+  - `admin` federacao: gerencia singulares vinculadas via `federacao_id`.
+  - `admin` singular: gerencia apenas a propria cooperativa.
 - **Fluxo:**
   1. Usuário acessa `CooperativasView` e solicita alteração de cobertura.
   2. `PUT /cooperativas/:id/cobertura` recebe `cidade_ids[]`, substitui relacionamentos e registra logs com `registrarLogCobertura`.
@@ -110,3 +110,7 @@ auto[Admin liga auto_recusar]
 ```
 
 - **Uso típico:** federadas que estão atuando apenas como brokers ligam `auto_recusar` para redirecionar automaticamente os pedidos às confederações; singulares conseguem transferir cobertura de cidades quando novas clínicas são homologadas.
+
+## 3.7 Dados institucionais e prestadores
+- **Institucional:** dados de contatos, enderecos, diretoria, conselhos, auditoria, ouvidoria, LGPD e plantao. Leitura e global; escrita apenas admins dentro do escopo hierarquico.
+- **Prestadores:** consulta publica na base ANS (`prestadores_ans`) e no cadastro enriquecido (`prestadores`). Ligacao com operadoras via `reg_ans` e vinculos por singulares em `prestador_vinculos_singulares`.

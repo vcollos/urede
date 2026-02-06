@@ -6,9 +6,9 @@ Consolidar os controles já implementados no uRede e destacar requisitos para ad
 ## 4.2 Controles técnicos existentes
 | Área | Implementação | Referência |
 | --- | --- | --- |
-| Autenticação | `POST /auth/login` emite JWT (`HS256`) com claims `sub`, `email`, `papel`, `cooperativa_id`. Senhas protegidas via `bcrypt`. | `database/functions/server/index.tsx`, `lib/jwt.ts` |
+| Autenticação | `POST /auth/login` emite JWT (`HS256`) com claims `sub`, `email`, `papel_usuario`, `cooperativa_id`. Senhas protegidas via `bcrypt`. | `database/functions/server/index.tsx`, `lib/jwt.ts` |
 | Confirmação e aprovação | Tokens únicos expiram após `EMAIL_CONFIRMATION_TIMEOUT_HOURS` (default 24h). Fluxo de aprovação registra `user_approval_requests` e escalona para admins da cooperativa. | Seções `sendApprovalRequestEmails`, `enqueueApprovalRequest` |
-| Controles de acesso | Middleware `requireAuth` valida JWT; `requireRole` aplica RBAC (admin, operador, federação, confederação). Escopos adicionais para cobertura de cidades via `resolveCoberturaScope`. | Linhas ~2050 e ~1100 do backend |
+| Controles de acesso | Middleware `requireAuth` valida JWT; `requireRole` aplica RBAC (admin, operador). Nivel institucional e derivado de `cooperativas.papel_rede`. Escopos adicionais para cobertura de cidades via `resolveCoberturaScope`. | Linhas ~2050 e ~1100 do backend |
 | Proteção contra CORS | Middleware `cors` limita origens a `ALLOWED_ORIGINS` (curingas `*.dominio.com`). | Início do `index.tsx` |
 | Auditoria | Tabela `urede_auditoria_logs` guarda ações (criação, transferência, alertas lidos). Funções `registrarLogCobertura` e `applyEscalation` sempre escrevem eventos. | `db/sqlite_schema.sql` e backend |
 | Alertas | `urede_alertas` rastreia todas as notificações enviadas por e-mail/in-app; leitura gera trilha auditável. | `dispatchPedidoAlert`, rotas `/alertas/*` |
@@ -37,8 +37,9 @@ Consolidar os controles já implementados no uRede e destacar requisitos para ad
 ## 4.5 Recomendações imediatas
 1. **Proteção do backend:** colocar o serviço Hono atrás de um *reverse proxy* (Nginx/Cloudflare) com TLS, rate limiting e bloqueio do endpoint `/debug/counts` em produção.
 2. **Segredos:** armazenar `JWT_SECRET`, `BREVO_API_KEY`, `DATABASE_DB_URL` em cofres (AWS Secrets Manager, GCP Secret Manager ou Vault). Remover valores default de produção.
-3. **Hardening do SQLite:** se permanecer em produção, aplicar *file permissions* restritivas, snapshots e criptografia em nível de disco. Considerar migração acelerada para Postgres gerenciado com backup automático.
-4. **Monitoramento:** enviar logs estruturados para solução central (Datadog, Loki, Elastic). Configurar alertas para falhas de escalonamento (ex.: contador de pedidos vencendo > threshold).
+3. **RLS:** garantir politicas ativas no schema `urede` (institucional + pedidos). Evitar bypass por usuarios de service role em ambientes comuns.
+4. **Hardening do SQLite:** se permanecer em produção, aplicar *file permissions* restritivas, snapshots e criptografia em nível de disco. Considerar migração acelerada para Postgres gerenciado com backup automático.
+5. **Monitoramento:** enviar logs estruturados para solução central (Datadog, Loki, Elastic). Configurar alertas para falhas de escalonamento (ex.: contador de pedidos vencendo > threshold).
 5. **INSECURE_MODE:** manter `false` em ambientes reais. Documentar no runbook que esse flag só pode ser usado em ambientes isolados.
 6. **Testes de intrusão:** executar análise de vulnerabilidades nos endpoints públicos (login, register, confirm-email) e revisar políticas de senha (no momento qualquer senha é aceita; considerar tamanho mínimo e complexidade).
 7. **Consent banner / termos:** incluir aceite explícito na tela de cadastro mencionando finalidades e política de privacidade.

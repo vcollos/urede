@@ -17,33 +17,6 @@ const getPool = () => {
   return pool;
 };
 
-const blockOn = <T>(promise: Promise<T>): T => {
-  const sab = new SharedArrayBuffer(4);
-  const state = new Int32Array(sab);
-  let result: T | undefined;
-  let error: unknown;
-
-  promise.then((value) => {
-    result = value;
-    Atomics.store(state, 0, 1);
-    Atomics.notify(state, 0);
-  }).catch((err) => {
-    error = err;
-    Atomics.store(state, 0, 2);
-    Atomics.notify(state, 0);
-  });
-
-  if (Atomics.load(state, 0) === 0) {
-    Atomics.wait(state, 0, 0);
-  }
-
-  if (Atomics.load(state, 0) === 2) {
-    throw error;
-  }
-
-  return result as T;
-};
-
 const prepareQuery = (text: string, args: unknown[]) => {
   if (!args || args.length === 0) {
     return { text, args };
@@ -66,66 +39,60 @@ const withClient = async <T>(fn: (client: PoolClient) => Promise<T>) => {
   }
 };
 
-export const queryEntries = <T = Record<string, unknown>>(
+export const queryEntries = async <T = Record<string, unknown>>(
   text: string,
   args: unknown[] = [],
 ) => {
   const { text: finalText, args: finalArgs } = prepareQuery(text, args);
-  return blockOn(
-    withClient(async (client) => {
-      const result = await client.queryObject<T>({
-        text: finalText,
-        args: finalArgs,
-      });
-      return result.rows;
-    }),
-  );
+  return await withClient(async (client) => {
+    const result = await client.queryObject<T>({
+      text: finalText,
+      args: finalArgs,
+    });
+    return result.rows;
+  });
 };
 
-export const queryArray = (
+export const queryArray = async (
   text: string,
   args: unknown[] = [],
 ) => {
   const { text: finalText, args: finalArgs } = prepareQuery(text, args);
-  return blockOn(
-    withClient(async (client) => {
-      const result = await client.queryArray({
-        text: finalText,
-        args: finalArgs,
-      });
-      return result.rows;
-    }),
-  );
+  return await withClient(async (client) => {
+    const result = await client.queryArray({
+      text: finalText,
+      args: finalArgs,
+    });
+    return result.rows;
+  });
 };
 
-export const query = (
+export const query = async (
   text: string,
   args: unknown[] = [],
 ) => {
   const { text: finalText, args: finalArgs } = prepareQuery(text, args);
-  return blockOn(
-    withClient(async (client) => {
-      await client.queryArray({
-        text: finalText,
-        args: finalArgs,
-      });
-    }),
-  );
+  return await withClient(async (client) => {
+    await client.queryArray({
+      text: finalText,
+      args: finalArgs,
+    });
+  });
 };
 
 export const execute = query;
 
-type SyncDbClient = {
-  query: (text: string, args?: unknown[]) => void;
+type AsyncDbClient = {
+  query: (text: string, args?: unknown[]) => Promise<void>;
   queryEntries: <T = Record<string, unknown>>(
     text: string,
     args?: unknown[],
-  ) => T[];
-  queryArray: (text: string, args?: unknown[]) => unknown[][];
-  execute: (text: string, args?: unknown[]) => void;
+  ) => Promise<T[]>;
+  queryArray: (text: string, args?: unknown[]) => Promise<unknown[][]>;
+  execute: (text: string, args?: unknown[]) => Promise<void>;
 };
 
-const makeSyncClient = (client: PoolClient): SyncDbClient => {
+const makeAsyncClient = (client: PoolClient): AsyncDbClient => {
   const runQueryArray = (
     text: string,
     args: unknown[] = [],
@@ -149,40 +116,38 @@ const makeSyncClient = (client: PoolClient): SyncDbClient => {
   };
 
   return {
-    query: (text: string, args: unknown[] = []) => {
-      blockOn(runQueryArray(text, args));
+    query: async (text: string, args: unknown[] = []) => {
+      await runQueryArray(text, args);
     },
-    queryEntries: <T = Record<string, unknown>>(
+    queryEntries: async <T = Record<string, unknown>>(
       text: string,
       args: unknown[] = [],
     ) => {
-      const result = blockOn(runQueryObject<T>(text, args));
+      const result = await runQueryObject<T>(text, args);
       return result.rows;
     },
-    queryArray: (text: string, args: unknown[] = []) => {
-      const result = blockOn(runQueryArray(text, args));
+    queryArray: async (text: string, args: unknown[] = []) => {
+      const result = await runQueryArray(text, args);
       return result.rows;
     },
-    execute: (text: string, args: unknown[] = []) => {
-      blockOn(runQueryArray(text, args));
+    execute: async (text: string, args: unknown[] = []) => {
+      await runQueryArray(text, args);
     },
   };
 };
 
-export const transaction = <T>(fn: (tx: SyncDbClient) => T): T =>
-  blockOn(
-    withClient(async (client) => {
-      const txClient = makeSyncClient(client);
+export const transaction = async <T>(fn: (tx: AsyncDbClient) => Promise<T>): Promise<T> =>
+  await withClient(async (client) => {
+    const txClient = makeAsyncClient(client);
+    try {
+      await client.queryArray("BEGIN");
+      const result = await fn(txClient);
+      await client.queryArray("COMMIT");
+      return result;
+    } catch (error) {
       try {
-        await client.queryArray("BEGIN");
-        const result = fn(txClient);
-        await client.queryArray("COMMIT");
-        return result;
-      } catch (error) {
-        try {
-          await client.queryArray("ROLLBACK");
-        } catch (_) {}
-        throw error;
-      }
-    }),
-  );
+        await client.queryArray("ROLLBACK");
+      } catch (_) {}
+      throw error;
+    }
+  });

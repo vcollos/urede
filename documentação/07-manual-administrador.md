@@ -6,10 +6,10 @@ Guia destinado a administradores das cooperativas, gestores das federações e e
 ## 7.2 Gestão de contas e aprovações
 1. Acesse **Configurações → Aprovações pendentes** (ou utilize o acesso direto `/auth/pending` via API).
 2. Analise cada registro:
-   - Dados apresentados: nome, e-mail, cooperativa solicitante, papel solicitado, data do pedido.
+   - Dados apresentados: nome, e-mail, cooperativa solicitante, papel solicitado (admin/operador), data do pedido.
    - Clique em **Aprovar** ou **Recusar**; informe observações claras.
 3. Ao aprovar:
-   - O papel final fica igual ao solicitado (`requested_papel`).
+   - O papel final fica igual ao solicitado (`requested_papel`, apenas `admin` ou `operador`).
    - O usuário é sincronizado com a tabela `urede_operadores` (se ainda não existir) e recebe e-mail automático.
 4. Ao recusar:
    - `approval_status` muda para `rejected` e o usuário é notificado com as observações inseridas.
@@ -29,11 +29,12 @@ Local: **Menu Configurações → Preferências do sistema** (`ConfiguracoesView
    - *Desligado:* a cooperativa recebe pedidos normalmente.
    - *Ligado:* todo pedido encaminhado para essa cooperativa é imediatamente transferido ao próximo nível (útil quando uma singular está sem capacidade).
 3. Ao ativar, o backend executa `autoEscalatePedidosForCooperativa`, transferindo inclusive itens já em andamento.
-4. **Cobertura de cidades:** use o editor de cobertura para adicionar/remover `cidade_ids`. Cada alteração gera log em `urede_cobertura_logs`.
+4. **Cobertura de cidades:** use o editor de cobertura para adicionar/remover `cidade_ids`. Cada alteracao gera log em `urede_cobertura_logs`.
+5. **Dados institucionais:** na aba *Institucional*, mantenha contatos, enderecos, diretoria, conselhos, LGPD e plantao. Escrita segue escopo hierarquico (admin confederacao/federacao/singular).
 5. **Histórico:** consulte o painel de logs para auditorias (quem alterou, quando, origem/destino).
 
 ## 7.5 Operadores e permissões
-- Cadastre operadores via módulo **Operadores** ou chamando `POST /operadores`.
+- Cadastre operadores via modulo **Operadores** ou chamando `POST /operadores`.
 - Campos obrigatórios: nome, e-mail, cooperativa, papel.
 - Para desativar acesso sem remover histórico, atualize o campo `ativo` do operador ou defina `approval_status='rejected'` no `auth_users`.
 

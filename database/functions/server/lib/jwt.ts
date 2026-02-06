@@ -7,6 +7,7 @@ export interface JwtUserClaims {
   email: string;
   nome?: string;
   papel?: string;
+  papel_usuario?: string;
   cooperativa_id?: string;
 }
 
@@ -40,4 +41,3 @@ export const verifyJwt = async (secret: string, token: string) => {
   const payload = await verify(token, key, alg);
   return payload as Payload & JwtUserClaims;
 };
-

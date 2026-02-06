@@ -9,8 +9,8 @@ import { useAuth } from '../contexts/AuthContext';
 
 export function ConfiguracoesView() {
   const { user } = useAuth();
-  const isConfederacao = user?.papel === 'confederacao';
-  const isAdmin = user?.papel === 'admin';
+  const papelUsuario = user?.papel_usuario ?? user?.papel;
+  const isAdmin = papelUsuario === 'admin';
   const [deadlines, setDeadlines] = useState({
     singularToFederacao: '30',
     federacaoToConfederacao: '30',
@@ -29,12 +29,12 @@ export function ConfiguracoesView() {
   const [coopStatus, setCoopStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const isConfederacaoAdmin = Boolean(isAdmin && cooperativaConfig?.tipo === 'CONFEDERACAO');
-  const canManageSystem = isConfederacao || isConfederacaoAdmin;
+  const canManageSystem = isConfederacaoAdmin;
   const awaitingConfederacaoCheck = Boolean(
-    isAdmin && user?.cooperativa_id && !isConfederacao && !isConfederacaoAdmin && isLoadingCoopConfig
+    isAdmin && user?.cooperativa_id && !isConfederacaoAdmin && isLoadingCoopConfig
   );
   const canManageCooperativa = Boolean(
-    user && user.cooperativa_id && !isConfederacao && (user.papel === 'admin' || user.papel === 'federacao')
+    user && user.cooperativa_id && isAdmin
   );
 
   useEffect(() => {
@@ -376,7 +376,7 @@ export function ConfiguracoesView() {
         </Card>
       )}
 
-      {user?.papel === 'confederacao' && (
+      {cooperativaConfig?.tipo === 'CONFEDERACAO' && (
         <Card>
           <CardHeader>
             <CardTitle>Preferências da cooperativa</CardTitle>
