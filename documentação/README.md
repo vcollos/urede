@@ -14,8 +14,5 @@ Esta pasta reúne a documentação oficial do produto de credenciamento e suprim
 | [06-manual-usuario.md](06-manual-usuario.md) | Manual funcional para operadores, federados e confederação realizarem atividades diárias. |
 | [07-manual-administrador.md](07-manual-administrador.md) | Procedimentos de administração, governança de dados e operação de emergências. |
 | [08-roadmap.md](08-roadmap.md) | Próximas etapas priorizadas (curto, médio e longo prazo) para evoluir o produto. |
-| [migracao-supabase.md](migracao-supabase.md) | Mapeamento de migração para Supabase/Postgres e compatibilidade com legado. |
-| [rls-resumo.md](rls-resumo.md) | Resumo das regras de RLS e expectativas do app. |
-| [checklist-producao.md](checklist-producao.md) | Checklist de release e validações pós-deploy. |
 
 > **Como navegar:** cada documento traz um sumário próprio e links de retorno para este índice. Use-os para montar apresentações comerciais, materiais de treinamento ou artefatos de due diligence em negociações.

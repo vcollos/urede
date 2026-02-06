@@ -70,8 +70,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     forcar_troca_senha: true,
   });
   const fetchPendingApprovals = useCallback(async () => {
-    const papelUsuario = user?.papel_usuario ?? user?.papel;
-    if (!user || papelUsuario !== 'admin' || user.approval_status !== 'approved') {
+    if (!user || user.papel !== 'admin' || user.approval_status !== 'approved') {
       setPendingApprovals([]);
       return;
     }
@@ -116,14 +115,13 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
   }, [user]);
 
   useEffect(() => {
-    const papelUsuario = user?.papel_usuario ?? user?.papel;
-    if (papelUsuario === 'admin' && user?.approval_status === 'approved') {
+    if (user?.papel === 'admin' && user.approval_status === 'approved') {
       void fetchPendingApprovals();
     } else {
       setPendingApprovals([]);
       setPendingError('');
     }
-  }, [user?.papel_usuario, user?.papel, user?.approval_status, fetchPendingApprovals]);
+  }, [user?.papel, user?.approval_status, fetchPendingApprovals]);
 
   // Filtrar operadores
   const getFilteredOperadores = (): Operador[] => {
@@ -155,7 +153,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
 
   const getCooperativaNome = (idSingular: string) => {
     const coop = cooperativas.find(c => c.id_singular === idSingular);
-    return coop?.singular || coop?.uniodonto || 'N/A';
+    return coop?.uniodonto || 'N/A';
   };
 
   const formatDate = (value: string | Date) => {
@@ -177,24 +175,18 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
   };
 
   const currentCooperativa = cooperativas.find((c) => c.id_singular === user?.cooperativa_id);
-  const papelUsuario = user?.papel_usuario ?? user?.papel;
-  const nivelCooperativa = currentCooperativa?.papel_rede ?? currentCooperativa?.tipo;
-  const isConfUser = !!user && nivelCooperativa === 'CONFEDERACAO';
-  const isFederacaoUser = !!user && nivelCooperativa === 'FEDERACAO';
-  const isAdminUser = !!user && papelUsuario === 'admin';
-  const canCreate = !!user && isAdminUser;
-  const canManageRoles = !!user && isAdminUser;
+  const isConfUser = !!user && (user.papel === 'confederacao' || currentCooperativa?.tipo === 'CONFEDERACAO');
+  const isFederacaoUser = !!user && (user.papel === 'federacao' || currentCooperativa?.tipo === 'FEDERACAO');
+  const isAdminUser = !!user && user.papel === 'admin';
+  const canCreate = !!user && (user.papel === 'admin' || isConfUser || isFederacaoUser);
+  const canManageRoles = !!user && (user.papel === 'admin' || isConfUser);
 
   const availableCooperativas = (() => {
     if (!user) return cooperativas;
     if (isConfUser) return cooperativas;
     if (isFederacaoUser && currentCooperativa) {
-      const federacaoNome = currentCooperativa.singular || currentCooperativa.uniodonto;
       return cooperativas.filter(
-        (c) => c.id_singular === currentCooperativa.id_singular
-          || c.federacao_id === currentCooperativa.id_singular
-          || (c.federacao && federacaoNome && c.federacao === federacaoNome)
-          || (c.federacao_nome && federacaoNome && c.federacao_nome === federacaoNome)
+        (c) => c.id_singular === currentCooperativa.id_singular || c.federacao === currentCooperativa.uniodonto
       );
     }
     if (currentCooperativa) {
@@ -279,7 +271,8 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
       };
 
       if (canManageRoles) {
-        payload.papel = deriveRole(editForm.papel);
+        const coop = cooperativas.find((c) => c.id_singular === editingOperador.id_singular);
+        payload.papel = deriveRole(editForm.papel, coop);
       }
 
       if (canResetPassword && editForm.definir_senha) {
@@ -540,7 +533,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
                   <SelectItem value="todos">Todas as cooperativas</SelectItem>
                   {cooperativas.map((coop) => (
                     <SelectItem key={coop.id_singular} value={coop.id_singular}>
-                      {coop.singular || coop.uniodonto}
+                      {coop.uniodonto}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -936,7 +929,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
                   <SelectContent>
                     {availableCooperativas.map((coop) => (
                       <SelectItem key={coop.id_singular} value={coop.id_singular}>
-                        {coop.singular || coop.uniodonto}
+                        {coop.uniodonto}
                       </SelectItem>
                     ))}
                   </SelectContent>

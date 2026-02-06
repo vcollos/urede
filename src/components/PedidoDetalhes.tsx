@@ -116,13 +116,28 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
 
   const userEmailLower = user?.email?.toLowerCase() || null;
   const pedidoCreatorLower = pedido.criado_por_user?.toLowerCase() || null;
-  const canChangeStatus = !!user &&
-    pedido.cooperativa_responsavel_id === user.cooperativa_id;
-  const canAddUpdate = canChangeStatus;
+  const canChangeStatus = !!user && (
+    user.papel === 'confederacao'
+      || (user.papel === 'admin' && pedido.cooperativa_solicitante_id === user.cooperativa_id)
+      || pedido.cooperativa_responsavel_id === user.cooperativa_id
+  );
+  const canAddUpdate = canChangeStatus
+    || (!!user && user.papel === 'operador' && (
+      (pedidoCreatorLower && userEmailLower && pedidoCreatorLower === userEmailLower)
+      || (!pedido.criado_por_user && pedido.cooperativa_solicitante_id === user.cooperativa_id)
+    ));
 
   const canDelete = () => {
     if (!user) return false;
-    return pedido.cooperativa_solicitante_id === user.cooperativa_id;
+    if (user.papel === 'confederacao') return true;
+    if (user.papel === 'admin' && pedido.cooperativa_solicitante_id === user.cooperativa_id) return true;
+    if (user.papel === 'operador') {
+      // Operador que criou pode excluir (ou legado sem campo, se da mesma solicitante)
+      const legacySameSolic = (pedido.cooperativa_solicitante_id === user.cooperativa_id) && !pedido.criado_por_user;
+      const isCreator = userEmailLower && pedidoCreatorLower && userEmailLower === pedidoCreatorLower;
+      return isCreator || legacySameSolic;
+    }
+    return false;
   };
 
   const marketplanoUrl = useMemo(() => {
@@ -267,7 +282,9 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
   const isResponsavelAtual = !!(user && pedido.responsavel_atual_id === user.id);
   const canAssumir = canChangeStatus && sameCooperativaResponsavel && !isResponsavelAtual;
   const canLiberar = canChangeStatus && !!pedido.responsavel_atual_id;
-  const canTransfer = !!user && pedido.nivel_atual !== 'confederacao' && sameCooperativaResponsavel;
+  const canTransfer = !!user && pedido.nivel_atual !== 'confederacao' && (
+    canChangeStatus || pedido.cooperativa_solicitante_id === user.cooperativa_id
+  );
 
   const justificativaInicial = pedido.observacoes
     ? extractInitialJustificativa(pedido.observacoes)

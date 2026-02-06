@@ -41,7 +41,7 @@ Notas:
 - Variaveis recomendadas:
   - `DB_DRIVER=postgres`
   - `DATABASE_DB_URL=postgresql://...` (use string com `sslmode=require`)
-  - `DB_SCHEMA=urede`
+  - `DB_SCHEMA=public`
   - `TABLE_PREFIX=urede_`
   - `JWT_SECRET=...`
   - `APP_URL=https://<seu-app>.vercel.app`

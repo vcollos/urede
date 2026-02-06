@@ -13,9 +13,6 @@ import type {
   PedidoImportPayload,
   PedidoImportResponse,
   ReportsOverview,
-  InstitutionalResponse,
-  InstitutionalTable,
-  PrestadorRecord,
 } from '../types';
 
 class ApiService {
@@ -152,10 +149,11 @@ class ApiService {
     }
   }
 
-  async deletePedido(pedidoId: string): Promise<void> {
+  async deletePedido(pedidoId: string): Promise<Pedido> {
     try {
-      await apiRequest(`/pedidos/${pedidoId}`, {
-        method: 'DELETE',
+      return await apiRequest(`/pedidos/${pedidoId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: 'cancelado', excluido: true }),
       });
     } catch (error) {
       console.error('Erro ao excluir pedido:', error);
@@ -280,59 +278,6 @@ class ApiService {
     if (params?.end) searchParams.set('end', params.end);
     const qs = searchParams.toString();
     return await apiRequest(`/reports/overview${qs ? `?${qs}` : ''}`);
-  }
-
-  // INSTITUCIONAL
-  async getInstitucional(table: InstitutionalTable, cooperativaId?: string): Promise<InstitutionalResponse> {
-    const params = new URLSearchParams();
-    if (cooperativaId) params.set('cooperativa_id', cooperativaId);
-    const qs = params.toString();
-    return await apiRequest(`/institucional/${table}${qs ? `?${qs}` : ''}`);
-  }
-
-  async createInstitucional(table: InstitutionalTable, record: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const response = await apiRequest(`/institucional/${table}`, {
-      method: 'POST',
-      body: JSON.stringify({ record }),
-    });
-    return response?.row ?? response;
-  }
-
-  async updateInstitucional(table: InstitutionalTable, id: string, record: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const response = await apiRequest(`/institucional/${table}/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify({ record }),
-    });
-    return response?.row ?? response;
-  }
-
-  async deleteInstitucional(table: InstitutionalTable, id: string): Promise<void> {
-    await apiRequest(`/institucional/${table}/${id}`, {
-      method: 'DELETE',
-    });
-  }
-
-  // PRESTADORES (consulta pública)
-  async getPrestadores(params?: { q?: string; reg_ans?: string; limit?: number; offset?: number }): Promise<PrestadorRecord[]> {
-    const searchParams = new URLSearchParams();
-    if (params?.q) searchParams.set('q', params.q);
-    if (params?.reg_ans) searchParams.set('reg_ans', params.reg_ans);
-    if (params?.limit) searchParams.set('limit', String(params.limit));
-    if (params?.offset) searchParams.set('offset', String(params.offset));
-    const qs = searchParams.toString();
-    const response = await apiRequest(`/prestadores${qs ? `?${qs}` : ''}`);
-    return Array.isArray(response) ? response : response?.rows ?? [];
-  }
-
-  async getPrestadoresAns(params?: { q?: string; reg_ans?: string; limit?: number; offset?: number }): Promise<PrestadorRecord[]> {
-    const searchParams = new URLSearchParams();
-    if (params?.q) searchParams.set('q', params.q);
-    if (params?.reg_ans) searchParams.set('reg_ans', params.reg_ans);
-    if (params?.limit) searchParams.set('limit', String(params.limit));
-    if (params?.offset) searchParams.set('offset', String(params.offset));
-    const qs = searchParams.toString();
-    const response = await apiRequest(`/prestadores/ans${qs ? `?${qs}` : ''}`);
-    return Array.isArray(response) ? response : response?.rows ?? [];
   }
 }
 

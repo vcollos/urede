@@ -9,8 +9,7 @@ export interface User {
   whatsapp: string;
   cargo: string;
   cooperativa_id: string;
-  papel_usuario?: 'admin' | 'operador';
-  papel: 'admin' | 'operador';
+  papel: 'admin' | 'operador' | 'federacao' | 'confederacao';
   ativo: boolean;
   data_cadastro: string;
   approval_status?: 'pending_confirmation' | 'pending_approval' | 'pending_manual' | 'approved' | 'rejected';
@@ -18,34 +17,23 @@ export interface User {
   approval_requested_at?: string | null;
   approved_by?: string | null;
   approved_at?: string | null;
-  requested_papel?: 'admin' | 'operador' | null;
+  requested_papel?: 'admin' | 'operador' | 'federacao' | 'confederacao' | null;
   must_change_password?: boolean;
 }
 
 export interface Cooperativa {
   id_singular: string;
-  singular: string;
   uniodonto: string;
-  razao_social?: string;
-  raz_social?: string;
-  cnpj_padrao?: string;
   cnpj: string;
   cro_operadora: string;
-  data_fundacao_padrao?: string;
   data_fundacao: string;
-  reg_ans?: string;
+  raz_social: string;
   codigo_ans: string;
-  federacao_id?: string | null;
-  federacao_nome?: string | null;
   federacao: string;
   software: string;
-  tipo_novo?: string;
-  papel_rede?: 'SINGULAR' | 'FEDERACAO' | 'CONFEDERACAO';
   tipo: 'SINGULAR' | 'FEDERACAO' | 'CONFEDERACAO';
   tipo_label?: string;
   op_pr: 'Operadora' | 'Institucional';
-  operadora_id?: string | null;
-  ativo?: boolean;
 }
 
 export interface Cidade {
@@ -58,7 +46,6 @@ export interface Cidade {
   cidades_habitantes: number;
   id_singular: string;
   nm_singular?: string | null;
-  reg_ans?: string | null;
 }
 
 export interface Operador {
@@ -71,33 +58,8 @@ export interface Operador {
   id_singular: string;
   ativo: boolean;
   data_cadastro: string;
-  papel_usuario?: 'operador' | 'admin';
-  papel?: 'operador' | 'admin';
+  papel?: 'operador' | 'admin' | 'federacao' | 'confederacao';
 }
-
-export type InstitutionalTable =
-  | 'cooperativa_contatos'
-  | 'cooperativa_enderecos'
-  | 'cooperativa_diretores'
-  | 'cooperativa_conselhos'
-  | 'cooperativa_auditores'
-  | 'cooperativa_ouvidores'
-  | 'cooperativa_lgpd'
-  | 'cooperativa_plantao'
-  | 'plantao_telefones'
-  | 'plantao_horarios';
-
-export interface InstitutionalMeta {
-  columns: string[];
-  primaryKeys: string[];
-}
-
-export interface InstitutionalResponse {
-  rows: Record<string, unknown>[];
-  meta: InstitutionalMeta;
-}
-
-export type PrestadorRecord = Record<string, unknown>;
 
 export interface Pedido {
   id: string;
@@ -194,7 +156,7 @@ export interface PendingUserApproval {
   nome: string;
   cooperativa_id: string | null;
   cooperativa_nome: string | null;
-  requested_papel: 'admin' | 'operador';
+  requested_papel: 'admin' | 'operador' | 'federacao' | 'confederacao';
   approval_status: string;
   created_at: string;
 }

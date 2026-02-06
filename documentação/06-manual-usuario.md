@@ -20,7 +20,7 @@ Destinado a operadores das cooperativas singulares, equipes das federações e t
   - *Dashboard* – visão geral dos indicadores e pedidos em destaque.
   - *Pedidos* – lista completa com filtros e busca.
   - *Importação* – assistente para importar planilhas.
-  - *Cooperativas / Operadores / Cidades / Prestadores / Configurações* – visível conforme permissões.
+  - *Cooperativas / Operadores / Cidades / Configurações* – visível conforme permissões.
 - **Ações rápidas:** botão **+ Pedido** abre o modal de criação. O ícone de nuvem importa planilhas.
 - **Alertas:** sino exibe notificações recentes. Clicar em uma notificação abre o pedido relacionado. Use **"Marcar todos"** para limpar.
 - **Perfil:** clique no avatar (canto superior direito) para alterar dados pessoais ou sair do sistema.
@@ -79,7 +79,3 @@ Destinado a operadores das cooperativas singulares, equipes das federações e t
 - Utilize o campo `Prioridade` para facilitar o trabalho das federações/confederação.
 - Tenha atenção aos prazos exibidos em dias restantes; pedidos vencidos são automaticamente escalonados.
 - Habilite notificações do navegador e mantenha o e-mail atualizado para receber alertas sem atraso.
-
-## 6.10 Consulta a prestadores e dados institucionais
-- **Prestadores:** a aba *Prestadores* permite pesquisar bases publicas (ANS e cadastro enriquecido) por nome, cidade e `reg_ans`.
-- **Institucional:** dentro de *Cooperativas*, a aba *Institucional* exibe contatos, enderecos, diretoria, conselhos, LGPD e plantao. Operadores visualizam dados; edicao depende de permissao administrativa.

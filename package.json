@@ -43,6 +43,6 @@
             "dev": "vite",
             "prebuild": "node scripts/write-health.mjs",
             "build": "vite build",
-    "server:dev": "deno run --no-check -A --env-file=.env database/functions/server/index.tsx"
+            "server:dev": "deno run -A --env-file=.env database/functions/server/index.tsx"
       }
 }

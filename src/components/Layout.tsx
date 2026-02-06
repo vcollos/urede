@@ -13,7 +13,6 @@ import {
   Plus,
   UploadCloud,
   PieChart,
-  Search,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -238,10 +237,9 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
 
     const loadCooperativa = async () => {
       try {
-        const cooperativas = await apiService.getCooperativas();
-        const current = cooperativas.find((coop) => coop.id_singular === user.cooperativa_id);
+        const config = await apiService.getCooperativaConfig(user.cooperativa_id);
         if (active) {
-          setCooperativaTipo((current?.papel_rede ?? current?.tipo) ?? null);
+          setCooperativaTipo(config?.tipo ?? null);
         }
       } catch (error) {
         console.error('Erro ao carregar dados da cooperativa do usuário:', error);
@@ -259,8 +257,7 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
   }, [user?.cooperativa_id]);
 
   if (!user) return null;
-  const papelUsuario = user.papel_usuario ?? user.papel ?? 'operador';
-  const canCreatePedido = ['operador', 'admin'].includes(papelUsuario);
+  const canCreatePedido = ['operador', 'admin', 'confederacao'].includes(user.papel);
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
     { id: 'relatorios', label: 'Relatórios', icon: PieChart },
@@ -269,7 +266,6 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
     { id: 'cooperativas', label: 'Cooperativas', icon: Building2 },
     { id: 'operadores', label: 'Operadores', icon: User },
     { id: 'cidades', label: 'Cidades', icon: Map },
-    { id: 'prestadores', label: 'Prestadores', icon: Search },
     { id: 'configuracoes', label: 'Configurações', icon: Settings },
   ];
 
@@ -286,7 +282,7 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
     }
   })();
 
-  const baseRoleLabel = papelUsuario === 'admin' ? 'Administrador' : 'Operador';
+  const baseRoleLabel = user.papel === 'admin' ? 'Administrador' : 'Operador';
   const roleDisplayLabel = cooperativaScopeLabel
     ? `${baseRoleLabel} • ${cooperativaScopeLabel}`
     : baseRoleLabel;
@@ -300,7 +296,7 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
       case 'SINGULAR':
         return 'bg-[#E6F8EE] text-[#1F7A47] border-transparent shadow-[0_10px_20px_-18px_rgba(31,122,71,0.55)]';
       default:
-        return papelUsuario === 'admin'
+        return user.papel === 'admin'
           ? 'bg-[#F0E9FF] text-[#6C55D9] border-transparent shadow-[0_10px_20px_-18px_rgba(108,85,217,0.6)]'
           : 'bg-[#E6F8EE] text-[#1F7A47] border-transparent shadow-[0_10px_20px_-18px_rgba(31,122,71,0.55)]';
     }

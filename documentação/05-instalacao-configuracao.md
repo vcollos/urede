@@ -8,7 +8,7 @@ Permitir que equipes técnicas levantem ambientes (dev, homologação e produç�
 | --- | --- | --- |
 | Node.js | 18.x LTS | Build da SPA (Vite) e scripts auxiliares. |
 | npm | 9.x | Gerência de dependências. |
-| Deno | 2.x | Execução do backend Hono. |
+| Deno | 1.41+ | Execução do backend Hono. |
 | SQLite CLI | 3.39+ | Criação/importação local do banco `data/urede.db`. |
 | bash + coreutils | — | Execução dos scripts `scripts/*.sh`. |
 | Git | — | Versionamento e obtenção do código. |
@@ -30,10 +30,10 @@ npm install
 
 ## 5.4 Banco de dados Postgres (produção/homologação)
 1. Provisionar instância gerenciada (por exemplo, RDS, Cloud SQL, Supabase) com suporte TLS e backups automáticos.
-2. Aplicar o schema baseado em `db/sqlite_schema.sql` (ajustado para sintaxe Postgres). Todas as tabelas usam prefixo `urede_` e residem no schema `urede`.
+2. Aplicar o schema baseado em `db/sqlite_schema.sql` (ajustado para sintaxe Postgres). Todas as tabelas usam prefixo `urede_` e residem no schema definido por `DB_SCHEMA` (default `public`).
 3. Criar usuário de aplicação com permissões `SELECT/INSERT/UPDATE/DELETE` e acesso a `CREATE INDEX` para futuras migrações.
 4. Popular dados iniciais de cooperativas/cidades/operadores usando scripts ETL ou importação em massa (psql/copy).
-5. Configurar variáveis `DB_DRIVER=postgres`, `DB_SCHEMA=urede` e `DATABASE_DB_URL=postgresql://...` (com `sslmode=require` no Supabase).
+5. Configurar variáveis `DB_DRIVER=postgres` e `DATABASE_DB_URL=postgres://user:pass@host:5432/dbname`.
 
 ## 5.5 Banco de dados SQLite (somente desenvolvimento offline)
 1. Criar schema:
@@ -57,10 +57,9 @@ VITE_API_BASE_URL=http://127.0.0.1:8300
 # Backend
 JWT_SECRET=troque-para-valor-seguro
 DB_DRIVER=postgres
-DATABASE_DB_URL=postgresql://user:pass@host:5432/postgres?sslmode=require
+DATABASE_DB_URL=postgres://user:pass@host:5432/urede
 TABLE_PREFIX=urede_
-DB_SCHEMA=urede
-DATABASE_DB_POOL_SIZE=5
+DB_SCHEMA=public
 ALLOWED_ORIGINS=http://localhost:3400,http://127.0.0.1:3400
 PORT=8300
 PORT_FALLBACKS=8301,8302

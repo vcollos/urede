@@ -3,7 +3,7 @@
 ## 2.1 Considerações gerais
 - **Base URL:** definida por `VITE_API_BASE_URL` no front e pelas variáveis `APP_BASE_URL`/`APP_URL` para links nos e-mails. Em desenvolvimento, usar `http://127.0.0.1:8300`.
 - **Formato:** JSON UTF-8. Requisições POST/PUT devem enviar `Content-Type: application/json`.
-- **Autenticação:** JWT assinado em `/auth/login` (header `Authorization: Bearer <token>`). Tokens são verificados via `verifyJwt` e expirados conforme `signJwt` (24h por padrão). Claims principais: `cooperativa_id` e `papel_usuario` (`admin | operador`). Nivel institucional e derivado de `cooperativas.papel_rede`.
+- **Autenticação:** JWT assinado em `/auth/login` (header `Authorization: Bearer <token>`). Tokens são verificados via `verifyJwt` e expirados conforme `signJwt` (24h por padrão).
 - **Erros:** `{ "error": "mensagem" }` com status HTTP adequado (400, 401, 403, 404, 409, 500). Mensagens `pending_confirmation`, `pending_approval`, etc., são propagadas e tratadas pela SPA.
 - **Versionamento:** único conjunto de rotas; recomenda-se colocar atrás de API Gateway se for necessário versionar.
 
@@ -32,7 +32,7 @@ Resposta:
 | POST | `/auth/register` | Pública | Cria usuário, dispara e-mail de confirmação e (opcionalmente) solicita aprovação. |
 | POST | `/auth/login` | Pública | Retorna JWT após validar credenciais e status da conta. |
 | POST | `/auth/confirm-email` | Pública | Confirma token enviado por e-mail (`body.token` ou `?token=`). |
-| GET | `/auth/me` | JWT | Retorna perfil completo (nome, papel_usuario, cooperativa, approval_status). |
+| GET | `/auth/me` | JWT | Retorna perfil completo (nome, papel, cooperativa, approval_status). |
 | PUT | `/auth/me` | JWT | Atualiza informações pessoais (nome, telefone, cargo, etc.). |
 | POST | `/auth/change-password` | JWT | Altera senha mediante `current_password` (quando exigido) e `new_password`. |
 | GET | `/auth/pending` | JWT (admin) | Lista solicitações de aprovação direcionadas à cooperativa do admin. |
@@ -63,25 +63,11 @@ Resposta:
 | GET | `/pedidos/:id` | JWT | Retorna pedido detalhado + enriquecimento (cidades/cooperativas). |
 | POST | `/pedidos` | JWT | Cria pedido (campos: `titulo`, `cidade_id`, `especialidades[]`, `quantidade`, `observacoes`, `prioridade`, opcional `motivo_categoria`, `beneficiarios_quantidade`). Calcula `prazo_atual` conforme nível inicial. |
 | PUT | `/pedidos/:id` | JWT | Atualiza status, observações, responsável e outras colunas. Mantém auditoria e notifica alertas. |
-| DELETE | `/pedidos/:id` | JWT | Soft delete: marca `status=cancelado` e `excluido=true`. |
+| DELETE | `/pedidos/:id` | JWT | Marca `status=cancelado`/`excluido=true` (o frontend usa `ApiService.deletePedido`). |
 | POST | `/pedidos/:id/transferir` | JWT | Força escalonamento para próximo nível com `motivo` opcional. |
 | GET | `/pedidos/:id/auditoria` | JWT | Retorna logs da tabela `urede_auditoria_logs`. |
 | POST | `/pedidos/import` | JWT | Importa lote (`PedidoImportPayload`). Valida IBGE e especialidades, responde `summary` + `errors`. |
 | GET | `/pedidos/public` | Condicional | Disponível quando `PUBLIC_PEDIDOS=true`; expõe subconjunto sem dados sensíveis.
-
-### Dados institucionais
-| Método | Rota | Proteção | Descrição |
-| --- | --- | --- | --- |
-| GET | `/institucional/:table` | JWT | Lista registros institucionais (leitura global). Pode filtrar por `cooperativa_id`. |
-| POST | `/institucional/:table` | JWT (admin) | Cria registro institucional dentro do escopo do admin. |
-| PUT | `/institucional/:table/:id` | JWT (admin) | Atualiza registro institucional. |
-| DELETE | `/institucional/:table/:id` | JWT (admin) | Exclui registro institucional. |
-
-### Prestadores (consulta publica)
-| Método | Rota | Proteção | Descrição |
-| --- | --- | --- | --- |
-| GET | `/prestadores` | Pública | Consulta prestadores enriquecidos (filtros `q`, `reg_ans`, `limit`, `offset`). |
-| GET | `/prestadores/ans` | Pública | Consulta espelho ANS (mesmos filtros). |
 
 ### Alertas e dashboard
 | Método | Rota | Proteção | Descrição |
@@ -101,7 +87,7 @@ Resposta:
 | GET | `/debug/counts` | Pública (dev) | Contagens de registros por tabela (prefixadas). Não expor em produção.
 
 ## 2.4 Estruturas de dados
-- **User**: `src/types/index.ts` – inclui `papel_usuario`, `cooperativa_id`, `approval_status`, `email_confirmed_at`.
+- **User**: `src/types/index.ts` – inclui `papel`, `cooperativa_id`, `approval_status`, `email_confirmed_at`.
 - **Pedido**: inclui `nivel_atual`, `prazo_atual`, `dias_restantes`, `responsavel_atual_*`, `especialidades[]`, `ponto_de_vista`, `excluido`.
 - **Alerta**: `tipo` ∈ {`novo`, `comentario`, `status`, `nivel`, `responsavel`, `atualizacao`}; contém `mensagem`, `detalhes`, `lido`.
 - **SystemSettings**: prazos `deadlines.singularToFederacao`, `deadlines.federacaoToConfederacao`, flags `requireApproval`, `autoNotifyManagers`, `enableSelfRegistration`, `pedido_motivos[]`.

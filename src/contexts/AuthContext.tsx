@@ -17,7 +17,7 @@ interface AuthContextType {
     whatsapp: string;
     cargo: string;
     cooperativa_id: string;
-    papel: 'admin' | 'operador';
+    papel: 'admin' | 'operador' | 'federacao' | 'confederacao';
   }) => Promise<{ message: string; status?: string; autoApprove?: boolean }>;
   updateProfile: (data: Partial<Pick<User, 'nome' | 'display_name' | 'telefone' | 'whatsapp' | 'cargo'>>) => Promise<User | null>;
   changePassword: (data: { current_password?: string; new_password: string }) => Promise<void>;
@@ -140,7 +140,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     whatsapp: string;
     cargo: string;
     cooperativa_id: string;
-    papel: 'admin' | 'operador';
+    papel: 'admin' | 'operador' | 'federacao' | 'confederacao';
   }) => {
     try {
       setIsLoading(true);

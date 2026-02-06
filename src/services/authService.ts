@@ -15,7 +15,7 @@ export interface RegisterData {
   whatsapp: string;
   cargo: string;
   cooperativa_id: string;
-  papel: 'admin' | 'operador';
+  papel: 'admin' | 'operador' | 'federacao' | 'confederacao';
 }
 
 class AuthService {
