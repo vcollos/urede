@@ -13,6 +13,7 @@ import type {
   PedidoImportPayload,
   PedidoImportResponse,
   ReportsOverview,
+  DiretorPhoneAccessRequest,
 } from '../types';
 
 class ApiService {
@@ -234,6 +235,108 @@ class ApiService {
       console.error('Erro ao atualizar configurações da cooperativa:', error);
       throw error;
     }
+  }
+
+  // COOPERATIVAS (AUXILIARES)
+  async getCooperativaAux<T = any>(cooperativaId: string, resource: string): Promise<T[]> {
+    return await apiRequest(`/cooperativas/${cooperativaId}/aux/${resource}`);
+  }
+
+  async createCooperativaAuxItem<T = any>(
+    cooperativaId: string,
+    resource: string,
+    data: Record<string, unknown>,
+  ): Promise<T> {
+    return await apiRequest(`/cooperativas/${cooperativaId}/aux/${resource}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateCooperativaAuxItem<T = any>(
+    cooperativaId: string,
+    resource: string,
+    itemId: string,
+    data: Record<string, unknown>,
+  ): Promise<T> {
+    return await apiRequest(`/cooperativas/${cooperativaId}/aux/${resource}/${itemId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteCooperativaAuxItem(
+    cooperativaId: string,
+    resource: string,
+    itemId: string,
+  ): Promise<void> {
+    await apiRequest(`/cooperativas/${cooperativaId}/aux/${resource}/${itemId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async importCooperativaAux(
+    cooperativaId: string,
+    resource: string,
+    items: Record<string, unknown>[],
+    mode: 'replace' | 'append' = 'replace',
+  ): Promise<{ ok: boolean; inserted?: number }> {
+    return await apiRequest(`/cooperativas/${cooperativaId}/aux/${resource}/import?mode=${mode}`, {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    });
+  }
+
+  async importCooperativaAuxBulk(
+    resource: string,
+    items: Record<string, unknown>[],
+    mode: 'replace' | 'append' = 'replace',
+  ): Promise<{ ok: boolean; inserted?: number; targets?: Record<string, { inserted: number }>; denied?: string[] }> {
+    return await apiRequest(`/admin/gestao-dados/aux/${resource}/import?mode=${mode}`, {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    });
+  }
+
+  async requestDiretorPhoneAccess(
+    cooperativaId: string,
+    diretorId: string,
+    motivo?: string,
+  ): Promise<{ ok?: boolean; id?: string; status?: string; message?: string }> {
+    return await apiRequest(`/cooperativas/${cooperativaId}/diretores/${diretorId}/solicitar-celular`, {
+      method: 'POST',
+      body: JSON.stringify({ motivo: motivo || '' }),
+    });
+  }
+
+  async getDiretorPhoneAccessRequests(
+    cooperativaId: string,
+    status: 'pending' | 'approved' | 'rejected' | 'all' = 'pending',
+  ): Promise<DiretorPhoneAccessRequest[]> {
+    const result = await apiRequest(`/cooperativas/${cooperativaId}/diretores/celular-requests?status=${status}`);
+    return Array.isArray(result) ? result : [];
+  }
+
+  async approveDiretorPhoneAccessRequest(
+    cooperativaId: string,
+    requestId: string,
+    notes?: string,
+  ): Promise<void> {
+    await apiRequest(`/cooperativas/${cooperativaId}/diretores/celular-requests/${requestId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ notes: notes || '' }),
+    });
+  }
+
+  async rejectDiretorPhoneAccessRequest(
+    cooperativaId: string,
+    requestId: string,
+    notes?: string,
+  ): Promise<void> {
+    await apiRequest(`/cooperativas/${cooperativaId}/diretores/celular-requests/${requestId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ notes: notes || '' }),
+    });
   }
 
   // DASHBOARD

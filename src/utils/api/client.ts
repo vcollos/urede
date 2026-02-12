@@ -44,6 +44,18 @@ const DEFAULT_API_BASE = (envApiBaseUrl && envApiBaseUrl.trim())
 
 export const serverUrl = DEFAULT_API_BASE || '';
 
+export class ApiError extends Error {
+  status: number;
+  data: any;
+
+  constructor(message: string, status: number, data?: any) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.data = data;
+  }
+}
+
 // Armazenamento do token JWT local
 const TOKEN_KEY = 'auth_token';
 
@@ -86,7 +98,7 @@ export const apiRequest = async (endpoint: string, options: RequestInit = {}) =>
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
-    throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
+    throw new ApiError(errorData.error || `Erro HTTP: ${response.status}`, response.status, errorData);
   }
 
   // Se a resposta não tiver corpo (204) ou não for JSON, evitar chamara response.json() que lança erro.

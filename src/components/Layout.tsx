@@ -13,6 +13,7 @@ import {
   Plus,
   UploadCloud,
   PieChart,
+  Database,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -258,13 +259,15 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
 
   if (!user) return null;
   const canCreatePedido = ['operador', 'admin', 'confederacao'].includes(user.papel);
+  const isAdmin = user.papel === 'admin';
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
     { id: 'relatorios', label: 'Relatórios', icon: PieChart },
     { id: 'pedidos', label: 'Pedidos', icon: FileText },
     ...(canCreatePedido ? [{ id: 'importacao', label: 'Pedidos em lote', icon: UploadCloud }] : []),
+    ...(isAdmin ? [{ id: 'gestao_dados', label: 'Gestão de dados', icon: Database }] : []),
     { id: 'cooperativas', label: 'Cooperativas', icon: Building2 },
-    { id: 'operadores', label: 'Operadores', icon: User },
+    { id: 'operadores', label: 'Responsáveis', icon: User },
     { id: 'cidades', label: 'Cidades', icon: Map },
     { id: 'configuracoes', label: 'Configurações', icon: Settings },
   ];
@@ -282,7 +285,7 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
     }
   })();
 
-  const baseRoleLabel = user.papel === 'admin' ? 'Administrador' : 'Operador';
+  const baseRoleLabel = user.papel === 'admin' ? 'Administrador' : 'Responsável';
   const roleDisplayLabel = cooperativaScopeLabel
     ? `${baseRoleLabel} • ${cooperativaScopeLabel}`
     : baseRoleLabel;

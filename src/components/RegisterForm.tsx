@@ -273,7 +273,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
                 <SelectValue placeholder="Selecione seu papel" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="operador">Operador</SelectItem>
+                <SelectItem value="operador">Responsável</SelectItem>
                 <SelectItem value="admin">Administrador</SelectItem>
               </SelectContent>
             </Select>

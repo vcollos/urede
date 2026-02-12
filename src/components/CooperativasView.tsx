@@ -16,6 +16,7 @@ import { Building2, Users, MapPin, Search, LayoutGrid, Loader2, History, ArrowLe
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCircleMinus, faCirclePlus } from '@fortawesome/free-solid-svg-icons';
 import { cn } from './ui/utils';
+import { CooperativaAuxiliaresTab } from './CooperativaAuxiliaresTab';
 
 // Representa o escopo de cobertura que o usuário pode administrar.
 interface CoberturaScope {
@@ -83,6 +84,177 @@ const formatTimestamp = (value: string) => {
   }
 };
 
+const onlyDigits = (value: unknown) => String(value ?? '').replace(/\D/g, '');
+
+const formatCnpj = (value: unknown) => {
+  const digits = onlyDigits(value).slice(0, 14);
+  if (!digits) return '—';
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 5) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
+  if (digits.length <= 8) return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5)}`;
+  if (digits.length <= 12) return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8)}`;
+  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12, 14)}`;
+};
+
+const formatCep = (value: unknown) => {
+  const digits = onlyDigits(value).slice(0, 8);
+  if (!digits) return '';
+  if (digits.length <= 5) return digits;
+  return `${digits.slice(0, 5)}-${digits.slice(5, 8)}`;
+};
+
+const formatPhone = (value: unknown) => {
+  const digits = onlyDigits(value);
+  if (!digits) return '';
+  if (digits.startsWith('0800')) {
+    const base = digits.slice(0, 11);
+    if (base.length <= 4) return base;
+    if (base.length <= 7) return `${base.slice(0, 4)} ${base.slice(4)}`;
+    return `${base.slice(0, 4)} ${base.slice(4, 7)} ${base.slice(7, 11)}`;
+  }
+  if (digits.length <= 10) {
+    if (digits.length <= 2) return `(${digits}`;
+    if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6, 10)}`;
+  }
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
+};
+
+const formatEnderecoTipo = (value: unknown) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const normalized = raw
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (normalized === 'sede' || normalized === 'correspondencia') return 'Correspondência';
+  if (normalized === 'filial') return 'Filial';
+  if (normalized === 'atendimento') return 'Atendimento';
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+};
+
+type EnderecoAux = {
+  id: string;
+  tipo?: string;
+  nome_local?: string;
+  cep?: string;
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  cidade?: string;
+  uf?: string;
+  telefone_fixo?: string;
+  telefone_celular?: string;
+  ativo?: boolean;
+};
+
+type ContatoAux = {
+  id: string;
+  tipo?: string;
+  subtipo?: string;
+  valor?: string;
+  principal?: number | string | boolean;
+  ativo?: number | string | boolean;
+  label?: string;
+};
+
+const toBool = (value: unknown) => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  const s = String(value ?? '').toLowerCase().trim();
+  return ['1', 'true', 't', 'yes', 'y', 'sim'].includes(s);
+};
+
+const formatContatoTipo = (value: unknown) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const normalized = raw
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  const map: Record<string, string> = {
+    email: 'E-mail',
+    telefone: 'Telefone',
+    whatsapp: 'WhatsApp',
+    outro: 'Outro',
+  };
+  return map[normalized] ?? raw.charAt(0).toUpperCase() + raw.slice(1);
+};
+
+const formatContatoSubtipo = (value: unknown) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const normalized = raw
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  const map: Record<string, string> = {
+    lgpd: 'LGPD',
+    plantao: 'Plantão',
+    geral: 'Geral',
+    emergencia: 'Emergência',
+    divulgacao: 'Divulgação',
+    'comercial pf': 'Comercial PF',
+    'comercial pj': 'Comercial PJ',
+  };
+  return map[normalized] ?? raw.charAt(0).toUpperCase() + raw.slice(1);
+};
+
+const contatoBadgeClass = (kind: 'tipo' | 'subtipo', value: unknown) => {
+  const normalized = String(value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
+  if (kind === 'tipo') {
+    const map: Record<string, string> = {
+      email: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+      telefone: 'bg-sky-50 text-sky-700 border-sky-200',
+      whatsapp: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      outro: 'bg-slate-100 text-slate-700 border-slate-200',
+    };
+    return map[normalized] ?? 'bg-slate-100 text-slate-700 border-slate-200';
+  }
+
+  const map: Record<string, string> = {
+    lgpd: 'bg-rose-50 text-rose-700 border-rose-200',
+    plantao: 'bg-amber-50 text-amber-700 border-amber-200',
+    emergencia: 'bg-red-50 text-red-700 border-red-200',
+    geral: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    divulgacao: 'bg-blue-50 text-blue-700 border-blue-200',
+  };
+  return map[normalized] ?? 'bg-slate-100 text-slate-700 border-slate-200';
+};
+
+const normalizeWebsiteUrl = (raw: string) => {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+};
+
+const isLikelyUrl = (raw: string) => {
+  const s = raw.trim();
+  if (!s) return false;
+  if (/^https?:\/\//i.test(s)) return true;
+  return /^[^\s]+\.[^\s]+$/.test(s);
+};
+
+type DetailTab =
+  | 'overview'
+  | 'coverage'
+  | 'contatos'
+  | 'diretores'
+  | 'conselhos'
+  | 'departamentos'
+  | 'plantao'
+  | 'ouvidores'
+  | 'lgpd'
+  | 'auditores'
+  | 'history';
+
 export function CooperativasView() {
   // Usuário autenticado controla permissões e filtros de dados.
   const { user } = useAuth();
@@ -98,7 +270,13 @@ export function CooperativasView() {
   // Referência ao caminho anterior para restaurar a URL ao sair do detalhe.
   const previousPathRef = useRef<string | null>(null);
   const [selectedCoop, setSelectedCoop] = useState<Cooperativa | null>(null);
-  const [detailTab, setDetailTab] = useState<'overview' | 'coverage' | 'history'>('overview');
+  const [detailTab, setDetailTab] = useState<DetailTab>('overview');
+  const [overviewEnderecos, setOverviewEnderecos] = useState<EnderecoAux[]>([]);
+  const [isLoadingOverviewEnderecos, setIsLoadingOverviewEnderecos] = useState(false);
+  const [overviewEnderecosError, setOverviewEnderecosError] = useState('');
+  const [overviewContatos, setOverviewContatos] = useState<ContatoAux[]>([]);
+  const [isLoadingOverviewContatos, setIsLoadingOverviewContatos] = useState(false);
+  const [overviewContatosError, setOverviewContatosError] = useState('');
 
   // Estados relacionados à edição de cobertura de cidades.
   const [coverageDraft, setCoverageDraft] = useState<string[]>([]);
@@ -310,7 +488,7 @@ export function CooperativasView() {
   };
 
   // Abre a página de detalhes carregando o estado base da cooperativa.
-  const handleOpenDetails = (coop: Cooperativa) => {
+  const handleOpenDetails = (coop: Cooperativa, options?: { fromDeepLink?: boolean }) => {
     setSelectedCoop(coop);
     const cobertura = cidades
       .filter((cidade) => cidade.id_singular === coop.id_singular)
@@ -330,9 +508,15 @@ export function CooperativasView() {
     setTransferPrompt(null);
 
     // Atualiza a URL para permitir rastreamento no analytics.
-    previousPathRef.current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
     const detailPath = `/cooperativas/${coop.id_singular}`;
-    window.history.pushState({ coopDetail: true, coopId: coop.id_singular }, '', detailPath);
+    const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (options?.fromDeepLink || window.location.pathname === detailPath) {
+      previousPathRef.current = '/cooperativas';
+      window.history.replaceState({ coopDetail: true, coopId: coop.id_singular }, '', detailPath);
+    } else {
+      previousPathRef.current = currentPath;
+      window.history.pushState({ coopDetail: true, coopId: coop.id_singular }, '', detailPath);
+    }
   };
 
   // Fecha a página de detalhes, garantindo que alterações não salvas sejam validadas com o usuário.
@@ -461,6 +645,49 @@ export function CooperativasView() {
     }
   }, [detailTab, selectedCoop]);
 
+  useEffect(() => {
+    const loadOverviewEnderecos = async () => {
+      if (!selectedCoop) {
+        setOverviewEnderecos([]);
+        setOverviewEnderecosError('');
+        return;
+      }
+      try {
+        setIsLoadingOverviewEnderecos(true);
+        setOverviewEnderecosError('');
+        const enderecos = await apiService.getCooperativaAux<EnderecoAux>(selectedCoop.id_singular, 'enderecos');
+        setOverviewEnderecos(Array.isArray(enderecos) ? enderecos : []);
+      } catch (err) {
+        console.error('Erro ao carregar endereços:', err);
+        setOverviewEnderecosError(err instanceof Error ? err.message : 'Erro ao carregar endereços');
+      } finally {
+        setIsLoadingOverviewEnderecos(false);
+      }
+    };
+
+    const loadOverviewContatos = async () => {
+      if (!selectedCoop) {
+        setOverviewContatos([]);
+        setOverviewContatosError('');
+        return;
+      }
+      try {
+        setIsLoadingOverviewContatos(true);
+        setOverviewContatosError('');
+        const contatos = await apiService.getCooperativaAux<ContatoAux>(selectedCoop.id_singular, 'contatos');
+        setOverviewContatos(Array.isArray(contatos) ? contatos : []);
+      } catch (err) {
+        console.error('Erro ao carregar contatos (overview):', err);
+        setOverviewContatosError(err instanceof Error ? err.message : 'Erro ao carregar contatos');
+      } finally {
+        setIsLoadingOverviewContatos(false);
+      }
+    };
+
+    loadOverviewEnderecos();
+    loadOverviewContatos();
+  }, [selectedCoop?.id_singular]);
+
   // Reseta a página ao mudar filtros ou tamanho da lista atribuída.
   useEffect(() => {
     setAssignedPage(0);
@@ -498,6 +725,18 @@ export function CooperativasView() {
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, [selectedCoop, handleCloseDetails, hasCoverageChanges, isSavingCoverage, currentCoverageSet]);
+
+  // Deep link: /cooperativas/:id_singular deve abrir automaticamente o detalhe.
+  useEffect(() => {
+    if (selectedCoop) return;
+    const m = window.location.pathname.match(/^\/cooperativas\/([^/]+)$/);
+    if (!m) return;
+    const id = (m[1] || '').trim();
+    if (!id) return;
+    const coop = cooperativas.find((c) => c.id_singular === id);
+    if (!coop) return;
+    handleOpenDetails(coop, { fromDeepLink: true });
+  }, [cooperativas, handleOpenDetails, selectedCoop]);
 
   // Estado inicial de carregamento global.
   if (isLoading) {
@@ -560,24 +799,32 @@ export function CooperativasView() {
           onValueChange={(value) => setDetailTab(value as typeof detailTab)}
           className="flex flex-col gap-6"
         >
-          <TabsList className="grid w-full max-w-xl grid-cols-3 gap-2">
+          <TabsList className="flex h-auto w-full flex-wrap justify-start gap-2 rounded-lg bg-muted/60 p-1">
             <TabsTrigger value="overview">Visão Geral</TabsTrigger>
-            <TabsTrigger value="coverage">Cobertura de cidades</TabsTrigger>
+            <TabsTrigger value="coverage">Cidades</TabsTrigger>
+            <TabsTrigger value="contatos">Contatos</TabsTrigger>
+            <TabsTrigger value="diretores">Diretores</TabsTrigger>
+            <TabsTrigger value="conselhos">Conselhos</TabsTrigger>
+            <TabsTrigger value="departamentos">Departamentos</TabsTrigger>
+            <TabsTrigger value="plantao">Urgência &amp; Emergência</TabsTrigger>
+            <TabsTrigger value="ouvidores">Ouvidoria</TabsTrigger>
+            <TabsTrigger value="lgpd">LGPD</TabsTrigger>
+            <TabsTrigger value="auditores">Auditores</TabsTrigger>
             <TabsTrigger value="history">Histórico</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="mt-0">
             {/* Bloco de resumo com dados estáticos da cooperativa */}
             <div className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Card>
+              <div className="grid gap-4 lg:grid-cols-3">
+                <Card className="h-full">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm text-gray-600">Informações legais</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
                     <div>
                       <span className="text-gray-500">CNPJ</span>
-                      <p className="font-medium text-gray-900">{selectedCoop.cnpj || '—'}</p>
+                      <p className="font-medium text-gray-900">{formatCnpj(selectedCoop.cnpj)}</p>
                     </div>
                     <div>
                       <span className="text-gray-500">Código ANS</span>
@@ -590,7 +837,7 @@ export function CooperativasView() {
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card className="h-full">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm text-gray-600">Operação</CardTitle>
                   </CardHeader>
@@ -607,26 +854,176 @@ export function CooperativasView() {
                       <span className="text-gray-500">Software</span>
                       <p className="font-medium text-gray-900">{selectedCoop.software || '—'}</p>
                     </div>
+                    <div>
+                      <span className="text-gray-500">Website</span>
+                      {(() => {
+                        const primary = overviewContatos
+                          .filter((c) => toBool(c.ativo ?? 1))
+                          .filter((c) => toBool(c.principal))
+                          .filter((c) => String(c.tipo ?? '').toLowerCase() === 'outro');
+                        const candidate = primary.find((c) => {
+                          const label = String(c.label ?? '').toLowerCase();
+                          const valor = String(c.valor ?? '');
+                          return isLikelyUrl(valor) || label.includes('site') || label.includes('web');
+                        }) || null;
+                        const raw = String(candidate?.valor ?? '').trim();
+                        if (!raw) return <p className="font-medium text-gray-900">—</p>;
+                        const url = normalizeWebsiteUrl(raw);
+                        return (
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-medium text-[#3145C4] underline-offset-4 hover:underline break-all"
+                          >
+                            {raw}
+                          </a>
+                        );
+                      })()}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="h-full">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-gray-600">Resumo</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4 text-sm">
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      <div>
+                        <span className="text-gray-500">Cidades atendidas</span>
+                        <p className="text-xl font-semibold text-gray-900">{currentCoverageSet.size}</p>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Responsáveis ativos</span>
+                        <p className="text-xl font-semibold text-gray-900">{operadorCountMap.get(selectedCoop.id_singular) ?? 0}</p>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Área de cobertura</span>
+                        <p className="text-sm text-gray-900">Atualize na aba &ldquo;Cidades&rdquo;</p>
+                      </div>
+                    </div>
                   </CardContent>
                 </Card>
               </div>
 
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-gray-600">Resumo</CardTitle>
+                  <CardTitle className="text-sm text-gray-600">Endereços</CardTitle>
                 </CardHeader>
-                <CardContent className="grid gap-4 sm:grid-cols-3 text-sm">
-                  <div>
-                    <span className="text-gray-500">Cidades atendidas</span>
-                    <p className="text-xl font-semibold text-gray-900">{currentCoverageSet.size}</p>
+                <CardContent className="grid gap-4 md:grid-cols-2 text-sm">
+                  {/* Coluna 1: endereços */}
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Endereços</p>
+                    {overviewEnderecosError && (
+                      <p className="text-red-600">{overviewEnderecosError}</p>
+                    )}
+                    {isLoadingOverviewEnderecos ? (
+                      <p className="text-gray-500">Carregando endereços...</p>
+                    ) : overviewEnderecos.length === 0 ? (
+                      <p className="text-gray-500">Nenhum endereço cadastrado.</p>
+                    ) : (
+                      overviewEnderecos.map((endereco) => {
+                        const cepFormatado = formatCep(endereco.cep);
+                        const telefoneFixo = formatPhone(endereco.telefone_fixo);
+                        const telefoneCelular = formatPhone(endereco.telefone_celular);
+                        const logradouroNumero = [endereco.logradouro, endereco.numero].filter(Boolean).join(', ');
+                        const phones = [telefoneFixo, telefoneCelular].filter(Boolean).join(' • ');
+                        const parts = [
+                          logradouroNumero,
+                          endereco.complemento,
+                          endereco.bairro,
+                          endereco.cidade,
+                          endereco.uf,
+                          cepFormatado,
+                          phones,
+                        ].filter((item) => String(item ?? '').trim().length > 0);
+                        const linhaUnica = parts.join(' • ');
+
+                        return (
+                          <div key={endereco.id} className="rounded-md border border-gray-200 p-3">
+                            <p className="font-semibold text-gray-900">
+                              {[formatEnderecoTipo(endereco.tipo), endereco.nome_local].filter(Boolean).join(' • ') || 'Endereço'}
+                            </p>
+                            <p className="text-gray-700 leading-relaxed">{linhaUnica || '—'}</p>
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
-                  <div>
-                    <span className="text-gray-500">Operadores ativos</span>
-                    <p className="text-xl font-semibold text-gray-900">{operadorCountMap.get(selectedCoop.id_singular) ?? 0}</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Área de cobertura</span>
-                    <p className="text-sm text-gray-900">Atualize na aba &ldquo;Cobertura de cidades&rdquo;</p>
+
+                  {/* Coluna 2: contatos principais */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Contatos principais</p>
+                      {isLoadingOverviewContatos && <span className="text-xs text-gray-400">Carregando...</span>}
+                    </div>
+                    {overviewContatosError && (
+                      <p className="text-red-600">{overviewContatosError}</p>
+                    )}
+                    {(() => {
+                      const principais = overviewContatos
+                        .filter((c) => toBool(c.ativo ?? 1))
+                        .filter((c) => toBool(c.principal));
+
+                      if (!principais.length) {
+                        return <p className="text-gray-500">Nenhum contato principal cadastrado.</p>;
+                      }
+
+                      const renderValor = (c: ContatoAux) => {
+                        const tipoRaw = String(c.tipo ?? '').toLowerCase();
+                        const valorRaw = String(c.valor ?? '').trim();
+                        if (tipoRaw === 'telefone' || tipoRaw === 'whatsapp') return formatPhone(valorRaw) || '—';
+                        return valorRaw || '—';
+                      };
+
+                      return (
+                        <div className="rounded-md border border-gray-200 overflow-hidden bg-white">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Tipo</TableHead>
+                                <TableHead>Subtipo</TableHead>
+                                <TableHead>Valor</TableHead>
+                                <TableHead>Label</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {principais.map((c) => {
+                                const tipoLabel = formatContatoTipo(c.tipo) || '—';
+                                const subtipoLabel = formatContatoSubtipo(c.subtipo) || '—';
+                                return (
+                                  <TableRow key={c.id}>
+                                    <TableCell>
+                                      <Badge
+                                        variant="outline"
+                                        className={cn('rounded-full border px-2.5 py-1 text-xs font-semibold', contatoBadgeClass('tipo', c.tipo))}
+                                      >
+                                        {tipoLabel}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell>
+                                      <Badge
+                                        variant="outline"
+                                        className={cn('rounded-full border px-2.5 py-1 text-xs font-semibold', contatoBadgeClass('subtipo', c.subtipo))}
+                                      >
+                                        {subtipoLabel}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell className="font-medium text-gray-900 break-all">
+                                      {renderValor(c)}
+                                    </TableCell>
+                                    <TableCell className="text-gray-600 break-all">
+                                      {String(c.label ?? '').trim() || '—'}
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </CardContent>
               </Card>
@@ -897,7 +1294,7 @@ export function CooperativasView() {
                         <TableHead>Cidade</TableHead>
                         <TableHead>Origem</TableHead>
                         <TableHead>Destino</TableHead>
-                        <TableHead>Usuário</TableHead>
+                        <TableHead>Responsável</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -929,6 +1326,52 @@ export function CooperativasView() {
                 </div>
               )}
             </div>
+          </TabsContent>
+
+          <TabsContent value="contatos" className="mt-0">
+            <div className="space-y-4">
+              {!canEditSelected && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-md text-sm text-amber-700">
+                  Você não possui permissão para editar o cadastro auxiliar desta cooperativa.
+                </div>
+              )}
+              <CooperativaAuxiliaresTab idSingular={selectedCoop.id_singular} canEdit={canEditSelected} resourceKey="contatos" />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="diretores" className="mt-0">
+            <CooperativaAuxiliaresTab idSingular={selectedCoop.id_singular} canEdit={canEditSelected} resourceKey="diretores" />
+          </TabsContent>
+
+          <TabsContent value="conselhos" className="mt-0">
+            <CooperativaAuxiliaresTab idSingular={selectedCoop.id_singular} canEdit={canEditSelected} resourceKey="conselhos" />
+          </TabsContent>
+
+          <TabsContent value="departamentos" className="mt-0">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Departamentos</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-600">Esta aba será implementada em breve.</p>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="plantao" className="mt-0">
+            <CooperativaAuxiliaresTab idSingular={selectedCoop.id_singular} canEdit={canEditSelected} resourceKey="plantao" />
+          </TabsContent>
+
+          <TabsContent value="ouvidores" className="mt-0">
+            <CooperativaAuxiliaresTab idSingular={selectedCoop.id_singular} canEdit={canEditSelected} resourceKey="ouvidores" />
+          </TabsContent>
+
+          <TabsContent value="lgpd" className="mt-0">
+            <CooperativaAuxiliaresTab idSingular={selectedCoop.id_singular} canEdit={canEditSelected} resourceKey="lgpd" />
+          </TabsContent>
+
+          <TabsContent value="auditores" className="mt-0">
+            <CooperativaAuxiliaresTab idSingular={selectedCoop.id_singular} canEdit={canEditSelected} resourceKey="auditores" />
           </TabsContent>
         </Tabs>
 
@@ -997,7 +1440,7 @@ export function CooperativasView() {
                   <TableHead>Cooperativa</TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead className="hidden md:table-cell">Cidades</TableHead>
-                  <TableHead className="hidden md:table-cell">Operadores</TableHead>
+                <TableHead className="hidden md:table-cell">Responsáveis</TableHead>
                   <TableHead className="hidden lg:table-cell">Software</TableHead>
                   <TableHead className="hidden lg:table-cell">CNPJ</TableHead>
                   <TableHead className="w-28 text-right">Ações</TableHead>

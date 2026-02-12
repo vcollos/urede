@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AuthScreen } from './components/AuthScreen';
 import { Layout } from './components/Layout';
@@ -17,11 +17,30 @@ import { Button } from './components/ui/button';
 import { apiService } from './services/apiService';
 import { DocumentacaoUsuariosApp } from './documentacao/usuarios';
 import { ReportsView } from './components/ReportsView';
+import { GestaoDadosPage } from './components/GestaoDadosPage';
 
 // Componente interno que usa o AuthContext
 function AppContent() {
   const { isAuthenticated, isLoading, user, refreshUser } = useAuth();
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const deriveTabFromPath = useMemo(() => {
+    return (pathname: string) => {
+      if (pathname.startsWith('/cooperativas')) return 'cooperativas';
+      if (pathname.startsWith('/cidades')) return 'cidades';
+      if (pathname.startsWith('/operadores')) return 'operadores';
+      if (pathname.startsWith('/configuracoes')) return 'configuracoes';
+      if (pathname.startsWith('/relatorios')) return 'relatorios';
+      if (pathname.startsWith('/importacao')) return 'importacao';
+      if (pathname.startsWith('/gestao_dados')) return 'gestao_dados';
+      if (pathname.startsWith('/pedidos')) return 'pedidos';
+      if (pathname === '/' || pathname === '') return 'dashboard';
+      return 'dashboard';
+    };
+  }, []);
+
+  const [activeTab, setActiveTab] = useState(() => {
+    const pathname = typeof window !== 'undefined' ? window.location.pathname : '/';
+    return deriveTabFromPath(pathname);
+  });
   const [showNovoPedido, setShowNovoPedido] = useState(false);
   const [selectedPedido, setSelectedPedido] = useState<Pedido | null>(null);
   const [pedidosPresetFilter, setPedidosPresetFilter] = useState<PedidosFilterPreset | null>(null);
@@ -42,6 +61,15 @@ function AppContent() {
       />
     );
   }
+
+  // Mini-router: permite deep links (ex.: /cooperativas/001) e navegação por pushState.
+  useEffect(() => {
+    const handle = () => {
+      setActiveTab(deriveTabFromPath(window.location.pathname));
+    };
+    window.addEventListener('popstate', handle);
+    return () => window.removeEventListener('popstate', handle);
+  }, [deriveTabFromPath]);
 
   // Mostrar loading durante verificação da autenticação
   if (isLoading) {
@@ -135,7 +163,12 @@ function AppContent() {
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <Dashboard onNavigateToPedidos={navigateToPedidosWithFilter} />;
+        return (
+          <Dashboard
+            onNavigateToPedidos={navigateToPedidosWithFilter}
+            onViewPedido={(pedido) => setSelectedPedido(pedido)}
+          />
+        );
       case 'pedidos':
         return (
           <PedidosLista
@@ -145,6 +178,8 @@ function AppContent() {
         );
       case 'importacao':
         return <PedidosImportPage onBack={() => setActiveTab('pedidos')} />;
+      case 'gestao_dados':
+        return <GestaoDadosPage />;
       case 'cooperativas':
         return <CooperativasView />;
       case 'operadores':

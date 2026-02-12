@@ -196,7 +196,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
   })();
 
   const roleOptions = [
-    { value: 'operador', label: 'Operador' },
+    { value: 'operador', label: 'Responsável' },
     { value: 'admin', label: 'Administrador' },
   ] as const;
 
@@ -400,12 +400,12 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Operadores</h1>
-          <p className="text-gray-600">Gerencie os operadores do sistema</p>
+          <h1 className="text-2xl font-bold text-gray-900">Responsáveis</h1>
+          <p className="text-gray-600">Gerencie os responsáveis do sistema</p>
         </div>
         <div className="text-center py-8">
           <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Carregando operadores...</p>
+          <p className="text-gray-600">Carregando responsáveis...</p>
         </div>
       </div>
     );
@@ -415,8 +415,8 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Operadores</h1>
-          <p className="text-gray-600">Gerencie os operadores do sistema</p>
+          <h1 className="text-2xl font-bold text-gray-900">Responsáveis</h1>
+          <p className="text-gray-600">Gerencie os responsáveis do sistema</p>
         </div>
         <div className="text-center py-8">
           <p className="text-red-600">Erro: {error}</p>
@@ -430,8 +430,8 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
       {/* Header */}
       <div className="flex items-center justify-between">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Operadores</h1>
-        <p className="text-gray-600">Gerencie os operadores do sistema</p>
+        <h1 className="text-2xl font-bold text-gray-900">Responsáveis</h1>
+        <p className="text-gray-600">Gerencie os responsáveis do sistema</p>
       </div>
         {isAuthenticated && canCreate && (
           <Button
@@ -440,7 +440,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
             disabled={availableCooperativas.length === 0}
           >
             <Plus className="w-4 h-4 mr-2" />
-            Novo Operador
+            Novo Responsável
           </Button>
         )}
       </div>
@@ -518,7 +518,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
               <div className="relative flex-1 md:max-w-xs">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                 <Input
-                  placeholder="Buscar operadores..."
+                  placeholder="Buscar responsáveis..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
@@ -552,18 +552,18 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
             </div>
             
             <div className="text-sm text-gray-500">
-              {operadoresFiltrados.length} operador(es) encontrado(s)
+              {operadoresFiltrados.length} responsável(is) encontrado(s)
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Tabela de Operadores */}
+      {/* Tabela de Responsáveis */}
       <Card>
         <CardHeader>
-          <CardTitle>Lista de Operadores</CardTitle>
+          <CardTitle>Lista de Responsáveis</CardTitle>
           <CardDescription>
-            Visualize e gerencie todos os operadores cadastrados no sistema
+            Visualize e gerencie todos os responsáveis cadastrados no sistema
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -571,7 +571,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Operador</TableHead>
+                  <TableHead>Responsável</TableHead>
                   <TableHead className="hidden md:table-cell">Cooperativa</TableHead>
                   <TableHead className="hidden lg:table-cell">Cargo</TableHead>
                   <TableHead className="hidden lg:table-cell">Acesso</TableHead>
@@ -585,7 +585,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
                 {operadoresFiltrados.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-8 text-gray-500">
-                      Nenhum operador encontrado
+                      Nenhum responsável encontrado
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -759,7 +759,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
 
               <div className="flex items-center justify-between rounded-lg border border-gray-200 p-3">
                 <div>
-                  <p className="text-sm font-medium text-gray-700">Operador ativo</p>
+                  <p className="text-sm font-medium text-gray-700">Responsável ativo</p>
                   <p className="text-xs text-gray-500">Desative para suspender temporariamente o acesso.</p>
                 </div>
                 <Switch

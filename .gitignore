@@ -12,3 +12,16 @@ build/
 database/functions/server/.env
 database/.temp/
 database/functions/server/index\ 2.ts
+
+# Local/runtime
+server.log
+.run/
+
+# SQLite runtime files / backups
+data/backups/
+data/*.db-wal
+data/*.db-shm
+data/*.sqlite-wal
+data/*.sqlite-shm
+data/*.nwal
+data/*.nwal-shm

@@ -17,6 +17,135 @@ CREATE TABLE IF NOT EXISTS urede_cooperativas (
   op_pr         TEXT
 );
 
+-- Tabelas auxiliares da cooperativa (pessoas/contatos/estrutura)
+-- Regras:
+-- - Todas relacionam por id_singular -> urede_cooperativas(id_singular)
+-- - Tabelas iniciam vazias
+-- - IDs gerados por gen_random_uuid() (requer pgcrypto)
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE TABLE IF NOT EXISTS urede_cooperativa_auditores (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id_singular TEXT REFERENCES urede_cooperativas(id_singular) ON DELETE CASCADE,
+  primeiro_nome TEXT,
+  sobrenome TEXT,
+  telefone_celular TEXT,
+  email TEXT,
+  ativo BOOLEAN DEFAULT TRUE
+);
+CREATE INDEX IF NOT EXISTS idx_urede_coop_auditores_id_singular ON urede_cooperativa_auditores(id_singular);
+
+CREATE TABLE IF NOT EXISTS urede_cooperativa_conselhos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id_singular TEXT REFERENCES urede_cooperativas(id_singular) ON DELETE CASCADE,
+  tipo TEXT CHECK (tipo IN ('fiscal','administrativo','tecnico')),
+  primeiro_nome TEXT,
+  sobrenome TEXT,
+  posicao TEXT CHECK (posicao IN ('titular','suplente')),
+  ano_inicio_mandato INTEGER,
+  ano_fim_mandato INTEGER,
+  ativo BOOLEAN DEFAULT TRUE
+);
+CREATE INDEX IF NOT EXISTS idx_urede_coop_conselhos_id_singular ON urede_cooperativa_conselhos(id_singular);
+
+CREATE TABLE IF NOT EXISTS urede_cooperativa_contatos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id_singular TEXT REFERENCES urede_cooperativas(id_singular) ON DELETE CASCADE,
+  tipo TEXT,
+  subtipo TEXT,
+  valor TEXT,
+  principal BOOLEAN DEFAULT FALSE,
+  ativo BOOLEAN DEFAULT TRUE
+);
+CREATE INDEX IF NOT EXISTS idx_urede_coop_contatos_id_singular ON urede_cooperativa_contatos(id_singular);
+CREATE INDEX IF NOT EXISTS idx_urede_coop_contatos_subtipo ON urede_cooperativa_contatos(subtipo);
+
+CREATE TABLE IF NOT EXISTS urede_cooperativa_diretores (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id_singular TEXT REFERENCES urede_cooperativas(id_singular) ON DELETE CASCADE,
+  cargo TEXT,
+  pasta TEXT,
+  primeiro_nome TEXT,
+  sobrenome TEXT,
+  email TEXT,
+  telefone_celular TEXT,
+  divulgar_celular BOOLEAN DEFAULT FALSE,
+  inicio_mandato INTEGER,
+  fim_mandato INTEGER,
+  ativo BOOLEAN DEFAULT TRUE
+);
+CREATE INDEX IF NOT EXISTS idx_urede_coop_diretores_id_singular ON urede_cooperativa_diretores(id_singular);
+
+CREATE TABLE IF NOT EXISTS urede_diretor_phone_access_requests (
+  id TEXT PRIMARY KEY,
+  cooperativa_id TEXT NOT NULL REFERENCES urede_cooperativas(id_singular) ON DELETE CASCADE,
+  diretor_id TEXT NOT NULL REFERENCES urede_cooperativa_diretores(id) ON DELETE CASCADE,
+  requester_email TEXT NOT NULL,
+  requester_nome TEXT,
+  requester_cooperativa_id TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  motivo TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  decided_at TIMESTAMPTZ,
+  decided_by TEXT,
+  decision_notes TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_urede_diretor_phone_requests_coop_status ON urede_diretor_phone_access_requests(cooperativa_id, status);
+CREATE INDEX IF NOT EXISTS idx_urede_diretor_phone_requests_requester ON urede_diretor_phone_access_requests(requester_email, diretor_id);
+
+CREATE TABLE IF NOT EXISTS urede_cooperativa_enderecos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id_singular TEXT REFERENCES urede_cooperativas(id_singular) ON DELETE CASCADE,
+  tipo TEXT CHECK (tipo IN ('sede','filial','atendimento','correspondencia')),
+  nome_local TEXT,
+  cd_municipio_7 TEXT,
+  cep TEXT,
+  logradouro TEXT,
+  numero TEXT,
+  complemento TEXT,
+  bairro TEXT,
+  cidade TEXT,
+  uf TEXT,
+  telefone_fixo TEXT,
+  telefone_celular TEXT,
+  ativo BOOLEAN DEFAULT TRUE
+);
+CREATE INDEX IF NOT EXISTS idx_urede_coop_enderecos_id_singular ON urede_cooperativa_enderecos(id_singular);
+CREATE INDEX IF NOT EXISTS idx_urede_coop_enderecos_cd_municipio_7 ON urede_cooperativa_enderecos(cd_municipio_7);
+
+CREATE TABLE IF NOT EXISTS urede_cooperativa_lgpd (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id_singular TEXT REFERENCES urede_cooperativas(id_singular) ON DELETE CASCADE,
+  primeiro_nome TEXT,
+  sobrenome TEXT,
+  email TEXT,
+  telefone TEXT,
+  ativo BOOLEAN DEFAULT TRUE
+);
+CREATE INDEX IF NOT EXISTS idx_urede_coop_lgpd_id_singular ON urede_cooperativa_lgpd(id_singular);
+
+CREATE TABLE IF NOT EXISTS urede_cooperativa_ouvidores (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id_singular TEXT REFERENCES urede_cooperativas(id_singular) ON DELETE CASCADE,
+  primeiro_nome TEXT,
+  sobrenome TEXT,
+  telefone_fixo TEXT,
+  telefone_celular TEXT,
+  email TEXT,
+  ativo BOOLEAN DEFAULT TRUE
+);
+CREATE INDEX IF NOT EXISTS idx_urede_coop_ouvidores_id_singular ON urede_cooperativa_ouvidores(id_singular);
+
+CREATE TABLE IF NOT EXISTS urede_cooperativa_plantao (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id_singular TEXT REFERENCES urede_cooperativas(id_singular) ON DELETE CASCADE,
+  modelo_atendimento TEXT,
+  descricao TEXT,
+  ativo BOOLEAN DEFAULT TRUE,
+  criado_em TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_urede_coop_plantao_id_singular ON urede_cooperativa_plantao(id_singular);
+
 CREATE TABLE IF NOT EXISTS urede_cidades (
   cd_municipio_7     TEXT PRIMARY KEY,
   cd_municipio       TEXT,

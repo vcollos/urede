@@ -27,9 +27,19 @@ export type PedidosFilterPreset = {
   token?: number;
 };
 
+export type PedidosScopeFilter =
+  | 'me'
+  | 'uniodonto'
+  | 'minha_singular';
+
 interface PedidosListaProps {
   onViewPedido: (pedido: Pedido) => void;
   presetFilter?: PedidosFilterPreset | null;
+  embedded?: boolean;
+  defaultViewMode?: 'lista' | 'kanban';
+  showScopeFilter?: boolean;
+  defaultScopeFilter?: PedidosScopeFilter;
+  excludeCreatedOutsideCoop?: boolean;
 }
 
 const pedidosTableClasses = {
@@ -79,19 +89,32 @@ const chipBaseClass =
 const chipExtraClass =
   'rounded-full border-0 bg-[#f1f4ff] px-3 py-[6px] text-[11px] font-medium leading-none text-[#4b50be] shadow-none';
 
-export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) {
+export function PedidosLista({
+  onViewPedido,
+  presetFilter,
+  embedded = false,
+  defaultViewMode,
+  showScopeFilter = false,
+  defaultScopeFilter,
+  excludeCreatedOutsideCoop = false,
+}: PedidosListaProps) {
   const { user, isAuthenticated } = useAuth();
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const defaultStatusSelection: Pedido['status'][] = ['novo', 'em_andamento'];
+  const defaultStatusSelection: Pedido['status'][] =
+    (defaultViewMode ?? 'lista') === 'kanban'
+      ? ['novo', 'em_andamento', 'concluido']
+      : ['novo', 'em_andamento'];
   const allStatusValues: Pedido['status'][] = ['novo', 'em_andamento', 'concluido', 'cancelado'];
 
   const [statusFilter, setStatusFilter] = useState<Pedido['status'][]>(() => [...defaultStatusSelection]);
   const [nivelFilter, setNivelFilter] = useState('todos');
-  const [viewMode, setViewMode] = useState<'lista' | 'kanban'>('lista');
+  const [viewMode, setViewMode] = useState<'lista' | 'kanban'>(() => (defaultViewMode ?? 'lista'));
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [customFilter, setCustomFilter] = useState<'vencendo' | null>(null);
+  const [scopeFilter, setScopeFilter] = useState<PedidosScopeFilter>(() => (defaultScopeFilter ?? 'me'));
+  const [kanbanConcluidosLimit, setKanbanConcluidosLimit] = useState(10);
 
   // Carregar pedidos
   useEffect(() => {
@@ -184,7 +207,7 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
     }
 
     if (arraysEqual(statusFilter, normalizedDefaultStatuses)) {
-      return 'Status (Ativos)';
+      return 'Status (Padrão)';
     }
 
     if (arraysEqual(statusFilter, normalizedAllStatuses)) {
@@ -230,6 +253,37 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
       .filter((pedido) => !pedido.excluido)
       .filter((pedido) => statusFilter.includes(pedido.status));
 
+    if (excludeCreatedOutsideCoop && user?.email && user?.cooperativa_id) {
+      const myEmail = user.email.toLowerCase();
+      pedidosFiltrados = pedidosFiltrados.filter((p) => {
+        const createdByMe = (p.criado_por_user || '').toLowerCase() === myEmail;
+        const outsideMyCoop = p.cooperativa_responsavel_id !== user.cooperativa_id;
+        return !(createdByMe && outsideMyCoop);
+      });
+    }
+
+    if (showScopeFilter && user) {
+      const myCoop = user.cooperativa_id;
+      const myUserId = user.id;
+      pedidosFiltrados = pedidosFiltrados.filter((p) => {
+        switch (scopeFilter) {
+          case 'me': {
+            if (p.cooperativa_responsavel_id !== myCoop) return false;
+            const assigned = p.responsavel_atual_id || null;
+            return !assigned || assigned === myUserId;
+          }
+          case 'uniodonto': {
+            return p.cooperativa_responsavel_id === myCoop;
+          }
+          case 'minha_singular': {
+            return p.cooperativa_solicitante_id === myCoop;
+          }
+          default:
+            return true;
+        }
+      });
+    }
+
     // Aplicar filtros de busca
     if (searchTerm) {
       pedidosFiltrados = pedidosFiltrados.filter(p => 
@@ -254,6 +308,11 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
 
     return pedidosFiltrados;
   };
+
+  useEffect(() => {
+    // Evita listas gigantes em "Concluídos" no Kanban.
+    setKanbanConcluidosLimit(10);
+  }, [searchTerm, nivelFilter, customFilter, statusFilter.join(','), scopeFilter, viewMode]);
 
   useEffect(() => {
     if (!presetFilter) {
@@ -386,6 +445,9 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
   };
 
   const KanbanView = () => {
+    const concluidos = pedidosFiltrados.filter((p) => p.status === 'concluido');
+    const concluidosVisiveis = concluidos.slice(0, Math.max(10, kanbanConcluidosLimit));
+
     const columns = [
       {
         id: 'novo',
@@ -410,12 +472,13 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
       {
         id: 'concluido',
         title: 'Concluídos',
-        pedidos: pedidosFiltrados.filter((p) => p.status === 'concluido'),
+        pedidos: concluidosVisiveis,
         columnBg: 'bg-gradient-to-b from-[#EAF6EF] via-white to-white',
         headerColor: 'text-[#2E8C63]',
         badgeClass: 'bg-[#DDF5E6] text-[#2E8C63]',
         cardBg: 'bg-gradient-to-br from-[#F0FBF4] via-white to-white',
         accentDot: 'bg-[#3EA975]',
+        totalCount: concluidos.length,
       },
     ];
 
@@ -442,7 +505,7 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
                   column.badgeClass
                 )}
               >
-                {column.pedidos.length}
+                {'totalCount' in column ? (column as any).totalCount : column.pedidos.length}
               </span>
             </div>
             <div className="space-y-4">
@@ -519,6 +582,23 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
                     </div>
                 </div>
               ))}
+
+              {column.id === 'concluido' && (column as any).totalCount > column.pedidos.length && (
+                <div className="pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full rounded-full"
+                    onClick={() => setKanbanConcluidosLimit((prev) => prev + 10)}
+                  >
+                    Carregar mais 10
+                  </Button>
+                  <div className="mt-2 text-center text-[11px] text-gray-500">
+                    Mostrando {column.pedidos.length} de {(column as any).totalCount}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -655,14 +735,16 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
   };
 
   return (
-    <div className="grid gap-8">
+    <div className={embedded ? 'grid gap-6' : 'grid gap-8'}>
       {/* Header */}
-      <div className="space-y-1 max-w-3xl">
-        <h1 className="text-3xl font-semibold text-gray-900">Pedidos de Credenciamento</h1>
-        <p className="text-gray-600 leading-relaxed">
-          Gerencie pedidos de credenciamento e suprimento da rede com visibilidade sobre status, níveis e prazos.
-        </p>
-      </div>
+      {!embedded && (
+        <div className="space-y-1 max-w-3xl">
+          <h1 className="text-3xl font-semibold text-gray-900">Pedidos de Credenciamento</h1>
+          <p className="text-gray-600 leading-relaxed">
+            Gerencie pedidos de credenciamento e suprimento da rede com visibilidade sobre status, níveis e prazos.
+          </p>
+        </div>
+      )}
 
       {/* Filtros */}
       <Card className="rounded-3xl border border-slate-200/70 bg-white/95 shadow-[0_24px_45px_-35px_rgba(88,71,192,0.35)] backdrop-blur-sm">
@@ -680,6 +762,18 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
           )}
           <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
             <div className="flex flex-col md:flex-row gap-4 flex-1 w-full">
+              {showScopeFilter && (
+                <Select value={scopeFilter} onValueChange={(value) => setScopeFilter(value as PedidosScopeFilter)}>
+                  <SelectTrigger className="w-full md:w-72">
+                    <SelectValue placeholder="Filtro de responsabilidade" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="me">Os pedidos que eu tenho para responder</SelectItem>
+                    <SelectItem value="uniodonto">Minha Uniodonto tem para responder</SelectItem>
+                    <SelectItem value="minha_singular">Minha cooperativa singular</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
               <Select value={quickFilterValue} onValueChange={handleQuickFilterChange}>
                 <SelectTrigger className="w-full md:w-48">
                   <SelectValue placeholder="Filtro rápido" />
@@ -792,7 +886,13 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
               <Button
                 variant={viewMode === 'kanban' ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => setViewMode('kanban')}
+                onClick={() => {
+                  // Kanban deve mostrar concluídos por padrão.
+                  setStatusFilter((prev) => (
+                    prev.includes('concluido') ? prev : normalizeStatusSelection([...prev, 'concluido'])
+                  ));
+                  setViewMode('kanban');
+                }}
               >
                 Kanban
               </Button>

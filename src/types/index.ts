@@ -45,6 +45,9 @@ export interface Cidade {
   nm_regiao: string;
   cidades_habitantes: number;
   id_singular: string;
+  id_singular_credenciamento?: string | null;
+  id_singular_vendas?: string | null;
+  reg_ans?: string | null;
   nm_singular?: string | null;
 }
 
@@ -159,6 +162,23 @@ export interface PendingUserApproval {
   requested_papel: 'admin' | 'operador' | 'federacao' | 'confederacao';
   approval_status: string;
   created_at: string;
+}
+
+export interface DiretorPhoneAccessRequest {
+  id: string;
+  cooperativa_id: string;
+  diretor_id: string;
+  diretor_nome: string;
+  diretor_cargo?: string | null;
+  requester_email: string;
+  requester_nome: string;
+  requester_cooperativa_id?: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  motivo?: string | null;
+  created_at: string;
+  decided_at?: string | null;
+  decided_by?: string | null;
+  decision_notes?: string | null;
 }
 
 export interface SystemSettings {
