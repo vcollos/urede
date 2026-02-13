@@ -261,13 +261,15 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido, inline = false
   };
 
   const formatDate = (value: string | Date) => {
-    return new Date(value).toLocaleDateString('pt-BR', {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return 'Data indisponível';
+    return parsed.toLocaleDateString('pt-BR', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
-    });
+    }).replace(',', ' •');
   };
 
   const formatDateShort = (value: string | Date) => {
@@ -290,6 +292,17 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido, inline = false
   const justificativaInicial = pedido.observacoes
     ? extractInitialJustificativa(pedido.observacoes)
     : '';
+
+  const sortedAuditoriaLogs = useMemo(
+    () => [...auditoriaLogs].sort((a, b) => {
+      const tsA = new Date(a.timestamp).getTime();
+      const tsB = new Date(b.timestamp).getTime();
+      const safeA = Number.isNaN(tsA) ? 0 : tsA;
+      const safeB = Number.isNaN(tsB) ? 0 : tsB;
+      return safeB - safeA;
+    }),
+    [auditoriaLogs]
+  );
 
   const content = (
     <>
@@ -671,15 +684,18 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido, inline = false
                     <History className="w-5 h-5 mr-2" />
                     Histórico de Atividades
                   </CardTitle>
+                  <CardDescription className="inline-flex w-fit items-center rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">
+                    Ordem: mais novo para mais antigo
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {auditoriaLogs.length === 0 ? (
+                    {sortedAuditoriaLogs.length === 0 ? (
                       <p className="text-gray-500 text-center py-4">
                         Nenhuma atividade registrada
                       </p>
                     ) : (
-                      auditoriaLogs.map((log) => {
+                      sortedAuditoriaLogs.map((log) => {
                         const detalhes = (log.detalhes || '')
                           .split('|')
                           .map((item) => item.trim())
@@ -688,35 +704,42 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido, inline = false
                         return (
                           <div
                             key={log.id}
-                            className="relative flex items-start space-x-3 rounded-lg bg-gray-50 p-3"
+                            className="rounded-lg bg-gray-50 p-3"
                           >
-                            <span
-                              className="absolute right-3 top-3 rounded-full text-xs font-medium"
-                              style={{ backgroundColor: '#01CABE', color: '#00FFF0', padding: '5px 10px' }}
-                            >
-                              por {log.usuario_display_nome || log.usuario_nome}
-                            </span>
-                            <div className="mt-2 h-2 w-2 flex-shrink-0 rounded-full bg-blue-500" />
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-gray-900">{log.acao}</p>
-                              {detalhes.map((item, index) => {
-                                const isComentario = item.toLowerCase().startsWith('comentário:');
-                                const content = isComentario
-                                  ? item.replace(/^Comentário:\s*/i, '')
-                                  : item;
-                                return isComentario ? (
-                                  <div
-                                    key={index}
-                                    className="mt-2 rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-700"
-                                    dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
-                                  />
-                                ) : (
-                                  <p key={index} className="mt-1 text-sm text-gray-700">
-                                    {item}
-                                  </p>
-                                );
-                              })}
-                              <p className="mt-1 text-xs text-gray-500">{formatDate(log.timestamp)}</p>
+                            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-700">
+                                <Calendar className="h-3.5 w-3.5" />
+                                {formatDate(log.timestamp)}
+                              </span>
+                              <span
+                                className="rounded-full text-xs font-medium"
+                                style={{ backgroundColor: '#01CABE', color: '#00FFF0', padding: '5px 10px' }}
+                              >
+                                por {log.usuario_display_nome || log.usuario_nome}
+                              </span>
+                            </div>
+                            <div className="flex items-start space-x-3">
+                              <div className="mt-2 h-2 w-2 flex-shrink-0 rounded-full bg-blue-500" />
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-gray-900">{log.acao}</p>
+                                {detalhes.map((item, index) => {
+                                  const isComentario = item.toLowerCase().startsWith('comentário:');
+                                  const content = isComentario
+                                    ? item.replace(/^Comentário:\s*/i, '')
+                                    : item;
+                                  return isComentario ? (
+                                    <div
+                                      key={index}
+                                      className="mt-2 rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-700"
+                                      dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
+                                    />
+                                  ) : (
+                                    <p key={index} className="mt-1 text-sm text-gray-700">
+                                      {item}
+                                    </p>
+                                  );
+                                })}
+                              </div>
                             </div>
                           </div>
                         );

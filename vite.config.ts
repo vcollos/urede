@@ -24,6 +24,8 @@ export default defineConfig(({ command }) => ({
       '0.0.0.0',
       'urede.collos.com.br',
       'apiurede.collos.com.br',
+      'uhub.collos.com.br',
+      'apiuhub.collos.com.br',
     ],
   },
   preview: {

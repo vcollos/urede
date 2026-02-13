@@ -4,10 +4,10 @@ import {
   FileText,
   BarChart3,
   Settings,
+  Home,
   LogOut,
   Bell,
   User,
-  Users,
   Menu,
   Map,
   Plus,
@@ -25,20 +25,34 @@ import { UserProfileDialog } from './UserProfileDialog';
 import { cn } from './ui/utils';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import brandWordmark from '../logo/urede_positivo.svg';
-import brandSymbol from '../logo/simbolo_uniodonto.svg';
+import hubWordmark from '../logo/uhub_logo.svg';
+import sidebarBrandSymbol from '../logo/roxo.svg';
 import { apiService } from '../services/apiService';
 import type { Alerta, CooperativaConfig } from '../types';
+
+type LayoutModule = 'hub' | 'urede';
 
 interface LayoutProps {
   children: ReactNode;
   activeTab: string;
+  activeModule: LayoutModule;
+  onModuleChange?: (module: LayoutModule) => void;
   onTabChange: (tab: string) => void;
   onCreatePedido?: () => void;
   onOpenPedido?: (pedidoId: string) => void;
   onOpenImportacao?: () => void;
 }
 
-export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpenPedido, onOpenImportacao }: LayoutProps) {
+export function Layout({
+  children,
+  activeTab,
+  activeModule,
+  onModuleChange,
+  onTabChange,
+  onCreatePedido,
+  onOpenPedido,
+  onOpenImportacao
+}: LayoutProps) {
   const { user, logout } = useAuth();
   const [isMobileNavOpen, setMobileNavOpen] = useState(false);
   const [isProfileDialogOpen, setProfileDialogOpen] = useState(false);
@@ -260,21 +274,37 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
   if (!user) return null;
   const canCreatePedido = ['operador', 'admin', 'confederacao'].includes(user.papel);
   const isAdmin = user.papel === 'admin';
-  const menuItems = [
+  const hubMenuItems = [
+    { id: 'hub_home', label: 'Homepage', icon: Home },
+    { id: 'cooperativas', label: 'Cooperativas', icon: Building2 },
+    { id: 'cidades', label: 'Cidades', icon: Map },
+    ...(isAdmin ? [{ id: 'configuracoes_hub', label: 'Configurações', icon: Settings }] : []),
+  ];
+  const sharedMenuItems = [
+    { id: 'cooperativas', label: 'Cooperativas', icon: Building2 },
+    { id: 'cidades', label: 'Cidades', icon: Map },
+    ...(isAdmin ? [{ id: 'configuracoes_urede', label: 'Configurações', icon: Settings }] : []),
+  ];
+  const uredeMenuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
     { id: 'relatorios', label: 'Relatórios', icon: PieChart },
     { id: 'pedidos', label: 'Pedidos', icon: FileText },
     ...(canCreatePedido ? [{ id: 'importacao', label: 'Pedidos em lote', icon: UploadCloud }] : []),
-    { id: 'cooperativas', label: 'Cooperativas', icon: Building2 },
-    { id: 'cidades', label: 'Cidades', icon: Map },
-    { id: 'configuracoes', label: 'Configurações', icon: Settings },
   ];
-  const configuracoesSubItems = isAdmin
+  const menuItems = activeModule === 'hub'
+    ? hubMenuItems
+    : [...uredeMenuItems, ...sharedMenuItems];
+  const configuracoesSubItems = isAdmin && activeModule === 'hub'
     ? [
       { id: 'operadores', label: 'Usuários', icon: User },
       { id: 'gestao_dados', label: 'Gestão de dados', icon: Database },
     ]
     : [];
+  const isConfigTab = (tabId: string) => tabId === 'configuracoes_hub' || tabId === 'configuracoes_urede';
+  const showUredeActions = activeModule === 'urede';
+  const moduleHomeTab = activeModule === 'hub' ? 'hub_home' : 'dashboard';
+  const currentBrandWordmark = activeModule === 'hub' ? hubWordmark : brandWordmark;
+  const currentBrandAlt = activeModule === 'hub' ? 'Portal UHub' : 'Portal URede';
 
   const cooperativaScopeLabel = (() => {
     switch (cooperativaTipo) {
@@ -317,9 +347,10 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
     setMobileNavOpen(false);
   };
 
-  const activeTabLabel = menuItems.find((item) => item.id === activeTab)?.label
-    ?? configuracoesSubItems.find((item) => item.id === activeTab)?.label
-    ?? 'Dashboard';
+  const handleModuleChange = (module: LayoutModule) => {
+    onModuleChange?.(module);
+    setMobileNavOpen(false);
+  };
 
   const renderAlertsDropdown = (triggerClass?: string) => {
     const hasUnread = unreadCount > 0;
@@ -431,7 +462,7 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#EDE7FF] to-[#FCEBFF] flex items-center justify-center shadow-inner">
-                <img src={brandSymbol} alt="Uniodonto símbolo" className="w-7 h-7" />
+                <img src={sidebarBrandSymbol} alt="Símbolo UHub" className="w-7 h-7" />
               </div>
               <div>
                 <p className="text-sm text-gray-500">Bem-vindo(a)</p>
@@ -450,19 +481,45 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
           >
             {roleDisplayLabel}
           </Badge>
+          <div className="mt-4 rounded-2xl bg-[#F3F1FF] p-1 grid grid-cols-2 gap-1">
+            <button
+              type="button"
+              onClick={() => handleModuleChange('hub')}
+              className={cn(
+                'rounded-xl px-3 py-2 text-xs font-semibold transition',
+                activeModule === 'hub'
+                  ? 'bg-white text-[#5B46C8] shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              )}
+            >
+              UHub
+            </button>
+            <button
+              type="button"
+              onClick={() => handleModuleChange('urede')}
+              className={cn(
+                'rounded-xl px-3 py-2 text-xs font-semibold transition',
+                activeModule === 'urede'
+                  ? 'bg-white text-[#5B46C8] shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              )}
+            >
+              URede
+            </button>
+          </div>
         </div>
 
         <nav className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#9A91D9] mb-3">
-              Navegação
+              {activeModule === 'hub' ? 'Navegação Hub' : 'Navegação URede'}
             </p>
             <div className="space-y-2">
               {menuItems.map((item) => {
                 const Icon = item.icon;
-                const isConfigGroup = item.id === 'configuracoes';
+                const isConfigGroup = isConfigTab(item.id);
                 const isActive = isConfigGroup
-                  ? activeTab === 'configuracoes' || configuracoesSubItems.some((sub) => sub.id === activeTab)
+                  ? isConfigTab(activeTab) || configuracoesSubItems.some((sub) => sub.id === activeTab)
                   : activeTab === item.id;
                 return (
                   <div key={item.id} className="space-y-2">
@@ -509,44 +566,46 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
             </div>
           </div>
 
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#9A91D9] mb-3">
-              Acesso rápido
-            </p>
-            <div className="space-y-2">
-              <div className="rounded-2xl bg-gradient-to-r from-[#FFE5F1] to-[#FFF4E4] p-4 shadow-[0_18px_35px_-25px_rgba(255,139,182,0.7)]">
-                <p className="text-sm font-semibold text-gray-800">Relatórios instantâneos</p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Visualize métricas chaves em um clique.
-                </p>
-              </div>
-              <div className="rounded-2xl bg-[#F3F6FF] p-4 border border-white shadow-inner">
-                <p className="text-sm font-semibold text-gray-800">Atalhos</p>
-                <div className="mt-3 space-y-2">
-                  {typeof onCreatePedido === 'function' && (
-                    <Button
-                      type="button"
-                      className="w-full justify-start gap-2 rounded-xl bg-white text-[#6C55D9] hover:bg-white/90"
-                      onClick={onCreatePedido}
-                    >
-                      <Plus className="h-4 w-4" />
-                      Novo pedido
-                    </Button>
-                  )}
-                  {typeof onOpenImportacao === 'function' && (
-                    <Button
-                      type="button"
-                      className="w-full justify-start gap-2 rounded-xl border border-[#DBE3FF] bg-[#EEF2FF] text-[#3552C5] hover:bg-[#e1e7ff]"
-                      onClick={onOpenImportacao}
-                    >
-                      <UploadCloud className="h-4 w-4" />
-                      Importar pedidos
-                    </Button>
-                  )}
+          {showUredeActions && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#9A91D9] mb-3">
+                Acesso rápido
+              </p>
+              <div className="space-y-2">
+                <div className="rounded-2xl bg-gradient-to-r from-[#FFE5F1] to-[#FFF4E4] p-4 shadow-[0_18px_35px_-25px_rgba(255,139,182,0.7)]">
+                  <p className="text-sm font-semibold text-gray-800">Relatórios instantâneos</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Visualize métricas chaves em um clique.
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-[#F3F6FF] p-4 border border-white shadow-inner">
+                  <p className="text-sm font-semibold text-gray-800">Atalhos</p>
+                  <div className="mt-3 space-y-2">
+                    {typeof onCreatePedido === 'function' && (
+                      <Button
+                        type="button"
+                        className="w-full justify-start gap-2 rounded-xl bg-white text-[#6C55D9] hover:bg-white/90"
+                        onClick={onCreatePedido}
+                      >
+                        <Plus className="h-4 w-4" />
+                        Novo pedido
+                      </Button>
+                    )}
+                    {typeof onOpenImportacao === 'function' && (
+                      <Button
+                        type="button"
+                        className="w-full justify-start gap-2 rounded-xl border border-[#DBE3FF] bg-[#EEF2FF] text-[#3552C5] hover:bg-[#e1e7ff]"
+                        onClick={onOpenImportacao}
+                      >
+                        <UploadCloud className="h-4 w-4" />
+                        Importar pedidos
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
         </nav>
 
         <div className="px-6 py-5 border-t border-white/60">
@@ -577,14 +636,14 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
           <div className="rounded-3xl bg-white shadow-[0_24px_60px_-32px_rgba(107,86,217,0.35)] border border-white/70 px-6 py-4 flex items-center justify-between gap-4">
             <button
               type="button"
-              onClick={() => handleTabChange('dashboard')}
-              className="flex items-center gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7B6EF6]"
-              aria-label="Ir para o dashboard"
+              onClick={() => handleTabChange(moduleHomeTab)}
+              className="flex items-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7B6EF6]"
+              aria-label={activeModule === 'hub' ? 'Ir para a homepage do UHub' : 'Ir para o dashboard do URede'}
             >
-              <img src={brandWordmark} alt="Portal uRede" className="h-10 w-auto" />
+              <img src={currentBrandWordmark} alt={currentBrandAlt} className="h-10 w-auto" />
             </button>
             <div className="flex items-center gap-2">
-              {typeof onCreatePedido === 'function' && (
+              {showUredeActions && typeof onCreatePedido === 'function' && (
                 <Button
                   type="button"
                   onClick={onCreatePedido}
@@ -594,7 +653,7 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
                   Novo pedido
                 </Button>
               )}
-              {typeof onOpenImportacao === 'function' && (
+              {showUredeActions && typeof onOpenImportacao === 'function' && (
                 <Button
                   type="button"
                   onClick={onOpenImportacao}
@@ -661,13 +720,13 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
                 <button
                   type="button"
                   onClick={() => {
-                    handleTabChange('dashboard');
+                    handleTabChange(moduleHomeTab);
                     setMobileNavOpen(false);
                   }}
                   className="flex items-center gap-2 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
-                  aria-label="Ir para o dashboard"
+                  aria-label={activeModule === 'hub' ? 'Ir para a homepage do UHub' : 'Ir para o dashboard do URede'}
                 >
-                  <img src={brandWordmark} alt="Uniodonto" className="h-6 w-auto" />
+                  <img src={currentBrandWordmark} alt={currentBrandAlt} className="h-6 w-auto" />
                 </button>
                 Menu
               </DialogTitle>
@@ -687,12 +746,39 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
               </div>
             </div>
 
+              <div className="rounded-xl bg-[#F3F1FF] p-1 grid grid-cols-2 gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleModuleChange('hub')}
+                  className={cn(
+                    'rounded-lg px-3 py-2 text-xs font-semibold transition',
+                    activeModule === 'hub'
+                      ? 'bg-white text-[#5B46C8] shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  )}
+                >
+                  UHub
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleModuleChange('urede')}
+                  className={cn(
+                    'rounded-lg px-3 py-2 text-xs font-semibold transition',
+                    activeModule === 'urede'
+                      ? 'bg-white text-[#5B46C8] shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  )}
+                >
+                  URede
+                </button>
+              </div>
+
               <div className="space-y-2">
                 {menuItems.map((item) => {
                   const Icon = item.icon;
-                  const isConfigGroup = item.id === 'configuracoes';
+                  const isConfigGroup = isConfigTab(item.id);
                   const isActive = isConfigGroup
-                    ? activeTab === 'configuracoes' || configuracoesSubItems.some((sub) => sub.id === activeTab)
+                    ? isConfigTab(activeTab) || configuracoesSubItems.some((sub) => sub.id === activeTab)
                     : activeTab === item.id;
 
                   return (
@@ -742,6 +828,36 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
                   );
                 })}
               </div>
+
+              {showUredeActions && (
+                <div className="space-y-2">
+                  {typeof onCreatePedido === 'function' && (
+                    <Button
+                      className="w-full justify-start"
+                      onClick={() => {
+                        onCreatePedido();
+                        setMobileNavOpen(false);
+                      }}
+                    >
+                      <Plus className="w-4 h-4 mr-3" />
+                      Novo pedido
+                    </Button>
+                  )}
+                  {typeof onOpenImportacao === 'function' && (
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start"
+                      onClick={() => {
+                        onOpenImportacao();
+                        setMobileNavOpen(false);
+                      }}
+                    >
+                      <UploadCloud className="w-4 h-4 mr-3" />
+                      Importar pedidos
+                    </Button>
+                  )}
+                </div>
+              )}
 
               <div className="pt-2 border-t border-gray-200 space-y-2">
                 <Button

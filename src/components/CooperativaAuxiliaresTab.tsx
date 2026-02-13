@@ -3,8 +3,9 @@ import { Check, Download, MessageCircle, Plus, Search, Shield, Upload, X } from 
 
 import { apiService } from '../services/apiService';
 import { parseTabularFile } from '../utils/import/parseTabularFile';
+import { hasWhatsAppFlag } from '../utils/whatsapp';
 import { useAuth } from '../contexts/AuthContext';
-import type { DiretorPhoneAccessRequest } from '../types';
+import type { DiretorPhoneAccessRequest, SystemSettings } from '../types';
 
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -26,7 +27,7 @@ const stripImportFields = (rows: Record<string, unknown>[]) => {
   });
 };
 
-type FieldType = 'text' | 'number' | 'textarea' | 'select' | 'boolean';
+type FieldType = 'text' | 'number' | 'textarea' | 'select' | 'multiselect' | 'boolean';
 
 type FieldDef = {
   key: string;
@@ -133,7 +134,7 @@ const RESOURCES: ResourceDef[] = [
   {
     key: 'colaboradores',
     title: 'Colaboradores',
-    description: 'Cadastro de colaboradores por singular. Use múltiplos departamentos separados por ; (ponto e vírgula).',
+    description: 'Cadastro de colaboradores por singular. Selecione um ou mais departamentos cadastrados no Hub.',
     displayColumns: [
       { key: 'nome', label: 'Nome' },
       { key: 'sobrenome', label: 'Sobrenome' },
@@ -148,7 +149,17 @@ const RESOURCES: ResourceDef[] = [
       { key: 'email', label: 'E-mail', type: 'text' },
       { key: 'telefone', label: 'Telefone', type: 'text' },
       { key: 'wpp', label: 'É WhatsApp', type: 'boolean' },
-      { key: 'departamento', label: 'Departamento(s)', type: 'text' },
+      {
+        key: 'departamento',
+        label: 'Departamento(s)',
+        type: 'multiselect',
+        options: [
+          { value: 'INTERCÂMBIO', label: 'INTERCÂMBIO' },
+          { value: 'COMERCIAL', label: 'COMERCIAL' },
+          { value: 'ATENDIMENTO', label: 'ATENDIMENTO' },
+          { value: 'FINANCEIRO', label: 'FINANCEIRO' },
+        ],
+      },
       { key: 'chefia', label: 'Chefia', type: 'boolean' },
       { key: 'ativo', label: 'Ativo', type: 'boolean' },
     ],
@@ -221,6 +232,7 @@ const RESOURCES: ResourceDef[] = [
       { key: 'numero', label: 'Nº' },
       { key: 'bairro', label: 'Bairro' },
       { key: 'telefone', label: 'Telefone' },
+      { key: 'exibir_visao_geral', label: 'Visão Geral' },
     ],
     fields: [
       {
@@ -228,8 +240,12 @@ const RESOURCES: ResourceDef[] = [
         label: 'Tipo',
         type: 'select',
         options: [
-          { value: 'correspondencia', label: 'Correspondência' },
+          { value: 'correspondencia', label: 'Sede' },
           { value: 'filial', label: 'Filial' },
+          { value: 'nucleo', label: 'Núcleo' },
+          { value: 'clinica', label: 'Clínica' },
+          { value: 'ponto_venda', label: 'Ponto de Venda' },
+          { value: 'plantao_urgencia_emergencia', label: 'Plantão de Urgência & Emergência' },
           { value: 'atendimento', label: 'Atendimento' },
         ],
       },
@@ -244,6 +260,7 @@ const RESOURCES: ResourceDef[] = [
       { key: 'uf', label: 'UF', type: 'text' },
       { key: 'telefone', label: 'Telefone', type: 'text' },
       { key: 'wpp', label: 'É WhatsApp', type: 'boolean' },
+      { key: 'exibir_visao_geral', label: 'Exibir na visão geral', type: 'boolean' },
       { key: 'ativo', label: 'Ativo', type: 'boolean' },
     ],
     templateExamples: [
@@ -477,6 +494,89 @@ const RESOURCES: ResourceDef[] = [
   },
 ];
 
+const normalizeCatalogItems = (value: unknown) => {
+  if (!Array.isArray(value)) return [] as string[];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of value) {
+    const normalized = String(item ?? '').replace(/\s+/g, ' ').trim();
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(normalized);
+  }
+  return result;
+};
+
+const buildCatalogOptions = (
+  value: unknown,
+  fallback: { value: string; label: string }[],
+) => {
+  const parsed = normalizeCatalogItems(value);
+  if (!parsed.length) return fallback;
+  return parsed.map((item) => ({ value: item, label: item }));
+};
+
+const applyHubCatalogsToResources = (
+  baseResources: ResourceDef[],
+  hubCadastros?: SystemSettings['hub_cadastros'] | null,
+) => baseResources.map((resource) => {
+  if (resource.key === 'colaboradores') {
+    const fields = resource.fields.map((field) => {
+      if (field.key !== 'departamento' || field.type !== 'multiselect') return field;
+      return {
+        ...field,
+        options: buildCatalogOptions(hubCadastros?.departamentos, field.options ?? []),
+      };
+    });
+    return { ...resource, fields };
+  }
+
+  if (resource.key === 'enderecos') {
+    const fields = resource.fields.map((field) => {
+      if (field.key !== 'tipo' || field.type !== 'select') return field;
+      return {
+        ...field,
+        options: buildCatalogOptions(hubCadastros?.tipos_endereco, field.options ?? []),
+      };
+    });
+    return { ...resource, fields };
+  }
+
+  if (resource.key === 'conselhos') {
+    const fields = resource.fields.map((field) => {
+      if (field.key !== 'tipo' || field.type !== 'select') return field;
+      return {
+        ...field,
+        options: buildCatalogOptions(hubCadastros?.tipos_conselho, field.options ?? []),
+      };
+    });
+    return { ...resource, fields };
+  }
+
+  if (resource.key === 'contatos') {
+    const fields = resource.fields.map((field) => {
+      if (field.key === 'tipo' && field.type === 'select') {
+        return {
+          ...field,
+          options: buildCatalogOptions(hubCadastros?.tipos_contato, field.options ?? []),
+        };
+      }
+      if (field.key === 'subtipo' && field.type === 'select') {
+        return {
+          ...field,
+          options: buildCatalogOptions(hubCadastros?.subtipos_contato, field.options ?? []),
+        };
+      }
+      return field;
+    });
+    return { ...resource, fields };
+  }
+
+  return resource;
+});
+
 const toBool = (value: unknown) => {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'number') return value !== 0;
@@ -505,14 +605,24 @@ const formatEnumLabel = (fieldKey: string, value: unknown) => {
       telefone: 'Telefone',
       whatsapp: 'WhatsApp',
       website: 'Website',
+      'rede social': 'Rede social',
+      rede_social: 'Rede social',
+      redesocial: 'Rede social',
       outro: 'Outro',
       fiscal: 'Fiscal',
       administrativo: 'Administrativo',
       tecnico: 'Técnico',
-      sede: 'Correspondência',
+      sede: 'Sede',
       filial: 'Filial',
       atendimento: 'Atendimento',
-      correspondencia: 'Correspondência',
+      correspondencia: 'Sede',
+      nucleo: 'Núcleo',
+      clinica: 'Clínica',
+      ponto_venda: 'Ponto de Venda',
+      'ponto de venda': 'Ponto de Venda',
+      plantao_urgencia_emergencia: 'Plantão de Urgência & Emergência',
+      'plantao urgencia e emergencia': 'Plantão de Urgência & Emergência',
+      'plantao de urgencia e emergencia': 'Plantão de Urgência & Emergência',
     };
     return map[norm] ?? s;
   }
@@ -628,6 +738,17 @@ const normalizeKey = (value: unknown) =>
     .replace(/[\u0300-\u036f]/g, '')
     .trim();
 
+const isPlantaoEnderecoTipo = (value: unknown) => {
+  const normalized = normalizeKey(value);
+  return normalized === 'plantao_urgencia_emergencia' ||
+    (normalized.includes('plantao') && (normalized.includes('urgencia') || normalized.includes('emergenc')));
+};
+
+const isSocialContactType = (value: unknown) => {
+  const normalized = normalizeKey(value);
+  return normalized.includes('rede') && normalized.includes('social');
+};
+
 const getDiretorSortRank = (cargo: unknown, pasta?: unknown) => {
   const c = normalizeKey(cargo);
   const p = normalizeKey(pasta);
@@ -662,13 +783,61 @@ const compareDiretores = (a: AuxRow, b: AuxRow) => {
 const isPhoneField = (fieldKey: string) => ['telefone'].includes(fieldKey);
 
 const parseDepartamentoTags = (value: unknown) => {
+  const toUnique = (parts: string[]) => {
+    const seen = new Set<string>();
+    const unique: string[] = [];
+    for (const item of parts) {
+      const cleaned = item.trim();
+      if (!cleaned) continue;
+      const key = normalizeKey(cleaned);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      unique.push(cleaned);
+    }
+    return unique;
+  };
+
+  if (Array.isArray(value)) {
+    return toUnique(value.map((part) => String(part ?? '')));
+  }
+
   const raw = String(value ?? '').trim();
   if (!raw) return [];
-  return raw
-    .split(/[;,|]/g)
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0);
+  return toUnique(raw.split(/[;,|]/g));
 };
+
+const sanitizeLabelToken = (value: unknown) =>
+  String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const normalizeLabelToken = (value: unknown) => normalizeKey(sanitizeLabelToken(value));
+
+const dedupeLabels = (labels: string[]) => {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const label of labels) {
+    const cleaned = sanitizeLabelToken(label);
+    if (!cleaned) continue;
+    const normalized = normalizeLabelToken(cleaned);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    unique.push(cleaned);
+  }
+  return unique;
+};
+
+const parseContactLabels = (value: unknown) =>
+  dedupeLabels(
+    String(value ?? '')
+      .split(/[;,]/g)
+      .map((part) => part.trim()),
+  );
+
+const joinContactLabels = (labels: string[]) => dedupeLabels(labels).join(', ');
+
+const hasContactLabel = (value: unknown, normalizedTargetLabel: string) =>
+  parseContactLabels(value).some((label) => normalizeLabelToken(label) === normalizedTargetLabel);
 
 const isStandardizedField = (fieldKey: string, def?: ResourceDef) => {
   const normalized = normalizeKey(fieldKey);
@@ -686,6 +855,9 @@ const getBadgeToneClass = (fieldKey: string, value: unknown) => {
       email: 'bg-indigo-50 text-indigo-700 border-indigo-200',
       telefone: 'bg-sky-50 text-sky-700 border-sky-200',
       whatsapp: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      'rede social': 'bg-pink-50 text-pink-700 border-pink-200',
+      rede_social: 'bg-pink-50 text-pink-700 border-pink-200',
+      redesocial: 'bg-pink-50 text-pink-700 border-pink-200',
       outro: 'bg-slate-100 text-slate-700 border-slate-200',
       fiscal: 'bg-violet-50 text-violet-700 border-violet-200',
       administrativo: 'bg-blue-50 text-blue-700 border-blue-200',
@@ -693,6 +865,11 @@ const getBadgeToneClass = (fieldKey: string, value: unknown) => {
       correspondencia: 'bg-teal-50 text-teal-700 border-teal-200',
       filial: 'bg-amber-50 text-amber-700 border-amber-200',
       atendimento: 'bg-lime-50 text-lime-700 border-lime-200',
+      nucleo: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+      clinica: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+      ponto_venda: 'bg-violet-50 text-violet-700 border-violet-200',
+      'ponto de venda': 'bg-violet-50 text-violet-700 border-violet-200',
+      plantao_urgencia_emergencia: 'bg-rose-50 text-rose-700 border-rose-200',
     };
     return map[val] ?? 'bg-slate-100 text-slate-700 border-slate-200';
   }
@@ -788,8 +965,11 @@ const formatDisplayValue = (value: unknown, fieldKey: string, row?: AuxRow, def?
   if (normalizedField === 'divulgar_celular') {
     return toBool(value) ? <Check className="h-4 w-4 text-emerald-600" aria-label="Divulgação ativa" /> : '';
   }
-  if (normalizedField === 'wpp') {
-    return toBool(value) ? <MessageCircle className="h-4 w-4 text-emerald-600" aria-label="WhatsApp" /> : '';
+  if (normalizedField === 'exibir_visao_geral') {
+    return toBool(value) ? <Check className="h-4 w-4 text-emerald-600" aria-label="Visível na visão geral" /> : '';
+  }
+  if (normalizedField === 'wpp' || normalizedField === 'whatsapp') {
+    return hasWhatsAppFlag({ ...row, wpp: value, whatsapp: value }) ? <MessageCircle className="h-4 w-4 text-emerald-600" aria-label="WhatsApp" /> : '';
   }
   if (normalizedField === 'chefia') {
     return toBool(value) ? <Check className="h-4 w-4 text-emerald-600" aria-label="Chefia" /> : '';
@@ -816,6 +996,23 @@ const formatDisplayValue = (value: unknown, fieldKey: string, row?: AuxRow, def?
       </div>
     );
   }
+  if (normalizedField === 'label') {
+    const tags = parseContactLabels(value);
+    if (!tags.length) return '—';
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {tags.map((tag) => (
+          <Badge
+            key={normalizeLabelToken(tag)}
+            variant="outline"
+            className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700"
+          >
+            {tag}
+          </Badge>
+        ))}
+      </div>
+    );
+  }
   if (normalizedField.includes('cpf')) return maskCpf(value);
   if (normalizedField.includes('cnpj')) return maskCnpj(value);
   if (isPhoneField(normalizedField)) return maskPhone(value);
@@ -824,7 +1021,7 @@ const formatDisplayValue = (value: unknown, fieldKey: string, row?: AuxRow, def?
     return (
       <span className="inline-flex items-center gap-1.5">
         <span>{formatted}</span>
-        {toBool(row.wpp) && <MessageCircle className="h-4 w-4 text-emerald-600" aria-label="WhatsApp" />}
+        {hasWhatsAppFlag(row) && <MessageCircle className="h-4 w-4 text-emerald-600" aria-label="WhatsApp" />}
       </span>
     );
   }
@@ -833,7 +1030,7 @@ const formatDisplayValue = (value: unknown, fieldKey: string, row?: AuxRow, def?
     return (
       <span className="inline-flex items-center gap-1.5">
         <span>{formatted}</span>
-        {toBool(row.wpp) && <MessageCircle className="h-4 w-4 text-emerald-600" aria-label="WhatsApp" />}
+        {hasWhatsAppFlag(row) && <MessageCircle className="h-4 w-4 text-emerald-600" aria-label="WhatsApp" />}
       </span>
     );
   }
@@ -859,13 +1056,39 @@ type CooperativaAuxiliaresTabProps = {
 
 export function CooperativaAuxiliaresTab({ idSingular, canEdit, resourceKey }: CooperativaAuxiliaresTabProps) {
   const { user } = useAuth();
-  const plantaoScopedKeys = useMemo(() => ['plantao', 'plantao_clinicas', 'plantao_contatos', 'plantao_horarios'], []);
+  const [hubCadastros, setHubCadastros] = useState<SystemSettings['hub_cadastros'] | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const loadHubCatalogs = async () => {
+      try {
+        const settings = await apiService.getSystemSettings();
+        if (active) {
+          setHubCadastros(settings?.hub_cadastros ?? null);
+        }
+      } catch {
+        if (active) {
+          setHubCadastros(null);
+        }
+      }
+    };
+    loadHubCatalogs();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const resources = useMemo(
+    () => applyHubCatalogsToResources(RESOURCES, hubCadastros),
+    [hubCadastros],
+  );
+  const plantaoScopedKeys = useMemo(() => ['plantao', 'plantao_clinicas', 'plantao_contatos', 'plantao_horarios', 'enderecos'], []);
   const showScopedSelector = resourceKey === 'plantao';
   const selectorResources = useMemo(
-    () => (showScopedSelector ? RESOURCES.filter((r) => plantaoScopedKeys.includes(r.key)) : RESOURCES),
-    [showScopedSelector, plantaoScopedKeys],
+    () => (showScopedSelector ? resources.filter((r) => plantaoScopedKeys.includes(r.key)) : resources),
+    [showScopedSelector, plantaoScopedKeys, resources],
   );
-  const [internalActiveKey, setInternalActiveKey] = useState<string>(RESOURCES[0].key);
+  const [internalActiveKey, setInternalActiveKey] = useState<string>(resourceKey || RESOURCES[0].key);
   const [data, setData] = useState<Record<string, AuxRow[]>>({});
   const [, setLoadingKey] = useState<string | null>(null);
   const [error, setError] = useState<string>('');
@@ -880,6 +1103,8 @@ export function CooperativaAuxiliaresTab({ idSingular, canEdit, resourceKey }: C
   const [importing, setImporting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [subtipoFilter, setSubtipoFilter] = useState<'all' | string>('all');
+  const [labelFilter, setLabelFilter] = useState<'all' | string>('all');
+  const [labelInput, setLabelInput] = useState('');
   const [phoneRequestError, setPhoneRequestError] = useState('');
   const [phoneRequests, setPhoneRequests] = useState<DiretorPhoneAccessRequest[]>([]);
   const [isLoadingPhoneRequests, setIsLoadingPhoneRequests] = useState(false);
@@ -887,12 +1112,76 @@ export function CooperativaAuxiliaresTab({ idSingular, canEdit, resourceKey }: C
   const [processingPhoneRequestId, setProcessingPhoneRequestId] = useState<string | null>(null);
   const [updatingFieldId, setUpdatingFieldId] = useState<string | null>(null);
 
-  const defs = useMemo(() => new Map(RESOURCES.map((r) => [r.key, r])), []);
+  const defs = useMemo(() => new Map(resources.map((r) => [r.key, r])), [resources]);
   const activeKey = resourceKey && defs.has(resourceKey) && !showScopedSelector ? resourceKey : internalActiveKey;
   const activeDef = defs.get(activeKey)!;
-  const rows = data[activeKey] ?? [];
+  const rows = useMemo(() => {
+    const rawRows = data[activeKey] ?? [];
+    if (!showScopedSelector || activeKey !== 'enderecos') return rawRows;
+    return rawRows.filter((row) => isPlantaoEnderecoTipo(row.tipo));
+  }, [activeKey, data, showScopedSelector]);
+  const displayColumns = useMemo(() => {
+    const base = activeDef.displayColumns.filter((col) => {
+      if (!canEdit && activeKey === 'diretores' && col.key === 'divulgar_celular') return false;
+      if (!canEdit && activeKey === 'enderecos' && col.key === 'exibir_visao_geral') return false;
+      return true;
+    });
+
+    // Compatibilidade com colunas legadas "whatsapp": tratar como "wpp".
+    return base.map((col) => (normalizeKey(col.key) === 'whatsapp' ? { ...col, key: 'wpp' } : col));
+  }, [activeDef.displayColumns, activeKey, canEdit]);
   const subtipoField = activeDef.fields.find((field) => field.key === 'subtipo');
   const subtipoOptions = subtipoField?.options ?? [];
+  const socialNetworkOptions = useMemo(
+    () => buildCatalogOptions(hubCadastros?.redes_sociais, [
+      { value: 'instagram', label: 'Instagram' },
+      { value: 'facebook', label: 'Facebook' },
+      { value: 'linkedin', label: 'LinkedIn' },
+      { value: 'youtube', label: 'YouTube' },
+      { value: 'tiktok', label: 'TikTok' },
+      { value: 'x', label: 'X' },
+    ]),
+    [hubCadastros],
+  );
+  const subtipoFilterOptions = useMemo(() => {
+    if (activeKey !== 'contatos') return subtipoOptions;
+    const map = new Map<string, { value: string; label: string }>();
+    for (const opt of subtipoOptions) {
+      map.set(normalizeKey(opt.value), opt);
+    }
+    for (const opt of socialNetworkOptions) {
+      const key = normalizeKey(opt.value);
+      if (!map.has(key)) map.set(key, opt);
+    }
+    return Array.from(map.values());
+  }, [activeKey, socialNetworkOptions, subtipoOptions]);
+  const isDraftSocialContact = useMemo(
+    () => editing?.key === 'contatos' && isSocialContactType(draft.tipo),
+    [editing?.key, draft.tipo],
+  );
+  const contactLabelOptions = useMemo(() => {
+    if (activeKey !== 'contatos') return [];
+    return dedupeLabels(rows.flatMap((row) => parseContactLabels(row.label))).sort((a, b) =>
+      a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }),
+    );
+  }, [activeKey, rows]);
+  const draftContactLabels = useMemo(
+    () => (editing?.key === 'contatos' ? parseContactLabels(draft.label) : []),
+    [draft.label, editing?.key],
+  );
+  const draftLabelSuggestions = useMemo(() => {
+    if (editing?.key !== 'contatos') return [];
+    const selected = new Set(draftContactLabels.map((label) => normalizeLabelToken(label)));
+    const query = normalizeLabelToken(labelInput);
+    return contactLabelOptions
+      .filter((label) => {
+        const normalized = normalizeLabelToken(label);
+        if (!normalized || selected.has(normalized)) return false;
+        if (!query) return true;
+        return normalized.includes(query);
+      })
+      .slice(0, 8);
+  }, [contactLabelOptions, draftContactLabels, editing?.key, labelInput]);
 
   const filteredRows = useMemo(() => {
     const query = normalizeKey(searchTerm);
@@ -900,10 +1189,13 @@ export function CooperativaAuxiliaresTab({ idSingular, canEdit, resourceKey }: C
       if (activeKey === 'contatos' && subtipoFilter !== 'all' && normalizeKey(row.subtipo) !== subtipoFilter) {
         return false;
       }
+      if (activeKey === 'contatos' && labelFilter !== 'all' && !hasContactLabel(row.label, labelFilter)) {
+        return false;
+      }
 
       if (!query) return true;
 
-      return activeDef.displayColumns.some((col) => {
+      return displayColumns.some((col) => {
         const raw = row[col.key];
         const formatted = formatDisplayValue(raw, col.key, row, activeDef);
         const asText = typeof formatted === 'string' ? formatted : String(raw ?? '');
@@ -913,7 +1205,8 @@ export function CooperativaAuxiliaresTab({ idSingular, canEdit, resourceKey }: C
     if (activeKey !== 'diretores') return base;
 
     return base.slice().sort(compareDiretores);
-  }, [activeDef.displayColumns, activeKey, rows, searchTerm, subtipoFilter]);
+  }, [activeDef, activeKey, displayColumns, labelFilter, rows, searchTerm, subtipoFilter]);
+  const showActionsColumn = canEdit || activeKey === 'diretores';
 
   const canModerateDiretorPhoneRequests = useMemo(
     () => activeKey === 'diretores' && user?.papel === 'admin' && user?.cooperativa_id === idSingular,
@@ -925,7 +1218,15 @@ export function CooperativaAuxiliaresTab({ idSingular, canEdit, resourceKey }: C
       setLoadingKey(key);
       setError('');
       const items = await apiService.getCooperativaAux<AuxRow>(idSingular, key);
-      setData((prev) => ({ ...prev, [key]: Array.isArray(items) ? items : [] }));
+      const normalizedItems = Array.isArray(items)
+        ? items.map((row) => {
+          if (row && typeof row === 'object' && row.wpp === undefined && row.whatsapp !== undefined) {
+            return { ...row, wpp: row.whatsapp };
+          }
+          return row;
+        })
+        : [];
+      setData((prev) => ({ ...prev, [key]: normalizedItems }));
     } catch (e) {
       console.error('Erro ao carregar aux:', e);
       setError(e instanceof Error ? e.message : 'Erro ao carregar dados auxiliares');
@@ -939,35 +1240,92 @@ export function CooperativaAuxiliaresTab({ idSingular, canEdit, resourceKey }: C
     await load(key);
   }, [data, load]);
 
+  const appendContactLabelsToDraft = useCallback((labels: string[]) => {
+    if (!labels.length) return;
+    setDraft((prev) => ({
+      ...prev,
+      label: joinContactLabels([...parseContactLabels(prev.label), ...labels]),
+    }));
+  }, []);
+
+  const commitContactLabelsInput = useCallback(() => {
+    if (editing?.key !== 'contatos') return;
+    const labelsFromInput = labelInput
+      .split(/[;,]/g)
+      .map((part) => sanitizeLabelToken(part))
+      .filter(Boolean);
+    if (!labelsFromInput.length) return;
+    appendContactLabelsToDraft(labelsFromInput);
+    setLabelInput('');
+  }, [appendContactLabelsToDraft, editing?.key, labelInput]);
+
+  const removeContactLabelFromDraft = useCallback((label: string) => {
+    if (editing?.key !== 'contatos') return;
+    const target = normalizeLabelToken(label);
+    setDraft((prev) => ({
+      ...prev,
+      label: joinContactLabels(
+        parseContactLabels(prev.label).filter((currentLabel) => normalizeLabelToken(currentLabel) !== target),
+      ),
+    }));
+  }, [editing?.key]);
+
   const openCreate = async (key: string) => {
+    if (!canEdit) return;
     await ensureLoaded(key);
     setEditing({ key, row: null });
+    setLabelInput('');
     const base: Record<string, any> = {};
     for (const f of defs.get(key)!.fields) {
       if (f.type === 'boolean') base[f.key] = f.key === 'divulgar_celular' ? false : true;
+      else if (f.type === 'multiselect') base[f.key] = [];
       else base[f.key] = '';
+    }
+    if (key === 'contatos') {
+      base.label = joinContactLabels(parseContactLabels(base.label));
     }
     setDraft(base);
   };
 
   const openEdit = (key: string, row: AuxRow) => {
+    if (!canEdit) return;
     setEditing({ key, row });
+    setLabelInput('');
     const base: Record<string, any> = {};
     for (const f of defs.get(key)!.fields) {
+      if (f.type === 'multiselect') {
+        base[f.key] = parseDepartamentoTags(row[f.key]);
+        continue;
+      }
+      if (key === 'contatos' && f.key === 'label') {
+        base[f.key] = joinContactLabels(parseContactLabels(row[f.key]));
+        continue;
+      }
       base[f.key] = row[f.key] ?? (f.type === 'boolean' ? (f.key === 'divulgar_celular' ? false : true) : '');
     }
     setDraft(base);
   };
 
   const save = async () => {
+    if (!canEdit) return;
     if (!editing) return;
     const def = defs.get(editing.key)!;
 
+    const preparedDraft: Record<string, any> = { ...draft };
+    if (editing.key === 'contatos') {
+      const labelsFromInput = labelInput
+        .split(/[;,]/g)
+        .map((part) => sanitizeLabelToken(part))
+        .filter(Boolean);
+      preparedDraft.label = joinContactLabels([...parseContactLabels(preparedDraft.label), ...labelsFromInput]);
+    }
+
     const payload: Record<string, unknown> = {};
     for (const f of def.fields) {
-      const v = draft[f.key];
+      const v = preparedDraft[f.key];
       if (f.type === 'boolean') payload[f.key] = toBool(v);
       else if (f.type === 'number') payload[f.key] = toNumberOrNull(v);
+      else if (f.type === 'multiselect') payload[f.key] = parseDepartamentoTags(v).join('; ');
       else payload[f.key] = (v ?? '').toString();
     }
 
@@ -979,6 +1337,7 @@ export function CooperativaAuxiliaresTab({ idSingular, canEdit, resourceKey }: C
         await apiService.createCooperativaAuxItem(idSingular, editing.key, payload);
       }
       setEditing(null);
+      setLabelInput('');
       await load(editing.key);
     } catch (e) {
       console.error('Erro ao salvar aux:', e);
@@ -1004,6 +1363,7 @@ export function CooperativaAuxiliaresTab({ idSingular, canEdit, resourceKey }: C
     if (key === 'diretores' && fieldKey === 'divulgar_celular') return true;
     if (key === 'contatos' && fieldKey === 'principal') return true;
     if (key === 'colaboradores' && fieldKey === 'chefia') return true;
+    if (key === 'enderecos' && fieldKey === 'exibir_visao_geral') return true;
     return false;
   }, []);
 
@@ -1045,6 +1405,7 @@ export function CooperativaAuxiliaresTab({ idSingular, canEdit, resourceKey }: C
   };
 
   const doImport = async () => {
+    if (!canEdit) return;
     if (!importFile) return;
     try {
       setImporting(true);
@@ -1158,6 +1519,8 @@ export function CooperativaAuxiliaresTab({ idSingular, canEdit, resourceKey }: C
   useEffect(() => {
     setSearchTerm('');
     setSubtipoFilter('all');
+    setLabelFilter('all');
+    setLabelInput('');
     setPhoneRequestError('');
   }, [activeKey]);
 
@@ -1210,147 +1573,297 @@ export function CooperativaAuxiliaresTab({ idSingular, canEdit, resourceKey }: C
               <Download className="h-4 w-4" />
             </Button>
 
-            <Dialog open={importOpen} onOpenChange={(open) => {
-              setImportOpen(open);
-              if (!open) {
-                setImportFile(null);
-                setImportPreview([]);
-                setImportError('');
-              }
-            }}>
-              <DialogTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  title="Importar"
-                  aria-label="Importar"
-                  className="aux-toolbar-icon-btn border border-slate-300 bg-white text-slate-600 shadow-sm hover:bg-slate-50"
-                  disabled={!canEdit}
-                >
-                  <Upload className="h-4 w-4" />
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-3xl">
-                <DialogHeader>
-                  <DialogTitle>Importar {activeDef.title}</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>Arquivo</Label>
-                    <Input
-                      type="file"
-                      accept=".xlsx,.xls,.csv"
-                      onChange={(e) => handleImportFile(e.target.files?.[0] ?? null)}
-                    />
-                    <p className="text-xs text-gray-500">
-                      Use o template CSV para os nomes de colunas. Códigos numéricos (CPF/CNPJ/telefones/IBGE) devem ser enviados apenas com números. A importação substitui os registros desta cooperativa.
-                    </p>
-                    {importError && <p className="text-sm text-red-600">{importError}</p>}
-                  </div>
+            {canEdit && (
+              <>
+                <Dialog open={importOpen} onOpenChange={(open) => {
+                  setImportOpen(open);
+                  if (!open) {
+                    setImportFile(null);
+                    setImportPreview([]);
+                    setImportError('');
+                  }
+                }}>
+                  <DialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      title="Importar"
+                      aria-label="Importar"
+                      className="aux-toolbar-icon-btn border border-slate-300 bg-white text-slate-600 shadow-sm hover:bg-slate-50"
+                    >
+                      <Upload className="h-4 w-4" />
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-3xl">
+                    <DialogHeader>
+                      <DialogTitle>Importar {activeDef.title}</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>Arquivo</Label>
+                        <Input
+                          type="file"
+                          accept=".xlsx,.xls,.csv"
+                          onChange={(e) => handleImportFile(e.target.files?.[0] ?? null)}
+                        />
+                        <p className="text-xs text-gray-500">
+                          Use o template CSV para os nomes de colunas. Códigos numéricos (CPF/CNPJ/telefones/IBGE) devem ser enviados apenas com números. A importação substitui os registros desta cooperativa.
+                        </p>
+                        {importError && <p className="text-sm text-red-600">{importError}</p>}
+                      </div>
 
-                  {importPreview.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="text-sm font-medium text-gray-900">Prévia (primeiras 50 linhas)</div>
-                      <div className="max-h-64 overflow-auto border border-gray-200 rounded-md">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              {Object.keys(importPreview[0] ?? {}).slice(0, 8).map((k) => (
-                                <TableHead key={k}>{k}</TableHead>
-                              ))}
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {importPreview.slice(0, 10).map((row, idx) => (
-                              <TableRow key={idx}>
-                                {Object.keys(importPreview[0] ?? {}).slice(0, 8).map((k) => (
-                                  <TableCell key={k}>{formatDisplayValue((row as any)[k], k, row as AuxRow, activeDef)}</TableCell>
+                      {importPreview.length > 0 && (
+                        <div className="space-y-2">
+                          <div className="text-sm font-medium text-gray-900">Prévia (primeiras 50 linhas)</div>
+                          <div className="max-h-64 overflow-auto border border-gray-200 rounded-md">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  {Object.keys(importPreview[0] ?? {}).slice(0, 8).map((k) => (
+                                    <TableHead key={k}>{k}</TableHead>
+                                  ))}
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {importPreview.slice(0, 10).map((row, idx) => (
+                                  <TableRow key={idx}>
+                                    {Object.keys(importPreview[0] ?? {}).slice(0, 8).map((k) => (
+                                      <TableCell key={k}>{formatDisplayValue((row as any)[k], k, row as AuxRow, activeDef)}</TableCell>
+                                    ))}
+                                  </TableRow>
                                 ))}
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" onClick={() => setImportOpen(false)} disabled={importing}>Cancelar</Button>
+                        <Button onClick={doImport} disabled={!importFile || importing}>
+                          {importing ? 'Importando...' : 'Importar (substituir)'}
+                        </Button>
                       </div>
                     </div>
-                  )}
+                  </DialogContent>
+                </Dialog>
 
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" onClick={() => setImportOpen(false)} disabled={importing}>Cancelar</Button>
-                    <Button onClick={doImport} disabled={!importFile || importing || !canEdit}>
-                      {importing ? 'Importando...' : 'Importar (substituir)'}
+                <Dialog open={!!editing} onOpenChange={(open) => {
+                  if (!open) {
+                    setEditing(null);
+                    setLabelInput('');
+                  }
+                }}>
+                  <DialogTrigger asChild>
+                    <Button
+                      size="icon"
+                      title="Adicionar"
+                      aria-label="Adicionar"
+                      className="aux-toolbar-icon-btn shadow-sm"
+                      onClick={() => openCreate(activeKey)}
+                    >
+                      <Plus className="h-4 w-4" />
                     </Button>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-xl">
+                    <DialogHeader>
+                      <DialogTitle>
+                        {editing?.row ? 'Editar registro' : 'Novo registro'}
+                      </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-3">
+                      {editing && defs.get(editing.key)!.fields.map((f) => (
+                        <div key={f.key} className="space-y-1">
+                          <Label>
+                            {editing.key === 'contatos' && f.key === 'subtipo' && isDraftSocialContact
+                              ? 'Rede social'
+                              : f.label}
+                          </Label>
+                          {editing.key === 'contatos' && f.key === 'label' ? (
+                            <div className="space-y-2">
+                              {draftContactLabels.length > 0 ? (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {draftContactLabels.map((tag) => (
+                                    <button
+                                      key={normalizeLabelToken(tag)}
+                                      type="button"
+                                      className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                                      onClick={() => removeContactLabelFromDraft(tag)}
+                                      title={`Remover "${tag}"`}
+                                    >
+                                      <span>{tag}</span>
+                                      <X className="h-3 w-3" />
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-xs text-gray-500">Nenhuma label adicionada.</p>
+                              )}
+                              <Input
+                                type="text"
+                                value={labelInput}
+                                placeholder="Digite labels separadas por vírgula"
+                                onChange={(e) => {
+                                  const nextValue = e.target.value;
+                                  if (nextValue.includes(',') || nextValue.includes(';')) {
+                                    const parts = nextValue.split(/[;,]/g);
+                                    const pending = parts.slice(0, -1).map((part) => sanitizeLabelToken(part)).filter(Boolean);
+                                    if (pending.length) appendContactLabelsToDraft(pending);
+                                    setLabelInput(parts.at(-1) ?? '');
+                                    return;
+                                  }
+                                  setLabelInput(nextValue);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ',') {
+                                    e.preventDefault();
+                                    commitContactLabelsInput();
+                                    return;
+                                  }
+                                  if (e.key === 'Backspace' && !labelInput && draftContactLabels.length > 0) {
+                                    removeContactLabelFromDraft(draftContactLabels[draftContactLabels.length - 1]);
+                                  }
+                                }}
+                                onBlur={commitContactLabelsInput}
+                              />
+                              {draftLabelSuggestions.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {draftLabelSuggestions.map((suggestion) => (
+                                    <button
+                                      key={normalizeLabelToken(suggestion)}
+                                      type="button"
+                                      className="rounded-full border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                                      onClick={() => {
+                                        appendContactLabelsToDraft([suggestion]);
+                                        setLabelInput('');
+                                      }}
+                                    >
+                                      {suggestion}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                              <p className="text-xs text-gray-500">
+                                Separe por vírgula. As labels salvas podem ser reutilizadas e filtradas na tabela.
+                              </p>
+                            </div>
+                          ) : f.type === 'textarea' ? (
+                            <Textarea
+                              value={draft[f.key] ?? ''}
+                              onChange={(e) => setDraft((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                            />
+                          ) : f.type === 'multiselect' ? (
+                            (() => {
+                              const selectedValues = parseDepartamentoTags(draft[f.key]);
+                              const selectedKeys = new Set(selectedValues.map((item) => normalizeKey(item)));
+                              const selectOptions = (f.options ?? []).filter((opt) => !selectedKeys.has(normalizeKey(opt.value)));
 
-            <Dialog open={!!editing} onOpenChange={(open) => {
-              if (!open) setEditing(null);
-            }}>
-              <DialogTrigger asChild>
-                <Button
-                  size="icon"
-                  title="Adicionar"
-                  aria-label="Adicionar"
-                  className="aux-toolbar-icon-btn shadow-sm"
-                  onClick={() => openCreate(activeKey)}
-                  disabled={!canEdit}
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-xl">
-                <DialogHeader>
-                  <DialogTitle>
-                    {editing?.row ? 'Editar registro' : 'Novo registro'}
-                  </DialogTitle>
-                </DialogHeader>
-                <div className="space-y-3">
-                  {editing && defs.get(editing.key)!.fields.map((f) => (
-                    <div key={f.key} className="space-y-1">
-                      <Label>{f.label}</Label>
-                      {f.type === 'textarea' ? (
-                        <Textarea
-                          value={draft[f.key] ?? ''}
-                          onChange={(e) => setDraft((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                        />
-                      ) : f.type === 'select' ? (
-                        <select
-                          className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                          value={draft[f.key] ?? ''}
-                          onChange={(e) => setDraft((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                              return (
+                                <div className="space-y-2">
+                                  <select
+                                    className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                                    value=""
+                                    onChange={(e) => {
+                                      const selected = String(e.target.value ?? '').trim();
+                                      if (!selected) return;
+                                      setDraft((prev) => ({
+                                        ...prev,
+                                        [f.key]: parseDepartamentoTags([...(Array.isArray(prev[f.key]) ? prev[f.key] : parseDepartamentoTags(prev[f.key])), selected]),
+                                      }));
+                                    }}
+                                  >
+                                    <option value="">Selecione...</option>
+                                    {selectOptions.map((opt) => (
+                                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                    ))}
+                                  </select>
+                                  {selectedValues.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {selectedValues.map((tag) => (
+                                        <button
+                                          key={normalizeKey(tag)}
+                                          type="button"
+                                          className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-700 hover:bg-violet-100"
+                                          onClick={() => setDraft((prev) => ({
+                                            ...prev,
+                                            [f.key]: parseDepartamentoTags(prev[f.key]).filter((item) => normalizeKey(item) !== normalizeKey(tag)),
+                                          }))}
+                                          title={`Remover "${tag}"`}
+                                        >
+                                          <span>{tag}</span>
+                                          <X className="h-3 w-3" />
+                                        </button>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <p className="text-xs text-gray-500">Nenhum departamento selecionado.</p>
+                                  )}
+                                </div>
+                              );
+                            })()
+                          ) : f.type === 'select' ? (
+                            (() => {
+                              const selectOptions = editing.key === 'contatos' && f.key === 'subtipo' && isDraftSocialContact
+                                ? socialNetworkOptions
+                                : (f.options ?? []);
+                              return (
+                            <select
+                              className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                              value={draft[f.key] ?? ''}
+                              onChange={(e) => setDraft((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                            >
+                              <option value="">
+                                {editing.key === 'contatos' && f.key === 'subtipo' && isDraftSocialContact
+                                  ? 'Selecione a rede social...'
+                                  : 'Selecione...'}
+                              </option>
+                              {selectOptions.map((opt) => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              ))}
+                            </select>
+                              );
+                            })()
+                          ) : f.type === 'boolean' ? (
+                            <select
+                              className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                              value={toBool(draft[f.key]) ? '1' : '0'}
+                              onChange={(e) => setDraft((prev) => ({ ...prev, [f.key]: e.target.value === '1' }))}
+                            >
+                              <option value="1">Sim</option>
+                              <option value="0">Não</option>
+                            </select>
+                          ) : (
+                            <Input
+                              type={f.type === 'number' ? 'number' : 'text'}
+                              placeholder={
+                                editing.key === 'contatos' && f.key === 'valor' && isDraftSocialContact
+                                  ? 'https://instagram.com/sua-cooperativa'
+                                  : undefined
+                              }
+                              value={draft[f.key] ?? ''}
+                              onChange={(e) => setDraft((prev) => ({ ...prev, [f.key]: applyInputMask(f.key, e.target.value, prev as AuxRow) }))}
+                            />
+                          )}
+                        </div>
+                      ))}
+
+                      <div className="flex justify-end gap-2 pt-2">
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setEditing(null);
+                            setLabelInput('');
+                          }}
                         >
-                          <option value="">Selecione...</option>
-                          {(f.options ?? []).map((opt) => (
-                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                          ))}
-                        </select>
-                      ) : f.type === 'boolean' ? (
-                        <select
-                          className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                          value={toBool(draft[f.key]) ? '1' : '0'}
-                          onChange={(e) => setDraft((prev) => ({ ...prev, [f.key]: e.target.value === '1' }))}
-                        >
-                          <option value="1">Sim</option>
-                          <option value="0">Não</option>
-                        </select>
-                      ) : (
-                        <Input
-                          type={f.type === 'number' ? 'number' : 'text'}
-                          value={draft[f.key] ?? ''}
-                          onChange={(e) => setDraft((prev) => ({ ...prev, [f.key]: applyInputMask(f.key, e.target.value, prev as AuxRow) }))}
-                        />
-                      )}
+                          Cancelar
+                        </Button>
+                        <Button onClick={save}>Salvar</Button>
+                      </div>
                     </div>
-                  ))}
-
-                  <div className="flex justify-end gap-2 pt-2">
-                    <Button variant="outline" onClick={() => setEditing(null)}>Cancelar</Button>
-                    <Button onClick={save} disabled={!canEdit}>Salvar</Button>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
+                  </DialogContent>
+                </Dialog>
+              </>
+            )}
           </div>
         </CardHeader>
 
@@ -1412,76 +1925,100 @@ export function CooperativaAuxiliaresTab({ idSingular, canEdit, resourceKey }: C
               />
             </div>
             {activeKey === 'contatos' && (
-              <select
-                className="h-9 rounded-full border border-input bg-background px-3 text-sm sm:w-52"
-                value={subtipoFilter}
-                onChange={(e) => setSubtipoFilter(e.target.value)}
-              >
-                <option value="all">Todos os subtipos</option>
-                {subtipoOptions.map((opt) => (
-                  <option key={opt.value} value={normalizeKey(opt.value)}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+              <>
+                <select
+                  className="h-9 rounded-full border border-input bg-background px-3 text-sm sm:w-52"
+                  value={subtipoFilter}
+                  onChange={(e) => setSubtipoFilter(e.target.value)}
+                >
+                  <option value="all">Todos os subtipos</option>
+                  {subtipoFilterOptions.map((opt) => (
+                    <option key={opt.value} value={normalizeKey(opt.value)}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="h-9 rounded-full border border-input bg-background px-3 text-sm sm:w-52"
+                  value={labelFilter}
+                  onChange={(e) => setLabelFilter(e.target.value)}
+                >
+                  <option value="all">Todas as labels</option>
+                  {contactLabelOptions.map((label) => (
+                    <option key={normalizeLabelToken(label)} value={normalizeLabelToken(label)}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </>
             )}
           </div>
           <div className="border border-gray-200 rounded-md overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
-                  {activeDef.displayColumns.map((col) => (
+                  {displayColumns.map((col) => (
                     <TableHead key={col.key}>{col.label}</TableHead>
                   ))}
-                  <TableHead className="text-right">Ações</TableHead>
+                  {showActionsColumn && <TableHead className="text-right">Ações</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={activeDef.displayColumns.length + 1} className="text-center text-gray-500 py-10">
+                    <TableCell colSpan={displayColumns.length + (showActionsColumn ? 1 : 0)} className="text-center text-gray-500 py-10">
                       Nenhum registro cadastrado.
                     </TableCell>
                   </TableRow>
                 ) : (
                   filteredRows.map((row) => (
                     <TableRow key={row.id}>
-                      {activeDef.displayColumns.map((col) => (
+                      {displayColumns.map((col) => (
                         <TableCell key={col.key}>
                           {isInlineToggleField(activeKey, col.key) ? (
-                            <div className="flex items-center justify-center md:justify-start">
-                              <Switch
-                                checked={toBool(row[col.key])}
-                                onCheckedChange={(checked) => void updateInlineBooleanField(activeKey, row, col.key, checked)}
-                                disabled={!canEdit || updatingFieldId === `${activeKey}:${String(row.id)}:${col.key}`}
-                                aria-label={`Alternar ${col.label}`}
-                              />
-                            </div>
+                            canEdit ? (
+                              <div className="flex items-center justify-center md:justify-start">
+                                <Switch
+                                  checked={toBool(row[col.key])}
+                                  onCheckedChange={(checked) => void updateInlineBooleanField(activeKey, row, col.key, checked)}
+                                  disabled={updatingFieldId === `${activeKey}:${String(row.id)}:${col.key}`}
+                                  aria-label={`Alternar ${col.label}`}
+                                />
+                              </div>
+                            ) : (
+                              formatDisplayValue(row[col.key], col.key, row, activeDef)
+                            )
                           ) : (
                             formatDisplayValue(row[col.key], col.key, row, activeDef)
                           )}
                         </TableCell>
                       ))}
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          {activeKey === 'diretores' && toBool(row.telefone_celular_restrito) && toBool(row.pode_solicitar_celular) && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => requestDiretorPhone(row)}
-                              disabled={requestingDirectorId === row.id || row.celular_request_status === 'pending'}
-                            >
-                              {row.celular_request_status === 'pending' ? 'Solicitado' : 'Solicitar celular'}
-                            </Button>
-                          )}
-                          <Button variant="outline" size="sm" onClick={() => openEdit(activeKey, row)} disabled={!canEdit}>
-                            Editar
-                          </Button>
-                          <Button variant="destructive" size="sm" onClick={() => remove(activeKey, row)} disabled={!canEdit}>
-                            Remover
-                          </Button>
-                        </div>
-                      </TableCell>
+                      {showActionsColumn && (
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            {activeKey === 'diretores' && toBool(row.telefone_celular_restrito) && toBool(row.pode_solicitar_celular) && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => requestDiretorPhone(row)}
+                                disabled={requestingDirectorId === row.id || row.celular_request_status === 'pending'}
+                              >
+                                {row.celular_request_status === 'pending' ? 'Solicitado' : 'Solicitar celular'}
+                              </Button>
+                            )}
+                            {canEdit && (
+                              <>
+                                <Button variant="outline" size="sm" onClick={() => openEdit(activeKey, row)}>
+                                  Editar
+                                </Button>
+                                <Button variant="destructive" size="sm" onClick={() => remove(activeKey, row)}>
+                                  Remover
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))
                 )}

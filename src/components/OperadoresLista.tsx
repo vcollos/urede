@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback } from './ui/avatar';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { Label } from './ui/label';
 import { Switch } from './ui/switch';
+import { Checkbox } from './ui/checkbox';
 import { 
   Search, 
   Plus, 
@@ -20,6 +21,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/apiService';
 import { Operador, Cooperativa, PendingUserApproval } from '../types';
 import { deriveRole, toBaseRole, describeRole } from '../utils/roleMapping';
+import { hasWhatsAppFlag } from '../utils/whatsapp';
 import { authService } from '../services/authService';
 import { Alert, AlertDescription } from './ui/alert';
 
@@ -52,6 +54,8 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     senha_provisoria: '',
     confirmar_senha: '',
     forcar_troca_senha: true,
+    cooperativas_ids: [] as string[],
+    cooperativa_principal_id: '',
   });
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -66,6 +70,8 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     senha_provisoria: '',
     confirmar_senha: '',
     forcar_troca_senha: true,
+    cooperativas_ids: [] as string[],
+    cooperativa_principal_id: '',
   });
   const fetchPendingApprovals = useCallback(async () => {
     if (!user || user.papel !== 'admin' || user.approval_status !== 'approved') {
@@ -136,7 +142,10 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     }
 
     if (cooperativaFilter !== 'todos') {
-      operadoresFiltrados = operadoresFiltrados.filter(op => op.id_singular === cooperativaFilter);
+      operadoresFiltrados = operadoresFiltrados.filter((op) => {
+        const ids = op.cooperativas_ids?.length ? op.cooperativas_ids : [op.id_singular];
+        return ids.includes(cooperativaFilter);
+      });
     }
 
     if (statusFilter !== 'todos') {
@@ -151,7 +160,22 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
 
   const getCooperativaNome = (idSingular: string) => {
     const coop = cooperativas.find(c => c.id_singular === idSingular);
-    return coop?.uniodonto || 'N/A';
+    return coop?.uniodonto || idSingular || 'N/A';
+  };
+
+  const getOperadorCooperativas = (operador: Operador) => {
+    const ids = operador.cooperativas_ids?.length
+      ? operador.cooperativas_ids
+      : (operador.id_singular ? [operador.id_singular] : []);
+    return Array.from(new Set(ids));
+  };
+
+  const getOperadorCooperativasResumo = (operador: Operador) => {
+    const ids = getOperadorCooperativas(operador);
+    if (ids.length === 0) return 'N/A';
+    const nomes = ids.map(getCooperativaNome);
+    if (nomes.length === 1) return nomes[0];
+    return `${nomes[0]} +${nomes.length - 1}`;
   };
 
   const formatDate = (value: string | Date) => {
@@ -172,21 +196,11 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     return phone || 'N/A';
   };
 
-  const normalizeDigits = (value: string) => String(value || '').replace(/\D/g, '');
-
-  const isLikelyBrazilMobile = (value: string) => {
-    const digits = normalizeDigits(value);
-    if (!digits) return false;
-    if (digits.startsWith('55') && digits.length === 13) return digits.charAt(4) === '9';
-    if (digits.length === 11) return digits.charAt(2) === '9';
-    return false;
-  };
-
   const isOperadorWpp = (operador: Operador) => {
-    if (typeof operador.wpp === 'boolean') return operador.wpp;
-    const legacyWhatsapp = String(operador.whatsapp || '').trim();
-    if (legacyWhatsapp) return true;
-    return isLikelyBrazilMobile(operador.telefone || '');
+    return hasWhatsAppFlag(
+      { wpp: operador.wpp, whatsapp: operador.whatsapp, telefone: operador.telefone },
+      { inferFromPhone: true },
+    );
   };
 
   const currentCooperativa = cooperativas.find((c) => c.id_singular === user?.cooperativa_id);
@@ -214,6 +228,47 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     { value: 'operador', label: 'Responsável' },
     { value: 'admin', label: 'Administrador' },
   ] as const;
+
+  const toggleEditCooperativa = (idSingular: string, checked: boolean) => {
+    setEditForm((prev) => {
+      const atual = new Set(prev.cooperativas_ids);
+      if (checked) {
+        atual.add(idSingular);
+      } else {
+        atual.delete(idSingular);
+      }
+      const ids = Array.from(atual);
+      const principal = ids.includes(prev.cooperativa_principal_id)
+        ? prev.cooperativa_principal_id
+        : (ids[0] || '');
+      return {
+        ...prev,
+        cooperativas_ids: ids,
+        cooperativa_principal_id: principal,
+      };
+    });
+  };
+
+  const toggleCreateCooperativa = (idSingular: string, checked: boolean) => {
+    setCreateForm((prev) => {
+      const atual = new Set(prev.cooperativas_ids);
+      if (checked) {
+        atual.add(idSingular);
+      } else {
+        atual.delete(idSingular);
+      }
+      const ids = Array.from(atual);
+      const principal = ids.includes(prev.cooperativa_principal_id)
+        ? prev.cooperativa_principal_id
+        : (ids[0] || '');
+      return {
+        ...prev,
+        cooperativas_ids: ids,
+        cooperativa_principal_id: principal,
+        id_singular: principal,
+      };
+    });
+  };
 
   const handleApprovePending = async (requestId: string) => {
     try {
@@ -245,6 +300,10 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
   };
 
   const handleOpenEdit = (operador: Operador) => {
+    const cooperativasOperador = operador.cooperativas_ids?.length
+      ? operador.cooperativas_ids
+      : (operador.id_singular ? [operador.id_singular] : []);
+    const cooperativaPrincipal = operador.cooperativa_principal_id || operador.id_singular || cooperativasOperador[0] || '';
     setEditingOperador(operador);
     setEditForm({
       nome: operador.nome,
@@ -257,6 +316,8 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
       senha_provisoria: '',
       confirmar_senha: '',
       forcar_troca_senha: true,
+      cooperativas_ids: cooperativasOperador,
+      cooperativa_principal_id: cooperativaPrincipal,
     });
     setSaveError('');
     setIsEditOpen(true);
@@ -277,6 +338,19 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     const canResetPassword = canCreate && editingOperador.email !== user?.email;
 
     try {
+      const cooperativasIds = Array.from(new Set(editForm.cooperativas_ids.filter(Boolean)));
+      const cooperativaPrincipal = editForm.cooperativa_principal_id || cooperativasIds[0] || '';
+      if (canCreate && cooperativasIds.length === 0) {
+        setSaveError('Selecione ao menos uma singular para o usuário.');
+        setIsSaving(false);
+        return;
+      }
+      if (canCreate && !cooperativaPrincipal) {
+        setSaveError('Defina a cooperativa principal do usuário.');
+        setIsSaving(false);
+        return;
+      }
+
       const payload: any = {
         nome: editForm.nome.trim(),
         cargo: editForm.cargo.trim(),
@@ -285,8 +359,14 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
         ativo: editForm.ativo,
       };
 
+      if (canCreate) {
+        payload.cooperativas_ids = cooperativasIds;
+        payload.cooperativa_principal_id = cooperativaPrincipal;
+        payload.id_singular = cooperativaPrincipal;
+      }
+
       if (canManageRoles) {
-        const coop = cooperativas.find((c) => c.id_singular === editingOperador.id_singular);
+        const coop = cooperativas.find((c) => c.id_singular === (cooperativaPrincipal || editingOperador.id_singular));
         payload.papel = deriveRole(editForm.papel, coop);
       }
 
@@ -330,6 +410,8 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
       senha_provisoria: '',
       confirmar_senha: '',
       forcar_troca_senha: true,
+      cooperativas_ids: defaultSingular ? [defaultSingular] : [],
+      cooperativa_principal_id: defaultSingular,
     });
     setCreateError('');
     setIsCreateOpen(true);
@@ -349,6 +431,8 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
       senha_provisoria: '',
       confirmar_senha: '',
       forcar_troca_senha: true,
+      cooperativas_ids: [],
+      cooperativa_principal_id: '',
     }));
   };
 
@@ -380,29 +464,44 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
         telefone: createForm.telefone.trim(),
         wpp: createForm.wpp,
         id_singular: createForm.id_singular,
+        cooperativas_ids: [] as string[],
+        cooperativa_principal_id: '',
         senha_temporaria: senhaTemporaria,
         forcar_troca_senha: createForm.forcar_troca_senha,
       };
 
-      if (!payload.id_singular) {
-        setCreateError('Selecione a cooperativa do operador.');
+      const cooperativasIds = Array.from(new Set(createForm.cooperativas_ids.filter(Boolean)));
+      const cooperativaPrincipal = createForm.cooperativa_principal_id || cooperativasIds[0] || '';
+      if (!cooperativasIds.length) {
+        setCreateError('Selecione ao menos uma singular para o usuário.');
         setIsCreating(false);
         return;
       }
+      if (!cooperativaPrincipal) {
+        setCreateError('Defina a cooperativa principal do usuário.');
+        setIsCreating(false);
+        return;
+      }
+      payload.id_singular = cooperativaPrincipal;
+      payload.cooperativas_ids = cooperativasIds;
+      payload.cooperativa_principal_id = cooperativaPrincipal;
 
       const novo = await apiService.createOperador(payload);
       setOperadores((prev) => [...prev, novo]);
       setIsCreateOpen(false);
+      const defaultSingular = user?.cooperativa_id || availableCooperativas[0]?.id_singular || '';
       setCreateForm({
         nome: '',
         email: '',
         cargo: '',
         telefone: '',
         wpp: false,
-        id_singular: payload.id_singular,
+        id_singular: defaultSingular,
         senha_provisoria: '',
         confirmar_senha: '',
         forcar_troca_senha: true,
+        cooperativas_ids: defaultSingular ? [defaultSingular] : [],
+        cooperativa_principal_id: defaultSingular,
       });
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Erro ao criar operador');
@@ -623,7 +722,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
                       <TableCell className="hidden md:table-cell">
                         <div className="flex items-center space-x-2">
                           <Building className="w-4 h-4 text-gray-400" />
-                          <span className="text-sm">{getCooperativaNome(operador.id_singular)}</span>
+                          <span className="text-sm">{getOperadorCooperativasResumo(operador)}</span>
                         </div>
                       </TableCell>
 
@@ -767,6 +866,61 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
                 </div>
               )}
 
+              {canCreate && (
+                <div className="rounded-lg border border-gray-200 p-3 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">Singulares vinculadas</p>
+                    <p className="text-xs text-gray-500">
+                      Selecione uma ou mais singulares para este usuário.
+                    </p>
+                  </div>
+                  <div className="max-h-40 overflow-y-auto space-y-2 pr-1">
+                    {availableCooperativas.map((coop) => (
+                      <label
+                        key={`edit-coop-${coop.id_singular}`}
+                        className="flex items-center gap-2 text-sm text-gray-700"
+                      >
+                        <Checkbox
+                          checked={editForm.cooperativas_ids.includes(coop.id_singular)}
+                          onCheckedChange={(checked) =>
+                            toggleEditCooperativa(coop.id_singular, checked === true)
+                          }
+                        />
+                        <span>{coop.uniodonto}</span>
+                      </label>
+                    ))}
+                    {availableCooperativas.length === 0 && (
+                      <p className="text-xs text-gray-500">Nenhuma singular disponível para vinculação.</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="operador-cooperativa-principal">Singular principal</Label>
+                    <Select
+                      value={editForm.cooperativa_principal_id}
+                      onValueChange={(value) =>
+                        setEditForm((prev) => ({
+                          ...prev,
+                          cooperativa_principal_id: value,
+                        }))
+                      }
+                      disabled={editForm.cooperativas_ids.length === 0}
+                    >
+                      <SelectTrigger id="operador-cooperativa-principal">
+                        <SelectValue placeholder="Selecione a singular principal" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {editForm.cooperativas_ids.map((id) => (
+                          <SelectItem key={`edit-principal-${id}`} value={id}>
+                            {getCooperativaNome(id)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center justify-between rounded-lg border border-gray-200 p-3">
                 <div>
                   <p className="text-sm font-medium text-gray-700">Responsável ativo</p>
@@ -787,17 +941,21 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
                         Use quando o operador ainda não possui acesso ou perdeu a senha. Compartilhe manualmente.
                       </p>
                     </div>
-                    <Switch
-                      checked={editForm.definir_senha}
-                      onCheckedChange={(checked) =>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={editForm.definir_senha ? 'outline' : 'default'}
+                      onClick={() =>
                         setEditForm((prev) => ({
                           ...prev,
-                          definir_senha: checked,
-                          senha_provisoria: checked ? prev.senha_provisoria : '',
-                          confirmar_senha: checked ? prev.confirmar_senha : '',
+                          definir_senha: !prev.definir_senha,
+                          senha_provisoria: prev.definir_senha ? '' : prev.senha_provisoria,
+                          confirmar_senha: prev.definir_senha ? '' : prev.confirmar_senha,
                         }))
                       }
-                    />
+                    >
+                      {editForm.definir_senha ? 'Cancelar redefinição' : 'Definir senha provisória'}
+                    </Button>
                   </div>
 
                   {editForm.definir_senha && (
@@ -931,23 +1089,53 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="novo-cooperativa">Cooperativa</Label>
-                <Select
-                  value={createForm.id_singular}
-                  onValueChange={(value) => setCreateForm((prev) => ({ ...prev, id_singular: value }))}
-                  disabled={availableCooperativas.length <= 1}
-                >
-                  <SelectTrigger id="novo-cooperativa">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
+                <Label>Singulares vinculadas</Label>
+                <div className="rounded-lg border border-gray-200 p-3 space-y-3">
+                  <div className="max-h-40 overflow-y-auto space-y-2 pr-1">
                     {availableCooperativas.map((coop) => (
-                      <SelectItem key={coop.id_singular} value={coop.id_singular}>
-                        {coop.uniodonto}
-                      </SelectItem>
+                      <label
+                        key={`create-coop-${coop.id_singular}`}
+                        className="flex items-center gap-2 text-sm text-gray-700"
+                      >
+                        <Checkbox
+                          checked={createForm.cooperativas_ids.includes(coop.id_singular)}
+                          onCheckedChange={(checked) =>
+                            toggleCreateCooperativa(coop.id_singular, checked === true)
+                          }
+                        />
+                        <span>{coop.uniodonto}</span>
+                      </label>
                     ))}
-                  </SelectContent>
-                </Select>
+                    {availableCooperativas.length === 0 && (
+                      <p className="text-xs text-gray-500">Nenhuma singular disponível para vinculação.</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="novo-cooperativa-principal">Singular principal</Label>
+                    <Select
+                      value={createForm.cooperativa_principal_id}
+                      onValueChange={(value) =>
+                        setCreateForm((prev) => ({
+                          ...prev,
+                          cooperativa_principal_id: value,
+                          id_singular: value,
+                        }))
+                      }
+                      disabled={createForm.cooperativas_ids.length === 0}
+                    >
+                      <SelectTrigger id="novo-cooperativa-principal">
+                        <SelectValue placeholder="Selecione a singular principal" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {createForm.cooperativas_ids.map((id) => (
+                          <SelectItem key={`create-principal-${id}`} value={id}>
+                            {getCooperativaNome(id)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
                 <p className="text-xs text-gray-500">
                   O operador inicia com acesso padrão. Administradores podem ampliar o nível posteriormente.
                 </p>

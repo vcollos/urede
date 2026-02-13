@@ -209,7 +209,18 @@ bash scripts/import-csv-sqlite.sh
 - Na UI de usuários, o contato é exibido em uma única linha de telefone com ícone do WhatsApp quando `wpp=true`.
 - O menu `Responsáveis` foi renomeado para `Usuários`.
 - `Usuários` e `Gestão de dados` agora aparecem como subitens de `Configurações`, somente para administradores.
-.
+- Navegação modular ativada: UHub concentra homepage e menus globais (`Cooperativas`, `Cidades`), enquanto URede concentra `Dashboard`, `Relatórios`, `Pedidos` e `Pedidos em lote`.
+- Branding por contexto: o topo alterna identidade visual entre UHub e URede conforme o módulo ativo.
+- Tela de autenticação atualizada para identidade UHub; na homepage do hub, o card de boas-vindas foi simplificado para reduzir redundância visual.
+- Configurações agora são contextuais por módulo: Hub (`/hub/configuracoes`) e URede (`/urede/configuracoes`) usam a mesma tela com seções diferentes.
+- Alteração de configurações de módulo é restrita a Administrador da Confederação (validação no frontend e backend).
+- CRUD de usuários atualizado para múltiplas singulares: cadastro e edição aceitam uma ou mais associações, com definição de singular principal.
+- Vínculos extras de usuário/cooperativa são persistidos em `auth_user_cooperativas` e sincronizados com `auth_users.cooperativa_id` (principal).
+- Na edição de usuário, a redefinição de credencial provisória é acionada por botão explícito no modal.
+- A gestão de cooperativas ganhou aba dedicada de **Endereços** para CRUD completo.
+- Endereços agora possuem `exibir_visao_geral` (0/1) para controlar exibição na aba **Visão Geral**.
+- Endereços do tipo `plantao_urgencia_emergencia` sincronizam com `cooperativa_plantao_clinicas` (vínculo por `plantao_clinica_id`/`endereco_id`) para reduzir duplicidade entre cadastros de endereço e plantão.
+- O Hub passou a manter catálogos globais de dados cadastrais (`tipos_endereco`, `tipos_conselho`, `tipos_contato`, `subtipos_contato`, `redes_sociais`, `departamentos`) em `settings.system_preferences`, reutilizados no cadastro auxiliar de cooperativas.
 ├── src/
 │   ├── App.tsx
 │   ├── main.tsx
@@ -265,6 +276,14 @@ bash scripts/import-csv-sqlite.sh
 - `CooperativasView` (componente inline em `App`) -> `/cooperativas`, `/operadores`, `/cidades`
 - `OperadoresLista` -> `/operadores`
 
+### 10.4 Navegação Modular (fase atual)
+- **UHub**: `/hub`, `/hub/cooperativas`, `/hub/cidades`, `/hub/configuracoes`, `/hub/usuarios`, `/hub/gestao-dados`.
+- **URede**: `/urede/dashboard`, `/urede/relatorios`, `/urede/pedidos`, `/urede/importacao`, `/urede/configuracoes`.
+- O shell principal alterna menu, atalhos e marca conforme o módulo ativo.
+- Rotas legadas continuam com fallback para preservar deep links existentes.
+- As configurações são exibidas por contexto de módulo (Hub x URede) na mesma view.
+- Somente Administrador da Confederação pode salvar configurações de módulo.
+
 ### 10.5 Padrão de Telefonia (vigente)
 - Campo canônico: `telefone` (string, somente números).
 - Indicador de WhatsApp: `wpp` (0/1).
@@ -279,7 +298,7 @@ Regras de exibição:
 Migração de referência:
 - `db/migrations/sqlite/20260213_015_telefone_unificado_wpp.sql`
 
-### 10.4 Dashboard
+### 10.6 Dashboard
 - `/dashboard/stats` + `/pedidos`
 - Eventos custom (`window.dispatchEvent`) garantem sincronia após ações (created/updated/deleted)
 

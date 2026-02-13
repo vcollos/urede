@@ -23,6 +23,10 @@ const deriveDefaultBase = () => {
         return `${proto}//apiurede.collos.com.br`;
       }
 
+      if (host === 'uhub.collos.com.br') {
+        return `${proto}//apiuhub.collos.com.br`;
+      }
+
       if (host.endsWith('.collos.com.br')) {
         return `${proto}//api.${host}`;
       }

@@ -9,6 +9,7 @@ export interface User {
   whatsapp: string;
   cargo: string;
   cooperativa_id: string;
+  cooperativas_ids?: string[];
   papel: 'admin' | 'operador' | 'federacao' | 'confederacao';
   ativo: boolean;
   data_cadastro: string;
@@ -62,6 +63,8 @@ export interface Operador {
   wpp?: boolean;
   cargo: string;
   id_singular: string;
+  cooperativas_ids?: string[];
+  cooperativa_principal_id?: string;
   ativo: boolean;
   data_cadastro: string;
   papel?: 'operador' | 'admin' | 'federacao' | 'confederacao';
@@ -156,6 +159,21 @@ export interface CoberturaLog {
   timestamp: string;
 }
 
+export interface CooperativaOverviewLog {
+  id: string;
+  cooperativa_id: string;
+  cooperativa_nome?: string | null;
+  campo: string;
+  acao: 'create' | 'update' | 'delete' | string;
+  valor_anterior?: string | null;
+  valor_novo?: string | null;
+  usuario_email: string;
+  usuario_nome: string;
+  usuario_papel: string;
+  detalhes?: string | null;
+  timestamp: string;
+}
+
 export interface PendingUserApproval {
   id: string;
   email: string;
@@ -194,6 +212,14 @@ export interface SystemSettings {
   autoNotifyManagers: boolean;
   enableSelfRegistration: boolean;
   pedido_motivos: string[];
+  hub_cadastros: {
+    tipos_endereco: string[];
+    tipos_conselho: string[];
+    tipos_contato: string[];
+    subtipos_contato: string[];
+    redes_sociais: string[];
+    departamentos: string[];
+  };
 }
 
 export interface PedidoImportPayloadItem {
