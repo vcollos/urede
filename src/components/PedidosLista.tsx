@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -12,6 +12,9 @@ import {
   AlertCircle,
   Tag,
   Users,
+  UserCheck,
+  Inbox,
+  Send,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/apiService';
@@ -31,6 +34,28 @@ export type PedidosScopeFilter =
   | 'me'
   | 'uniodonto'
   | 'minha_singular';
+
+const scopeFilterOptions: Array<{
+  value: PedidosScopeFilter;
+  tooltip: string;
+  icon: typeof UserCheck;
+}> = [
+  {
+    value: 'me',
+    tooltip: 'Pedidos recebidos que sou responsável',
+    icon: UserCheck,
+  },
+  {
+    value: 'uniodonto',
+    tooltip: 'Pedidos recebidos sem responsável',
+    icon: Inbox,
+  },
+  {
+    value: 'minha_singular',
+    tooltip: 'Pedidos feitos por minha Uniodonto',
+    icon: Send,
+  },
+];
 
 interface PedidosListaProps {
   onViewPedido: (pedido: Pedido) => void;
@@ -101,20 +126,23 @@ export function PedidosLista({
   const { user, isAuthenticated } = useAuth();
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const defaultStatusSelection: Pedido['status'][] =
-    (defaultViewMode ?? 'lista') === 'kanban'
-      ? ['novo', 'em_andamento', 'concluido']
-      : ['novo', 'em_andamento'];
+  const defaultStatusSelection: Pedido['status'][] = ['novo', 'em_andamento'];
   const allStatusValues: Pedido['status'][] = ['novo', 'em_andamento', 'concluido', 'cancelado'];
 
   const [statusFilter, setStatusFilter] = useState<Pedido['status'][]>(() => [...defaultStatusSelection]);
   const [nivelFilter, setNivelFilter] = useState('todos');
-  const [viewMode, setViewMode] = useState<'lista' | 'kanban'>(() => (defaultViewMode ?? 'lista'));
+  const [viewMode, setViewMode] = useState<'lista' | 'kanban'>('lista');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [customFilter, setCustomFilter] = useState<'vencendo' | null>(null);
   const [scopeFilter, setScopeFilter] = useState<PedidosScopeFilter>(() => (defaultScopeFilter ?? 'me'));
   const [kanbanConcluidosLimit, setKanbanConcluidosLimit] = useState(10);
+  const [kanbanOrder, setKanbanOrder] = useState<Record<Pedido['status'], string[]>>({
+    novo: [],
+    em_andamento: [],
+    concluido: [],
+    cancelado: [],
+  });
 
   // Carregar pedidos
   useEffect(() => {
@@ -273,7 +301,9 @@ export function PedidosLista({
             return !assigned || assigned === myUserId;
           }
           case 'uniodonto': {
-            return p.cooperativa_responsavel_id === myCoop;
+            if (p.cooperativa_responsavel_id !== myCoop) return false;
+            const assigned = p.responsavel_atual_id || null;
+            return !assigned;
           }
           case 'minha_singular': {
             return p.cooperativa_solicitante_id === myCoop;
@@ -329,7 +359,51 @@ export function PedidosLista({
     setNivelFilter('todos');
   }, [presetFilter?.token, presetFilter?.status, presetFilter?.custom]);
 
-  const pedidosFiltrados = getFilteredPedidos();
+  const pedidosFiltrados = useMemo(
+    () => getFilteredPedidos(),
+    [
+      pedidos,
+      statusFilter,
+      excludeCreatedOutsideCoop,
+      user?.email,
+      user?.cooperativa_id,
+      showScopeFilter,
+      scopeFilter,
+      user?.id,
+      searchTerm,
+      nivelFilter,
+      customFilter,
+    ],
+  );
+
+  useEffect(() => {
+    setKanbanOrder((prev) => {
+      const next: Record<Pedido['status'], string[]> = {
+        novo: [],
+        em_andamento: [],
+        concluido: [],
+        cancelado: [],
+      };
+      const statuses: Pedido['status'][] = ['novo', 'em_andamento', 'concluido', 'cancelado'];
+      for (const status of statuses) {
+        const idsInStatus = pedidosFiltrados.filter((p) => p.status === status).map((p) => p.id);
+        const prevInStatus = (prev[status] || []).filter((id) => idsInStatus.includes(id));
+        const toAppend = idsInStatus.filter((id) => !prevInStatus.includes(id));
+        next[status] = [...prevInStatus, ...toAppend];
+      }
+      return next;
+    });
+  }, [pedidosFiltrados]);
+
+  const getOrderedByStatus = useCallback((status: Pedido['status'], list: Pedido[]) => {
+    const indexById = new Map(list.map((item) => [item.id, item]));
+    const orderedIds = kanbanOrder[status] || [];
+    const ordered = orderedIds
+      .map((id) => indexById.get(id))
+      .filter((item): item is Pedido => Boolean(item));
+    const missing = list.filter((item) => !orderedIds.includes(item.id));
+    return [...ordered, ...missing];
+  }, [kanbanOrder]);
 
   const labelByPov = (p: Pedido) => {
     switch (p.ponto_de_vista) {
@@ -445,39 +519,41 @@ export function PedidosLista({
   };
 
   const KanbanView = () => {
-    const concluidos = pedidosFiltrados.filter((p) => p.status === 'concluido');
+    const concluidos = getOrderedByStatus('concluido', pedidosFiltrados.filter((p) => p.status === 'concluido'));
     const concluidosVisiveis = concluidos.slice(0, Math.max(10, kanbanConcluidosLimit));
+    const novosOrdenados = getOrderedByStatus('novo', pedidosFiltrados.filter((p) => p.status === 'novo'));
+    const andamentoOrdenados = getOrderedByStatus('em_andamento', pedidosFiltrados.filter((p) => p.status === 'em_andamento'));
 
     const columns = [
       {
         id: 'novo',
         title: 'Backlog',
-        pedidos: pedidosFiltrados.filter((p) => p.status === 'novo'),
-        columnBg: 'bg-gradient-to-b from-[#F5F2FF] via-white to-white',
+        pedidos: novosOrdenados,
+        columnBg: 'bg-gradient-to-b from-[#bf9cff] via-white to-white',
         headerColor: 'text-[#6C55D9]',
-        badgeClass: 'bg-[#E6DFFF] text-[#6C55D9]',
-        cardBg: 'bg-gradient-to-br from-[#F6F3FF] via-white to-white',
+        badgeClass: 'bg-[#d9c3ff] text-[#5a3acb]',
+        cardBg: 'bg-gradient-to-br from-[#f3ecff] via-white to-white',
         accentDot: 'bg-[#7B6EF6]',
       },
       {
         id: 'em_andamento',
         title: 'Em andamento',
-        pedidos: pedidosFiltrados.filter((p) => p.status === 'em_andamento'),
-        columnBg: 'bg-gradient-to-b from-[#FFF2E8] via-white to-white',
-        headerColor: 'text-[#D48C2B]',
-        badgeClass: 'bg-[#FFE5CC] text-[#C8730E]',
-        cardBg: 'bg-gradient-to-br from-[#FFF5EB] via-white to-white',
-        accentDot: 'bg-[#F4B961]',
+        pedidos: andamentoOrdenados,
+        columnBg: 'bg-gradient-to-b from-[#f2f8fa] via-white to-white',
+        headerColor: 'text-[#4A7483]',
+        badgeClass: 'bg-[#e3f1f5] text-[#3f6775]',
+        cardBg: 'bg-gradient-to-br from-[#f7fcfd] via-white to-white',
+        accentDot: 'bg-[#6ea7bb]',
       },
       {
         id: 'concluido',
         title: 'Concluídos',
         pedidos: concluidosVisiveis,
-        columnBg: 'bg-gradient-to-b from-[#EAF6EF] via-white to-white',
-        headerColor: 'text-[#2E8C63]',
-        badgeClass: 'bg-[#DDF5E6] text-[#2E8C63]',
-        cardBg: 'bg-gradient-to-br from-[#F0FBF4] via-white to-white',
-        accentDot: 'bg-[#3EA975]',
+        columnBg: 'bg-gradient-to-b from-[#e1ff7b] via-white to-white',
+        headerColor: 'text-[#5A7F00]',
+        badgeClass: 'bg-[#edfdb9] text-[#496700]',
+        cardBg: 'bg-gradient-to-br from-[#f8ffe3] via-white to-white',
+        accentDot: 'bg-[#7ea900]',
         totalCount: concluidos.length,
       },
     ];
@@ -488,7 +564,7 @@ export function PedidosLista({
           <div
             key={column.id}
             className={cn(
-              'rounded-3xl border border-white shadow-[0_24px_50px_-40px_rgba(107,86,217,0.5)] p-5 space-y-4',
+              'rounded-3xl border border-white shadow-[0_24px_50px_-40px_rgba(107,86,217,0.5)] p-5 space-y-4 transition',
               column.columnBg
             )}
           >
@@ -514,7 +590,7 @@ export function PedidosLista({
                   Nenhum pedido nesta etapa
                 </div>
               )}
-              {column.pedidos.map((pedido) => (
+              {column.pedidos.map((pedido, index) => (
                 <div
                   key={pedido.id}
                   className={cn(
@@ -763,16 +839,31 @@ export function PedidosLista({
           <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
             <div className="flex flex-col md:flex-row gap-4 flex-1 w-full">
               {showScopeFilter && (
-                <Select value={scopeFilter} onValueChange={(value) => setScopeFilter(value as PedidosScopeFilter)}>
-                  <SelectTrigger className="w-full md:w-72">
-                    <SelectValue placeholder="Filtro de responsabilidade" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="me">Os pedidos que eu tenho para responder</SelectItem>
-                    <SelectItem value="uniodonto">Minha Uniodonto tem para responder</SelectItem>
-                    <SelectItem value="minha_singular">Minha cooperativa singular</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2 py-1">
+                  {scopeFilterOptions.map((option) => {
+                    const Icon = option.icon;
+                    const isActive = scopeFilter === option.value;
+
+                    return (
+                      <Button
+                        key={option.value}
+                        type="button"
+                        size="icon"
+                        variant={isActive ? 'default' : 'outline'}
+                        className={`h-9 w-9 rounded-full ${
+                          isActive
+                            ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                            : 'border-slate-300 text-slate-600 hover:bg-slate-100'
+                        }`}
+                        title={option.tooltip}
+                        aria-label={option.tooltip}
+                        onClick={() => setScopeFilter(option.value)}
+                      >
+                        <Icon className="h-4 w-4" />
+                      </Button>
+                    );
+                  })}
+                </div>
               )}
               <Select value={quickFilterValue} onValueChange={handleQuickFilterChange}>
                 <SelectTrigger className="w-full md:w-48">

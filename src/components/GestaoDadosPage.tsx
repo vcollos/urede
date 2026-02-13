@@ -30,13 +30,18 @@ const toUiFieldName = (field: string) => FIELD_UI_LABELS[field] ?? field;
 
 type AuxResourceKey =
   | 'auditores'
+  | 'colaboradores'
   | 'conselhos'
   | 'contatos'
   | 'diretores'
+  | 'regulatorio'
   | 'enderecos'
   | 'lgpd'
   | 'ouvidores'
-  | 'plantao';
+  | 'plantao'
+  | 'plantao_clinicas'
+  | 'plantao_contatos'
+  | 'plantao_horarios';
 
 type ResourceGuide = {
   description: string;
@@ -55,11 +60,35 @@ const AUX_RESOURCES: {
   {
     key: 'auditores',
     title: 'Auditores',
-    templateColumns: ['primeiro_nome', 'sobrenome', 'telefone_celular', 'email'],
+    templateColumns: ['primeiro_nome', 'sobrenome', 'telefone', 'wpp', 'email'],
     guide: {
       description: 'Cadastro de auditores vinculados à singular.',
       required: ['primeiro_nome'],
-      optional: ['sobrenome', 'telefone_celular', 'email'],
+      optional: ['sobrenome', 'telefone', 'wpp', 'email'],
+    },
+  },
+  {
+    key: 'colaboradores',
+    title: 'Colaboradores',
+    templateColumns: ['nome', 'sobrenome', 'email', 'telefone', 'departamento', 'chefia'],
+    templateExamples: [
+      {
+        nome: 'Maria',
+        sobrenome: 'Silva',
+        email: 'maria.silva@cooperativa.coop.br',
+        telefone: '11999998888',
+        departamento: 'INTERCÂMBIO; COMERCIAL',
+        chefia: '1',
+      },
+    ],
+    guide: {
+      description: 'Cadastro de colaboradores da singular, com departamentos em formato de tags.',
+      required: ['nome', 'departamento'],
+      optional: ['sobrenome', 'email', 'telefone', 'chefia'],
+      valueHints: [
+        { field: 'departamento', values: ['um ou mais nomes'], note: 'Para múltiplos departamentos, separar por ponto e vírgula (;).' },
+        { field: 'chefia', values: ['1/0', 'sim/nao', 'true/false'], note: 'Define se a pessoa é chefia nos departamentos informados.' },
+      ],
     },
   },
   {
@@ -79,45 +108,87 @@ const AUX_RESOURCES: {
   {
     key: 'contatos',
     title: 'Contatos',
-    templateColumns: ['tipo', 'subtipo', 'valor', 'principal'],
+    templateColumns: ['tipo', 'subtipo', 'valor', 'wpp', 'principal'],
     templateExamples: [
       { tipo: 'email', subtipo: 'lgpd', valor: 'lgpd@cooperativa.coop.br', principal: '1' },
       { tipo: 'telefone', subtipo: 'plantão', valor: '1133334444', principal: '0' },
-      { tipo: 'whatsapp', subtipo: 'geral', valor: '11999998888', principal: '0' },
+      { tipo: 'telefone', subtipo: 'geral', valor: '11999998888', wpp: '1', principal: '0' },
       { tipo: 'telefone', subtipo: 'emergência', valor: '0800123456', principal: '0' },
       { tipo: 'email', subtipo: 'divulgação', valor: 'contato@cooperativa.coop.br', principal: '0' },
       { tipo: 'telefone', subtipo: 'divulgação', valor: '1132104567', principal: '0' },
-      { tipo: 'whatsapp', subtipo: 'divulgação', valor: '11987654321', principal: '0' },
+      { tipo: 'telefone', subtipo: 'divulgação', valor: '11987654321', wpp: '1', principal: '0' },
       { tipo: 'outro', subtipo: 'divulgação', valor: 'canal oficial', principal: '0' },
       { tipo: 'telefone', subtipo: 'comercial pf', valor: '11981234567', principal: '0' },
       { tipo: 'telefone', subtipo: 'comercial pj', valor: '1131234567', principal: '0' },
+      { tipo: 'website', subtipo: 'institucional', valor: 'https://www.uniodonto.coop.br', principal: '1' },
+      { tipo: 'website', subtipo: 'portal do prestador', valor: 'https://prestador.uniodonto.coop.br', principal: '0' },
+      { tipo: 'website', subtipo: 'portal do cliente', valor: 'https://cliente.uniodonto.coop.br', principal: '0' },
+      { tipo: 'website', subtipo: 'portal da empresa', valor: 'https://empresa.uniodonto.coop.br', principal: '0' },
+      { tipo: 'website', subtipo: 'portal do corretor', valor: 'https://corretor.uniodonto.coop.br', principal: '0' },
+      { tipo: 'website', subtipo: 'e-commerce', valor: 'https://loja.uniodonto.coop.br', principal: '0' },
+      { tipo: 'website', subtipo: 'portal do cooperado', valor: 'https://cooperado.uniodonto.coop.br', principal: '0' },
     ],
     guide: {
       description: 'Contatos gerais e operacionais. Neste cadastro: grupo = tipo e subgrupo = subtipo.',
       required: ['tipo', 'subtipo', 'valor'],
       optional: ['principal'],
       valueHints: [
-        { field: 'tipo (grupo)', values: ['E-mail', 'Telefone', 'WhatsApp', 'Outro'] },
-        { field: 'subtipo (subgrupo)', values: ['LGPD', 'Plantão', 'Geral', 'Emergência', 'Divulgação', 'Comercial PF', 'Comercial PJ'] },
+        { field: 'tipo (grupo)', values: ['E-mail', 'Telefone', 'Website', 'Outro'] },
+        { field: 'subtipo (subgrupo)', values: ['LGPD', 'Plantão', 'Geral', 'Emergência', 'Divulgação', 'Comercial PF', 'Comercial PJ', 'Institucional', 'Portal do Prestador', 'Portal do Cliente', 'Portal da Empresa', 'Portal do Corretor', 'E-Commerce', 'Portal do Cooperado'] },
         { field: 'principal', values: ['true/false', '1/0', 'sim/nao'], note: 'Se não informar, assume false.' },
-        { field: 'valor', values: ['somente números para telefone/whatsapp'], note: 'Não usar parênteses, traços, espaços ou +55.' },
+        { field: 'valor', values: ['URL para Website; somente números para telefone'], note: 'Website: informe URL (https://...). Telefone: não usar parênteses, traços, espaços ou +55.' },
+        { field: 'wpp', values: ['0/1', 'true/false', 'sim/não'], note: 'Marque se o telefone também atende por WhatsApp.' },
       ],
     },
   },
   {
     key: 'diretores',
     title: 'Diretores',
-    templateColumns: ['cargo', 'pasta', 'primeiro_nome', 'sobrenome', 'email', 'telefone_celular', 'inicio_mandato', 'fim_mandato'],
+    templateColumns: ['cargo', 'pasta', 'primeiro_nome', 'sobrenome', 'email', 'telefone', 'wpp', 'inicio_mandato', 'fim_mandato'],
     guide: {
       description: 'Diretores da singular.',
       required: ['primeiro_nome'],
-      optional: ['cargo', 'pasta', 'sobrenome', 'email', 'telefone_celular', 'inicio_mandato', 'fim_mandato'],
+      optional: ['cargo', 'pasta', 'sobrenome', 'email', 'telefone', 'wpp', 'inicio_mandato', 'fim_mandato'],
+    },
+  },
+  {
+    key: 'regulatorio',
+    title: 'Dados regulatórios',
+    templateColumns: [
+      'tipo_unidade',
+      'nome_unidade',
+      'reg_ans',
+      'responsavel_tecnico',
+      'email_responsavel_tecnico',
+      'cro_responsavel_tecnico',
+      'cro_unidade',
+    ],
+    templateExamples: [
+      {
+        tipo_unidade: 'matriz',
+        nome_unidade: 'Sede Administrativa',
+        reg_ans: '340120',
+        responsavel_tecnico: 'João da Silva',
+        email_responsavel_tecnico: 'responsavel.tecnico@cooperativa.coop.br',
+        cro_responsavel_tecnico: 'CRO-SP 12345',
+        cro_unidade: 'CRO-SP EPAO 2054',
+      },
+    ],
+    guide: {
+      description: 'Dados regulatórios obrigatórios por unidade (matriz/filial): responsável técnico e registros CRO/ANS.',
+      required: ['tipo_unidade', 'responsavel_tecnico', 'email_responsavel_tecnico', 'cro_responsavel_tecnico', 'cro_unidade'],
+      optional: ['nome_unidade', 'reg_ans'],
+      valueHints: [
+        { field: 'tipo_unidade', values: ['Matriz', 'Filial'] },
+        { field: 'reg_ans', values: ['somente números'], note: 'Use o registro ANS quando aplicável.' },
+        { field: 'email_responsavel_tecnico', values: ['email válido'], note: 'Exemplo: nome@dominio.com.br' },
+      ],
     },
   },
   {
     key: 'enderecos',
     title: 'Endereços',
-    templateColumns: ['tipo', 'cd_municipio_7', 'nome_local', 'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'telefone_fixo', 'telefone_celular'],
+    templateColumns: ['tipo', 'cd_municipio_7', 'nome_local', 'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'telefone', 'wpp'],
     templateExamples: [
       {
         tipo: 'sede',
@@ -128,18 +199,18 @@ const AUX_RESOURCES: {
         numero: '100',
         complemento: '',
         bairro: 'Se',
-        telefone_fixo: '1133334444',
-        telefone_celular: '11999998888',
+        telefone: '11999998888',
+        wpp: '1',
       },
     ],
     guide: {
       description: 'Endereços de sede, filial, atendimento e correspondência. Informe o código IBGE e o sistema preenche cidade/UF automaticamente.',
       required: ['tipo', 'cd_municipio_7'],
-      optional: ['nome_local', 'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf', 'telefone_fixo', 'telefone_celular'],
+      optional: ['nome_local', 'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf', 'telefone', 'wpp'],
       valueHints: [
         { field: 'tipo', values: ['Sede', 'Filial', 'Atendimento', 'Correspondência'] },
         { field: 'IBGE', values: ['7 dígitos'], note: 'Use o código oficial do município para evitar divergência de cidade/UF.' },
-        { field: 'cep/telefone_fixo/telefone_celular', values: ['somente números'], note: 'Não usar ponto, traço, barra, parênteses ou espaços.' },
+        { field: 'cep/telefone', values: ['somente números'], note: 'Não usar ponto, traço, barra, parênteses ou espaços.' },
       ],
     },
   },
@@ -156,11 +227,11 @@ const AUX_RESOURCES: {
   {
     key: 'ouvidores',
     title: 'Ouvidores',
-    templateColumns: ['primeiro_nome', 'sobrenome', 'telefone_fixo', 'telefone_celular', 'email'],
+    templateColumns: ['primeiro_nome', 'sobrenome', 'telefone', 'wpp', 'email'],
     guide: {
       description: 'Responsáveis de ouvidoria.',
       required: ['primeiro_nome'],
-      optional: ['sobrenome', 'telefone_fixo', 'telefone_celular', 'email'],
+      optional: ['sobrenome', 'telefone', 'wpp', 'email'],
     },
   },
   {
@@ -171,6 +242,97 @@ const AUX_RESOURCES: {
       description: 'Modelo de atendimento de plantão/urgência/emergência.',
       required: ['modelo_atendimento'],
       optional: ['descricao'],
+    },
+  },
+  {
+    key: 'plantao_clinicas',
+    title: 'Clínicas próprias do plantão',
+    templateColumns: [
+      'cd_municipio_7',
+      'nome_local',
+      'cep',
+      'logradouro',
+      'numero',
+      'complemento',
+      'bairro',
+      'telefone',
+      'wpp',
+      'descricao',
+    ],
+    templateExamples: [
+      {
+        cd_municipio_7: '3550308',
+        nome_local: 'Clínica 24h Centro',
+        cep: '01001000',
+        logradouro: 'Praca da Se',
+        numero: '100',
+        complemento: '',
+        bairro: 'Se',
+        telefone: '11999998888',
+        wpp: '1',
+        descricao: 'Atendimento 24h; referência para urgência/emergência.',
+      },
+    ],
+    guide: {
+      description:
+        'Endereços de clínicas próprias usadas para plantão. Informe o código IBGE e o sistema preenche cidade/UF automaticamente.',
+      required: ['cd_municipio_7'],
+      optional: [
+        'nome_local',
+        'cep',
+        'logradouro',
+        'numero',
+        'complemento',
+        'bairro',
+        'cidade',
+        'uf',
+        'telefone',
+        'wpp',
+        'descricao',
+      ],
+      valueHints: [
+        { field: 'IBGE', values: ['7 dígitos'], note: 'Use o código oficial do município para evitar divergência de cidade/UF.' },
+        { field: 'cep/telefone', values: ['somente números'], note: 'Não usar ponto, traço, barra, parênteses ou espaços.' },
+      ],
+    },
+  },
+  {
+    key: 'plantao_contatos',
+    title: 'Contatos do plantão',
+    templateColumns: ['tipo', 'numero_ou_url', 'wpp', 'principal', 'descricao'],
+    templateExamples: [
+      { tipo: 'telefone', numero_ou_url: '1133334444', principal: '1', descricao: 'Central de urgência 24h' },
+      { tipo: 'telefone', numero_ou_url: '11999998888', wpp: '1', principal: '0', descricao: 'Triagem e agendamento' },
+      { tipo: 'website', numero_ou_url: 'https://plantao.uniodonto.coop.br', principal: '0', descricao: 'Portal de orientação' },
+    ],
+    guide: {
+      description: 'Contatos da central de urgência/emergência da singular.',
+      required: ['tipo', 'numero_ou_url'],
+      optional: ['principal', 'descricao'],
+      valueHints: [
+        { field: 'tipo', values: ['Telefone', 'Website'] },
+        { field: 'numero_ou_url', values: ['somente números para Telefone', 'URL para Website'], note: 'Website: informe URL (https://...). Telefone: não usar máscara.' },
+        { field: 'wpp', values: ['0/1', 'true/false', 'sim/não'], note: 'Marque se o telefone também atende por WhatsApp.' },
+      ],
+    },
+  },
+  {
+    key: 'plantao_horarios',
+    title: 'Horários do plantão',
+    templateColumns: ['plantao_clinica_id', 'dia_semana', 'hora_inicio', 'hora_fim', 'observacao'],
+    templateExamples: [
+      { plantao_clinica_id: '', dia_semana: '1', hora_inicio: '08:00', hora_fim: '18:00', observacao: 'Central telefônica' },
+      { plantao_clinica_id: '', dia_semana: '6', hora_inicio: '00:00', hora_fim: '23:59', observacao: 'Sábado 24h' },
+    ],
+    guide: {
+      description: 'Escala de horários do plantão (global da singular ou por clínica).',
+      required: ['dia_semana', 'hora_inicio', 'hora_fim'],
+      optional: ['plantao_clinica_id', 'observacao'],
+      valueHints: [
+        { field: 'dia_semana', values: ['0=Domingo', '1=Segunda', '2=Terça', '3=Quarta', '4=Quinta', '5=Sexta', '6=Sábado'] },
+        { field: 'hora_inicio/hora_fim', values: ['HH:MM'], note: 'Formato 24 horas, exemplo: 08:30, 19:00.' },
+        { field: 'plantao_clinica_id', values: ['id da clínica (opcional)'], note: 'Se vazio, o horário vale para a central de plantão da singular.' },
+      ],
     },
   },
 ];

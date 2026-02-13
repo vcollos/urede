@@ -35,6 +35,22 @@ CREATE TABLE IF NOT EXISTS urede_cooperativa_auditores (
 );
 CREATE INDEX IF NOT EXISTS idx_urede_coop_auditores_id_singular ON urede_cooperativa_auditores(id_singular);
 
+CREATE TABLE IF NOT EXISTS urede_cooperativa_colaboradores (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id_singular TEXT REFERENCES urede_cooperativas(id_singular) ON DELETE CASCADE,
+  nome TEXT NOT NULL,
+  sobrenome TEXT,
+  email TEXT,
+  telefone TEXT,
+  telefone_tipo TEXT NOT NULL DEFAULT 'telefone',
+  departamento TEXT NOT NULL,
+  chefia BOOLEAN DEFAULT FALSE,
+  ativo BOOLEAN DEFAULT TRUE,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_urede_coop_colaboradores_id_singular ON urede_cooperativa_colaboradores(id_singular);
+CREATE INDEX IF NOT EXISTS idx_urede_coop_colaboradores_email ON urede_cooperativa_colaboradores(email);
+
 CREATE TABLE IF NOT EXISTS urede_cooperativa_conselhos (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   id_singular TEXT REFERENCES urede_cooperativas(id_singular) ON DELETE CASCADE,
@@ -146,6 +162,21 @@ CREATE TABLE IF NOT EXISTS urede_cooperativa_plantao (
 );
 CREATE INDEX IF NOT EXISTS idx_urede_coop_plantao_id_singular ON urede_cooperativa_plantao(id_singular);
 
+CREATE TABLE IF NOT EXISTS urede_cooperativa_regulatorio (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id_singular TEXT REFERENCES urede_cooperativas(id_singular) ON DELETE CASCADE,
+  tipo_unidade TEXT CHECK (tipo_unidade IN ('matriz','filial')),
+  nome_unidade TEXT,
+  reg_ans TEXT,
+  responsavel_tecnico TEXT,
+  email_responsavel_tecnico TEXT,
+  cro_responsavel_tecnico TEXT,
+  cro_unidade TEXT,
+  ativo BOOLEAN DEFAULT TRUE,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_urede_coop_regulatorio_id_singular ON urede_cooperativa_regulatorio(id_singular);
+
 CREATE TABLE IF NOT EXISTS urede_cidades (
   cd_municipio_7     TEXT PRIMARY KEY,
   cd_municipio       TEXT,
@@ -165,6 +196,7 @@ CREATE TABLE IF NOT EXISTS urede_operadores (
   email       TEXT,
   telefone    TEXT,
   whatsapp    TEXT,
+  wpp         INTEGER DEFAULT 0,
   cargo       TEXT,
   status      INTEGER DEFAULT 1,
   CONSTRAINT chk_urede_operadores_status CHECK (status IN (0, 1))

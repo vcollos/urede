@@ -26,6 +26,8 @@ export interface Cooperativa {
   uniodonto: string;
   cnpj: string;
   cro_operadora: string;
+  resp_tecnico?: string;
+  cro_resp_tecnico?: string;
   data_fundacao: string;
   raz_social: string;
   codigo_ans: string;
@@ -56,7 +58,8 @@ export interface Operador {
   nome: string;
   email: string;
   telefone: string;
-  whatsapp: string;
+  whatsapp?: string;
+  wpp?: boolean;
   cargo: string;
   id_singular: string;
   ativo: boolean;

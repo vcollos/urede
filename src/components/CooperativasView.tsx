@@ -104,13 +104,19 @@ const formatCep = (value: unknown) => {
 };
 
 const formatPhone = (value: unknown) => {
-  const digits = onlyDigits(value);
+  let digits = onlyDigits(value);
   if (!digits) return '';
+  if (digits.startsWith('55') && digits.length >= 12) {
+    digits = digits.slice(2);
+  }
   if (digits.startsWith('0800')) {
-    const base = digits.slice(0, 11);
+    const base = digits.slice(0, 12);
     if (base.length <= 4) return base;
-    if (base.length <= 7) return `${base.slice(0, 4)} ${base.slice(4)}`;
-    return `${base.slice(0, 4)} ${base.slice(4, 7)} ${base.slice(7, 11)}`;
+    if (base.length <= 8) return `${base.slice(0, 4)} ${base.slice(4)}`;
+    return `${base.slice(0, 4)} ${base.slice(4, 8)} ${base.slice(8, 12)}`;
+  }
+  if (digits.length === 11 && digits.charAt(2) === '9') {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 3)} ${digits.slice(3, 7)}-${digits.slice(7, 11)}`;
   }
   if (digits.length <= 10) {
     if (digits.length <= 2) return `(${digits}`;
@@ -144,8 +150,8 @@ type EnderecoAux = {
   bairro?: string;
   cidade?: string;
   uf?: string;
-  telefone_fixo?: string;
-  telefone_celular?: string;
+  telefone?: string;
+  wpp?: boolean | number | string;
   ativo?: boolean;
 };
 
@@ -157,6 +163,7 @@ type ContatoAux = {
   principal?: number | string | boolean;
   ativo?: number | string | boolean;
   label?: string;
+  wpp?: number | string | boolean;
 };
 
 const toBool = (value: unknown) => {
@@ -176,7 +183,6 @@ const formatContatoTipo = (value: unknown) => {
   const map: Record<string, string> = {
     email: 'E-mail',
     telefone: 'Telefone',
-    whatsapp: 'WhatsApp',
     outro: 'Outro',
   };
   return map[normalized] ?? raw.charAt(0).toUpperCase() + raw.slice(1);
@@ -212,7 +218,6 @@ const contatoBadgeClass = (kind: 'tipo' | 'subtipo', value: unknown) => {
     const map: Record<string, string> = {
       email: 'bg-indigo-50 text-indigo-700 border-indigo-200',
       telefone: 'bg-sky-50 text-sky-700 border-sky-200',
-      whatsapp: 'bg-emerald-50 text-emerald-700 border-emerald-200',
       outro: 'bg-slate-100 text-slate-700 border-slate-200',
     };
     return map[normalized] ?? 'bg-slate-100 text-slate-700 border-slate-200';
@@ -247,6 +252,7 @@ type DetailTab =
   | 'coverage'
   | 'contatos'
   | 'diretores'
+  | 'regulatorio'
   | 'conselhos'
   | 'departamentos'
   | 'plantao'
@@ -539,13 +545,17 @@ export function CooperativasView() {
     setTransferPrompt(null);
 
     if (!options?.viaHistory) {
-      const fallbackPath = previousPathRef.current ?? '/cooperativas';
-      window.history.replaceState(null, '', fallbackPath);
+      window.history.replaceState(null, '', '/cooperativas');
       previousPathRef.current = null;
     }
 
     return true;
   }, [currentCoverageSet, hasCoverageChanges, isSavingCoverage]);
+
+  const navigateToDashboard = () => {
+    window.history.pushState(null, '', '/');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
 
   // Persiste a cobertura e mantém o cache local sincronizado.
   const handleSaveCoverage = async () => {
@@ -726,6 +736,18 @@ export function CooperativasView() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [selectedCoop, handleCloseDetails, hasCoverageChanges, isSavingCoverage, currentCoverageSet]);
 
+  useEffect(() => {
+    const goToList = () => {
+      if (!selectedCoop) {
+        window.history.replaceState(null, '', '/cooperativas');
+        return;
+      }
+      handleCloseDetails();
+    };
+    window.addEventListener('cooperativas:go-list', goToList as EventListener);
+    return () => window.removeEventListener('cooperativas:go-list', goToList as EventListener);
+  }, [selectedCoop, handleCloseDetails]);
+
   // Deep link: /cooperativas/:id_singular deve abrir automaticamente o detalhe.
   useEffect(() => {
     if (selectedCoop) return;
@@ -785,7 +807,15 @@ export function CooperativasView() {
           </Button>
           <div>
             <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900">
-              <Building2 className="w-5 h-5" />
+              <button
+                type="button"
+                onClick={navigateToDashboard}
+                className="rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7B6EF6]"
+                aria-label="Voltar para o dashboard"
+                title="Voltar para o dashboard"
+              >
+                <Building2 className="w-5 h-5" />
+              </button>
               {selectedCoop.uniodonto}
             </h1>
             <p className="text-gray-600">
@@ -804,8 +834,9 @@ export function CooperativasView() {
             <TabsTrigger value="coverage">Cidades</TabsTrigger>
             <TabsTrigger value="contatos">Contatos</TabsTrigger>
             <TabsTrigger value="diretores">Diretores</TabsTrigger>
+            <TabsTrigger value="regulatorio">Regulatório</TabsTrigger>
             <TabsTrigger value="conselhos">Conselhos</TabsTrigger>
-            <TabsTrigger value="departamentos">Departamentos</TabsTrigger>
+            <TabsTrigger value="departamentos">Colaboradores</TabsTrigger>
             <TabsTrigger value="plantao">Urgência &amp; Emergência</TabsTrigger>
             <TabsTrigger value="ouvidores">Ouvidoria</TabsTrigger>
             <TabsTrigger value="lgpd">LGPD</TabsTrigger>
@@ -857,27 +888,37 @@ export function CooperativasView() {
                     <div>
                       <span className="text-gray-500">Website</span>
                       {(() => {
-                        const primary = overviewContatos
-                          .filter((c) => toBool(c.ativo ?? 1))
-                          .filter((c) => toBool(c.principal))
-                          .filter((c) => String(c.tipo ?? '').toLowerCase() === 'outro');
-                        const candidate = primary.find((c) => {
-                          const label = String(c.label ?? '').toLowerCase();
-                          const valor = String(c.valor ?? '');
-                          return isLikelyUrl(valor) || label.includes('site') || label.includes('web');
-                        }) || null;
+                        const enabled = overviewContatos.filter((c) => toBool(c.ativo ?? 1));
+                        const primaries = enabled.filter((c) => toBool(c.principal));
+
+                        // Preferir tipo=website (novo padrão)
+                        const websitePrimary = primaries.find((c) => String(c.tipo ?? '').toLowerCase() === 'website') || null;
+                        const websiteAny = enabled.find((c) => String(c.tipo ?? '').toLowerCase() === 'website') || null;
+
+                        // Fallback legado: tipo=outro com label/valor parecendo site
+                        const legacyPrimary = primaries
+                          .filter((c) => String(c.tipo ?? '').toLowerCase() === 'outro')
+                          .find((c) => {
+                            const label = String(c.label ?? '').toLowerCase();
+                            const valor = String(c.valor ?? '');
+                            return isLikelyUrl(valor) || label.includes('site') || label.includes('web');
+                          }) || null;
+
+                        const candidate = websitePrimary || websiteAny || legacyPrimary;
                         const raw = String(candidate?.valor ?? '').trim();
                         if (!raw) return <p className="font-medium text-gray-900">—</p>;
                         const url = normalizeWebsiteUrl(raw);
                         return (
-                          <a
-                            href={url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="font-medium text-[#3145C4] underline-offset-4 hover:underline break-all"
-                          >
-                            {raw}
-                          </a>
+                          <p className="font-medium text-gray-900">
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[#3145C4] underline-offset-4 hover:underline break-all"
+                            >
+                              {raw}
+                            </a>
+                          </p>
                         );
                       })()}
                     </div>
@@ -889,7 +930,7 @@ export function CooperativasView() {
                     <CardTitle className="text-sm text-gray-600">Resumo</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4 text-sm">
-                    <div className="grid gap-4 sm:grid-cols-3">
+                    <div className="grid gap-4 sm:grid-cols-2">
                       <div>
                         <span className="text-gray-500">Cidades atendidas</span>
                         <p className="text-xl font-semibold text-gray-900">{currentCoverageSet.size}</p>
@@ -897,10 +938,6 @@ export function CooperativasView() {
                       <div>
                         <span className="text-gray-500">Responsáveis ativos</span>
                         <p className="text-xl font-semibold text-gray-900">{operadorCountMap.get(selectedCoop.id_singular) ?? 0}</p>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Área de cobertura</span>
-                        <p className="text-sm text-gray-900">Atualize na aba &ldquo;Cidades&rdquo;</p>
                       </div>
                     </div>
                   </CardContent>
@@ -911,10 +948,12 @@ export function CooperativasView() {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm text-gray-600">Endereços</CardTitle>
                 </CardHeader>
-                <CardContent className="grid gap-4 md:grid-cols-2 text-sm">
+                <CardContent className="grid gap-4 md:grid-cols-2 md:items-start text-sm">
                   {/* Coluna 1: endereços */}
-                  <div className="space-y-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Endereços</p>
+                  <div className="flex h-full flex-col gap-3">
+                    <div className="min-h-6 flex items-center">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Endereços</p>
+                    </div>
                     {overviewEnderecosError && (
                       <p className="text-red-600">{overviewEnderecosError}</p>
                     )}
@@ -925,10 +964,9 @@ export function CooperativasView() {
                     ) : (
                       overviewEnderecos.map((endereco) => {
                         const cepFormatado = formatCep(endereco.cep);
-                        const telefoneFixo = formatPhone(endereco.telefone_fixo);
-                        const telefoneCelular = formatPhone(endereco.telefone_celular);
+                        const telefone = formatPhone(endereco.telefone);
                         const logradouroNumero = [endereco.logradouro, endereco.numero].filter(Boolean).join(', ');
-                        const phones = [telefoneFixo, telefoneCelular].filter(Boolean).join(' • ');
+                        const phoneLine = telefone || '';
                         const parts = [
                           logradouroNumero,
                           endereco.complemento,
@@ -936,7 +974,6 @@ export function CooperativasView() {
                           endereco.cidade,
                           endereco.uf,
                           cepFormatado,
-                          phones,
                         ].filter((item) => String(item ?? '').trim().length > 0);
                         const linhaUnica = parts.join(' • ');
 
@@ -946,6 +983,12 @@ export function CooperativasView() {
                               {[formatEnderecoTipo(endereco.tipo), endereco.nome_local].filter(Boolean).join(' • ') || 'Endereço'}
                             </p>
                             <p className="text-gray-700 leading-relaxed">{linhaUnica || '—'}</p>
+                            {phoneLine && (
+                              <p className="mt-1 inline-flex items-center gap-1.5 text-gray-700">
+                                <span>{phoneLine}</span>
+                                {toBool(endereco.wpp) && <i className="fa-brands fa-whatsapp text-emerald-600 text-sm" aria-label="WhatsApp" />}
+                              </p>
+                            )}
                           </div>
                         );
                       })
@@ -953,8 +996,8 @@ export function CooperativasView() {
                   </div>
 
                   {/* Coluna 2: contatos principais */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between gap-3">
+                  <div className="flex h-full flex-col gap-3">
+                    <div className="min-h-6 flex items-center justify-between gap-3">
                       <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Contatos principais</p>
                       {isLoadingOverviewContatos && <span className="text-xs text-gray-400">Carregando...</span>}
                     </div>
@@ -973,7 +1016,15 @@ export function CooperativasView() {
                       const renderValor = (c: ContatoAux) => {
                         const tipoRaw = String(c.tipo ?? '').toLowerCase();
                         const valorRaw = String(c.valor ?? '').trim();
-                        if (tipoRaw === 'telefone' || tipoRaw === 'whatsapp') return formatPhone(valorRaw) || '—';
+                        if (tipoRaw === 'telefone' || tipoRaw === 'whatsapp') {
+                          const formatted = formatPhone(valorRaw) || '—';
+                          return (
+                            <span className="inline-flex items-center gap-1.5">
+                              <span>{formatted}</span>
+                              {toBool(c.wpp) && <i className="fa-brands fa-whatsapp text-emerald-600 text-sm" aria-label="WhatsApp" />}
+                            </span>
+                          );
+                        }
                         return valorRaw || '—';
                       };
 
@@ -1343,19 +1394,16 @@ export function CooperativasView() {
             <CooperativaAuxiliaresTab idSingular={selectedCoop.id_singular} canEdit={canEditSelected} resourceKey="diretores" />
           </TabsContent>
 
+          <TabsContent value="regulatorio" className="mt-0">
+            <CooperativaAuxiliaresTab idSingular={selectedCoop.id_singular} canEdit={canEditSelected} resourceKey="regulatorio" />
+          </TabsContent>
+
           <TabsContent value="conselhos" className="mt-0">
             <CooperativaAuxiliaresTab idSingular={selectedCoop.id_singular} canEdit={canEditSelected} resourceKey="conselhos" />
           </TabsContent>
 
           <TabsContent value="departamentos" className="mt-0">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Departamentos</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-600">Esta aba será implementada em breve.</p>
-              </CardContent>
-            </Card>
+            <CooperativaAuxiliaresTab idSingular={selectedCoop.id_singular} canEdit={canEditSelected} resourceKey="colaboradores" />
           </TabsContent>
 
           <TabsContent value="plantao" className="mt-0">

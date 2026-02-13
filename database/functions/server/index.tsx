@@ -17,6 +17,9 @@ const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") || "*")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
+const ALLOW_PRIVATE_NETWORK_ORIGINS = (
+  Deno.env.get("ALLOW_PRIVATE_NETWORK_ORIGINS") ?? "true"
+).toLowerCase() !== "false";
 
 const app = new Hono();
 console.log("[cors] allowed origins", ALLOWED_ORIGINS);
@@ -24,6 +27,21 @@ console.log("[cors] allowed origins", ALLOWED_ORIGINS);
 const isOriginAllowed = (origin?: string | null): boolean => {
   if (!origin) return true; // permitir chamadas server-to-server e curl
   if (ALLOWED_ORIGINS.includes("*")) return true;
+  if (ALLOW_PRIVATE_NETWORK_ORIGINS) {
+    try {
+      const { hostname } = new URL(origin);
+      const isLoopback = hostname === "localhost" || hostname === "127.0.0.1" ||
+        hostname === "::1";
+      const isPrivate10 = hostname.startsWith("10.");
+      const isPrivate192 = hostname.startsWith("192.168.");
+      const isPrivate172 = /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname);
+      if (isLoopback || isPrivate10 || isPrivate192 || isPrivate172) {
+        return true;
+      }
+    } catch {
+      // ignora origins inválidas e segue para regras explícitas
+    }
+  }
   // suporta curingas simples do tipo "*.dominio.com"
   for (const rule of ALLOWED_ORIGINS) {
     if (rule === origin) return true;
@@ -158,6 +176,8 @@ const mapCooperativa = (row: any) => {
     data_fundacao: row.DATA_FUNDACAO ?? row.data_fundacao ?? "",
     raz_social: row.RAZ_SOCIAL ?? row.raz_social ?? "",
     codigo_ans: row.CODIGO_ANS ?? row.codigo_ans ?? "",
+    resp_tecnico: row.resp_tecnico ?? row.RESP_TECNICO ?? "",
+    cro_resp_tecnico: row.cro_resp_tecnico ?? row.CRO_RESP_TECNICO ?? "",
     federacao: row.FEDERACAO ?? row.federacao ?? "",
     software: row.SOFTWARE ?? row.software ?? "",
     tipo,
@@ -192,6 +212,9 @@ const mapOperador = (row: any) => ({
   email: row.email ?? "",
   telefone: row.telefone ?? "",
   whatsapp: row.whatsapp ?? "",
+  wpp: normalizeBoolInt(row.wpp) === 1 ||
+    Boolean(String(row.whatsapp ?? "").trim()) ||
+    isLikelyBrazilMobile(normalizeDigitsString(row.telefone ?? "")),
   cargo: row.cargo ?? "",
   id_singular: row.id_singular ?? "",
   ativo: (row.status ?? true) as boolean,
@@ -459,9 +482,57 @@ const ensureEnderecoTipoCorrespondencia = () => {
   }
 };
 
+const ensureOperadoresTelefoneSchema = () => {
+  const statements = IS_POSTGRES
+    ? [
+      `ALTER TABLE ${TBL("operadores")} ADD COLUMN IF NOT EXISTS wpp INTEGER DEFAULT 0`,
+    ]
+    : [
+      `ALTER TABLE ${TBL("operadores")} ADD COLUMN wpp INTEGER DEFAULT 0`,
+    ];
+
+  for (const statement of statements) {
+    try {
+      db.query(statement);
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) {
+        console.warn("[operadores] não foi possível ajustar coluna wpp:", error);
+      }
+    }
+  }
+
+  try {
+    db.query(
+      `UPDATE ${TBL("operadores")}
+          SET telefone = COALESCE(NULLIF(telefone, ''), NULLIF(whatsapp, ''), telefone)`,
+    );
+  } catch (_) {
+    /* ignore */
+  }
+  try {
+    db.query(
+      `UPDATE ${TBL("operadores")}
+          SET wpp = 1
+        WHERE COALESCE(NULLIF(whatsapp, ''), '') <> ''
+           OR LENGTH(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(telefone, ''), ' ', ''), '(', ''), ')', ''), '-', '')) = 11`,
+    );
+  } catch (_) {
+    /* ignore */
+  }
+  try {
+    db.query(
+      `UPDATE ${TBL("operadores")}
+          SET whatsapp = CASE WHEN COALESCE(wpp, 0) = 1 THEN COALESCE(telefone, whatsapp, '') ELSE '' END`,
+    );
+  } catch (_) {
+    /* ignore */
+  }
+};
+
 ensureAuthUsersSchema();
 ensureUserApprovalRequestsTable();
 ensureEnderecoTipoCorrespondencia();
+ensureOperadoresTelefoneSchema();
 
 const getCooperativaRowRaw = (id?: string | null) => {
   if (!id) return null;
@@ -3343,7 +3414,20 @@ const COOP_AUX_RESOURCES: Record<
 > = {
   auditores: {
     table: TBL("cooperativa_auditores"),
-    columns: ["primeiro_nome", "sobrenome", "telefone_celular", "email", "ativo"],
+    columns: ["primeiro_nome", "sobrenome", "telefone", "wpp", "email", "ativo"],
+  },
+  colaboradores: {
+    table: TBL("cooperativa_colaboradores"),
+    columns: [
+      "nome",
+      "sobrenome",
+      "email",
+      "telefone",
+      "wpp",
+      "departamento",
+      "chefia",
+      "ativo",
+    ],
   },
   conselhos: {
     table: TBL("cooperativa_conselhos"),
@@ -3359,7 +3443,7 @@ const COOP_AUX_RESOURCES: Record<
   },
   contatos: {
     table: TBL("cooperativa_contatos"),
-    columns: ["tipo", "subtipo", "valor", "principal", "ativo", "label"],
+    columns: ["tipo", "subtipo", "valor", "wpp", "principal", "ativo", "label"],
   },
   diretores: {
     table: TBL("cooperativa_diretores"),
@@ -3369,7 +3453,8 @@ const COOP_AUX_RESOURCES: Record<
       "primeiro_nome",
       "sobrenome",
       "email",
-      "telefone_celular",
+      "telefone",
+      "wpp",
       "divulgar_celular",
       "inicio_mandato",
       "fim_mandato",
@@ -3389,22 +3474,22 @@ const COOP_AUX_RESOURCES: Record<
       "bairro",
       "cidade",
       "uf",
-      "telefone_fixo",
-      "telefone_celular",
+      "telefone",
+      "wpp",
       "ativo",
     ],
   },
   lgpd: {
     table: TBL("cooperativa_lgpd"),
-    columns: ["primeiro_nome", "sobrenome", "email", "telefone", "ativo"],
+    columns: ["primeiro_nome", "sobrenome", "email", "telefone", "wpp", "ativo"],
   },
   ouvidores: {
     table: TBL("cooperativa_ouvidores"),
     columns: [
       "primeiro_nome",
       "sobrenome",
-      "telefone_fixo",
-      "telefone_celular",
+      "telefone",
+      "wpp",
       "email",
       "ativo",
     ],
@@ -3413,11 +3498,51 @@ const COOP_AUX_RESOURCES: Record<
     table: TBL("cooperativa_plantao"),
     columns: ["modelo_atendimento", "descricao", "ativo"],
   },
+  plantao_clinicas: {
+    table: TBL("cooperativa_plantao_clinicas"),
+    columns: [
+      "cd_municipio_7",
+      "nome_local",
+      "cep",
+      "logradouro",
+      "numero",
+      "complemento",
+      "bairro",
+      "cidade",
+      "uf",
+      "telefone",
+      "wpp",
+      "descricao",
+      "ativo",
+    ],
+  },
+  plantao_contatos: {
+    table: TBL("cooperativa_plantao_contatos"),
+    columns: ["tipo", "numero_ou_url", "telefone", "wpp", "principal", "descricao", "ativo"],
+  },
+  plantao_horarios: {
+    table: TBL("cooperativa_plantao_horarios"),
+    columns: ["plantao_clinica_id", "dia_semana", "hora_inicio", "hora_fim", "observacao", "ativo"],
+  },
+  regulatorio: {
+    table: TBL("cooperativa_regulatorio"),
+    columns: [
+      "tipo_unidade",
+      "nome_unidade",
+      "reg_ans",
+      "responsavel_tecnico",
+      "email_responsavel_tecnico",
+      "cro_responsavel_tecnico",
+      "cro_unidade",
+      "ativo",
+    ],
+  },
 };
 
 const DIGITS_ONLY_COLUMNS = new Set([
   "cpf",
   "cnpj",
+  "cep",
   "telefone",
   "telefone_fixo",
   "telefone_celular",
@@ -3436,11 +3561,21 @@ const normalizeDigitsString = (value: unknown) => {
   return digits || null;
 };
 
+const isLikelyBrazilMobile = (value: unknown) => {
+  const digits = normalizeDigitsString(value) || "";
+  const local = digits.startsWith("55") && digits.length >= 12 ? digits.slice(2) : digits;
+  return local.length === 11 && local.charAt(2) === "9";
+};
+
 const normalizeAuxValue = (column: string, value: unknown) => {
   if (value === undefined) return undefined;
   if (value === null) return null;
   if (typeof value === "boolean") return value ? 1 : 0;
   if (DIGITS_ONLY_COLUMNS.has(column)) return normalizeDigitsString(value);
+  if (column === "dia_semana") {
+    const n = Number(String(value ?? "").trim());
+    return Number.isFinite(n) ? Math.trunc(n) : null;
+  }
   return value;
 };
 
@@ -3456,6 +3591,9 @@ const pickAuxPayload = (resource: string, body: any) => {
   if (resource === "enderecos" && Object.prototype.hasOwnProperty.call(data, "cd_municipio_7")) {
     data.cd_municipio_7 = normalizeCdMunicipio7(data.cd_municipio_7);
   }
+  if (resource === "plantao_clinicas" && Object.prototype.hasOwnProperty.call(data, "cd_municipio_7")) {
+    data.cd_municipio_7 = normalizeCdMunicipio7(data.cd_municipio_7);
+  }
   if (resource === "enderecos" && Object.prototype.hasOwnProperty.call(data, "tipo")) {
     data.tipo = normalizeEnderecoTipo(data.tipo);
   }
@@ -3464,6 +3602,14 @@ const pickAuxPayload = (resource: string, body: any) => {
     // Para contatos telefônicos, forçar armazenamento sem máscara.
     if (tipo === "telefone" || tipo === "whatsapp" || tipo === "celular") {
       data.valor = normalizeDigitsString(data.valor);
+    }
+  }
+  if (resource === "colaboradores") {
+    if (Object.prototype.hasOwnProperty.call(data, "departamento")) {
+      data.departamento = normalizeColaboradorDepartamentos(data.departamento);
+    }
+    if (Object.prototype.hasOwnProperty.call(data, "chefia")) {
+      data.chefia = normalizeBoolInt(data.chefia);
     }
   }
   return { def, data };
@@ -3584,6 +3730,41 @@ const normalizeEnderecoTipo = (value: unknown) => {
   return s;
 };
 
+const normalizeRegulatorioTipoUnidade = (value: unknown) => {
+  const s = normalizeEnumText(value);
+  if (!s) return s;
+  if (s === "matriz" || s === "martiz") return "matriz";
+  if (s === "filial") return "filial";
+  return s;
+};
+
+const normalizeColaboradorDepartamentos = (value: unknown) => {
+  if (Array.isArray(value)) {
+    const tags = value
+      .map((v) => String(v ?? "").trim())
+      .filter(Boolean);
+    return Array.from(new Set(tags)).join("; ");
+  }
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const parts = raw
+    .split(/[;,|]/g)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (!parts.length) return "";
+  return Array.from(new Set(parts)).join("; ");
+};
+
+const normalizeBoolInt = (value: unknown) => {
+  if (typeof value === "boolean") return value ? 1 : 0;
+  if (typeof value === "number") return value !== 0 ? 1 : 0;
+  const s = String(value ?? "").trim().toLowerCase();
+  if (!s) return 0;
+  return (s === "1" || s === "true" || s === "sim" || s === "s" || s === "yes" || s === "y" || s === "x")
+    ? 1
+    : 0;
+};
+
 const normalizeAuxImportRow = (resource: string, raw: any) => {
   if (!raw || typeof raw !== "object") return raw;
   const row: Record<string, unknown> = { ...raw };
@@ -3594,18 +3775,447 @@ const normalizeAuxImportRow = (resource: string, raw: any) => {
   }
 
   if (resource === "enderecos") {
+    if ((row.telefone === undefined || row.telefone === null || String(row.telefone).trim() === "")) {
+      row.telefone = row.telefone_celular ?? row.telefone_fixo ?? row.telefone;
+    }
+    if (row.wpp === undefined && row.telefone_celular !== undefined) {
+      row.wpp = String(row.telefone_celular ?? "").trim() ? 1 : 0;
+    }
     if (row.tipo !== undefined) row.tipo = normalizeEnderecoTipo(row.tipo);
     if (row.cd_municipio_7 !== undefined) {
       row.cd_municipio_7 = normalizeCdMunicipio7(row.cd_municipio_7);
     }
   }
 
+  if (resource === "plantao_clinicas") {
+    if ((row.telefone === undefined || row.telefone === null || String(row.telefone).trim() === "")) {
+      row.telefone = row.telefone_celular ?? row.telefone_fixo ?? row.telefone;
+    }
+    if (row.wpp === undefined && row.telefone_celular !== undefined) {
+      row.wpp = String(row.telefone_celular ?? "").trim() ? 1 : 0;
+    }
+    if (row.cd_municipio_7 !== undefined) {
+      row.cd_municipio_7 = normalizeCdMunicipio7(row.cd_municipio_7);
+    }
+  }
+
+  if (resource === "auditores") {
+    if ((row.telefone === undefined || row.telefone === null || String(row.telefone).trim() === "")) {
+      row.telefone = row.telefone_celular ?? row.telefone;
+    }
+    if (row.wpp === undefined && row.telefone_celular !== undefined) {
+      row.wpp = String(row.telefone_celular ?? "").trim() ? 1 : 0;
+    }
+  }
+
+  if (resource === "diretores") {
+    if ((row.telefone === undefined || row.telefone === null || String(row.telefone).trim() === "")) {
+      row.telefone = row.telefone_celular ?? row.telefone;
+    }
+    if (row.wpp === undefined && row.telefone_celular !== undefined) {
+      row.wpp = String(row.telefone_celular ?? "").trim() ? 1 : 0;
+    }
+  }
+
+  if (resource === "ouvidores") {
+    if ((row.telefone === undefined || row.telefone === null || String(row.telefone).trim() === "")) {
+      row.telefone = row.telefone_celular ?? row.telefone_fixo ?? row.telefone;
+    }
+    if (row.wpp === undefined && row.telefone_celular !== undefined) {
+      row.wpp = String(row.telefone_celular ?? "").trim() ? 1 : 0;
+    }
+  }
+
+  if (resource === "lgpd" || resource === "colaboradores") {
+    if (row.wpp !== undefined) row.wpp = normalizeBoolInt(row.wpp);
+  }
+
+  if (resource === "plantao_contatos") {
+    const tipoRaw = row.tipo !== undefined ? normalizeEnumText(row.tipo) : undefined;
+    if (tipoRaw !== undefined) {
+      const t = tipoRaw;
+      if (t.includes("whats")) row.tipo = "telefone";
+      else if (t === "website" || t === "site" || t === "web" || t === "url") row.tipo = "website";
+      else row.tipo = "telefone";
+    }
+    if (row.wpp === undefined) {
+      row.wpp = String(tipoRaw ?? "").includes("whats") ? 1 : 0;
+    } else {
+      row.wpp = normalizeBoolInt(row.wpp);
+    }
+    if ((row.telefone === undefined || row.telefone === null || String(row.telefone).trim() === "")) {
+      row.telefone = row.numero_ou_url ?? row.telefone;
+    }
+    if (row.principal !== undefined) {
+      const p = String(row.principal ?? "").trim().toLowerCase();
+      row.principal = (p === "1" || p === "true" || p === "sim" || p === "s" || p === "yes" || p === "x") ? 1 : 0;
+    }
+  }
+
+  if (resource === "plantao_horarios") {
+    if (row.dia_semana !== undefined) {
+      const n = Number(String(row.dia_semana ?? "").trim());
+      row.dia_semana = Number.isFinite(n) ? Math.trunc(n) : null;
+    }
+    if (row.hora_inicio !== undefined) row.hora_inicio = String(row.hora_inicio ?? "").trim();
+    if (row.hora_fim !== undefined) row.hora_fim = String(row.hora_fim ?? "").trim();
+    if (row.plantao_clinica_id !== undefined && !String(row.plantao_clinica_id ?? "").trim()) {
+      row.plantao_clinica_id = null;
+    }
+  }
+
   if (resource === "contatos") {
-    if (row.tipo !== undefined) row.tipo = normalizeEnumText(row.tipo);
-    if (row.subtipo !== undefined) row.subtipo = normalizeEnumText(row.subtipo);
+    const tipoRaw = row.tipo !== undefined ? normalizeEnumText(row.tipo) : undefined;
+    if (tipoRaw !== undefined) {
+      const t = tipoRaw;
+      if (t === "e-mail" || t === "email" || t === "mail") row.tipo = "email";
+      else if (t.includes("whats")) row.tipo = "telefone";
+      else if (t.includes("telefone") || t === "tel") row.tipo = "telefone";
+      else if (t === "website" || t === "site" || t === "web") row.tipo = "website";
+      else if (t === "outro" || t === "outros") row.tipo = "outro";
+      else row.tipo = t;
+    }
+    if (row.wpp === undefined) {
+      row.wpp = String(tipoRaw ?? "").includes("whats") ? 1 : 0;
+    } else {
+      row.wpp = normalizeBoolInt(row.wpp);
+    }
+
+    const subtipoRaw = row.subtipo !== undefined ? normalizeEnumText(row.subtipo) : undefined;
+    if (subtipoRaw !== undefined) {
+      const s = subtipoRaw;
+      if (s === "plantao" || s === "plantao24h" || s === "plantao_24h") row.subtipo = "plantao";
+      else if (s === "emergencia") row.subtipo = "emergencia";
+      else if (s === "divulgacao") row.subtipo = "divulgacao";
+      else if (s === "lgpd") row.subtipo = "lgpd";
+      else if (s.replace(/\s+/g, " ") === "comercial pf") row.subtipo = "comercial pf";
+      else if (s.replace(/\s+/g, " ") === "comercial pj") row.subtipo = "comercial pj";
+      else if (s === "institucional") row.subtipo = "institucional";
+      else if (s === "portal do prestador") row.subtipo = "portal do prestador";
+      else if (s === "portal do cliente") row.subtipo = "portal do cliente";
+      else if (s === "portal da empresa") row.subtipo = "portal da empresa";
+      else if (s === "portal do corretor") row.subtipo = "portal do corretor";
+      else if (s === "e-commerce" || s === "ecommerce") row.subtipo = "e-commerce";
+      else if (s === "portal do cooperado") row.subtipo = "portal do cooperado";
+      else row.subtipo = s;
+    }
+
+    // Normalizar principal para 0/1 (CSV costuma vir com 0/1 ou SIM/NAO).
+    if (row.principal !== undefined) {
+      const p = String(row.principal ?? "").trim().toLowerCase();
+      if (!p) row.principal = 0;
+      else if (p === "1" || p === "true" || p === "sim" || p === "s" || p === "y" || p === "yes" || p === "x") {
+        row.principal = 1;
+      } else {
+        row.principal = 0;
+      }
+    }
+  }
+
+  if (resource === "colaboradores") {
+    if (row.nome === undefined && row.primeiro_nome !== undefined) row.nome = row.primeiro_nome;
+    if (row.departamento === undefined && row.departamentos !== undefined) row.departamento = row.departamentos;
+    if (row.departamento !== undefined) row.departamento = normalizeColaboradorDepartamentos(row.departamento);
+    if (row.chefia !== undefined) row.chefia = normalizeBoolInt(row.chefia);
+  }
+
+  if (resource === "regulatorio") {
+    if (row.tipo_unidade === undefined && row.tipo !== undefined) row.tipo_unidade = row.tipo;
+    if (row.responsavel_tecnico === undefined && row.nome_responsavel_tecnico !== undefined) {
+      row.responsavel_tecnico = row.nome_responsavel_tecnico;
+    }
+    if (row.responsavel_tecnico === undefined && row.responsavel !== undefined) {
+      row.responsavel_tecnico = row.responsavel;
+    }
+    if (row.email_responsavel_tecnico === undefined && row.email !== undefined) {
+      row.email_responsavel_tecnico = row.email;
+    }
+    if (row.cro_responsavel_tecnico === undefined && row.cro_resp_tecnico !== undefined) {
+      row.cro_responsavel_tecnico = row.cro_resp_tecnico;
+    }
+    if (row.cro_unidade === undefined && row.cro_operadora !== undefined) {
+      row.cro_unidade = row.cro_operadora;
+    }
+    if (row.email_responsavel_tecnico === undefined || !String(row.email_responsavel_tecnico ?? "").trim()) {
+      const id = normalizeIdSingular(row.id_singular) ?? "000";
+      row.email_responsavel_tecnico = `nao-informado+${id}@pendente.local`;
+    }
+    if (row.tipo_unidade !== undefined) {
+      row.tipo_unidade = normalizeRegulatorioTipoUnidade(row.tipo_unidade);
+    }
   }
 
   return row;
+};
+
+const validateRegulatorio = (data: Record<string, unknown>) => {
+  const tipoUnidade = normalizeRegulatorioTipoUnidade(data.tipo_unidade);
+  if (tipoUnidade !== "matriz" && tipoUnidade !== "filial") {
+    return { ok: false as const, error: "tipo_unidade é obrigatório e deve ser matriz ou filial." };
+  }
+  data.tipo_unidade = tipoUnidade;
+
+  const responsavel = String(data.responsavel_tecnico ?? "").trim();
+  if (!responsavel) {
+    return { ok: false as const, error: "responsavel_tecnico é obrigatório." };
+  }
+  data.responsavel_tecnico = responsavel;
+
+  const email = String(data.email_responsavel_tecnico ?? "").trim();
+  if (!email) {
+    return { ok: false as const, error: "email_responsavel_tecnico é obrigatório." };
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { ok: false as const, error: "email_responsavel_tecnico inválido." };
+  }
+  data.email_responsavel_tecnico = email.toLowerCase();
+
+  const croResp = String(data.cro_responsavel_tecnico ?? "").trim();
+  if (!croResp) {
+    return { ok: false as const, error: "cro_responsavel_tecnico é obrigatório." };
+  }
+  data.cro_responsavel_tecnico = croResp;
+
+  const croUnidade = String(data.cro_unidade ?? "").trim();
+  if (!croUnidade) {
+    return { ok: false as const, error: "cro_unidade é obrigatório." };
+  }
+  data.cro_unidade = croUnidade;
+
+  if (Object.prototype.hasOwnProperty.call(data, "reg_ans")) {
+    const regAns = String(data.reg_ans ?? "").trim();
+    data.reg_ans = regAns || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(data, "nome_unidade")) {
+    const nomeUnidade = String(data.nome_unidade ?? "").trim();
+    data.nome_unidade = nomeUnidade || null;
+  }
+
+  return { ok: true as const };
+};
+
+const validateColaborador = (data: Record<string, unknown>) => {
+  const nome = String(data.nome ?? "").trim();
+  if (!nome) {
+    return { ok: false as const, error: "nome é obrigatório." };
+  }
+  data.nome = nome;
+
+  const sobrenome = String(data.sobrenome ?? "").trim();
+  data.sobrenome = sobrenome || null;
+
+  const email = String(data.email ?? "").trim();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { ok: false as const, error: "email inválido." };
+  }
+  data.email = email ? email.toLowerCase() : null;
+
+  if (Object.prototype.hasOwnProperty.call(data, "telefone")) {
+    const tel = normalizeDigitsString(data.telefone);
+    data.telefone = tel || null;
+    if (Object.prototype.hasOwnProperty.call(data, "wpp")) {
+      data.wpp = normalizeBoolInt(data.wpp) || isLikelyBrazilMobile(tel) ? 1 : 0;
+    } else {
+      data.wpp = isLikelyBrazilMobile(tel) ? 1 : 0;
+    }
+  }
+
+  const departamentos = normalizeColaboradorDepartamentos(data.departamento);
+  if (!departamentos) {
+    return { ok: false as const, error: "departamento é obrigatório." };
+  }
+  data.departamento = departamentos;
+
+  data.chefia = normalizeBoolInt(data.chefia);
+
+  return { ok: true as const };
+};
+
+const normalizeTelefoneAndWpp = (data: Record<string, unknown>) => {
+  if (!Object.prototype.hasOwnProperty.call(data, "telefone")) return { ok: true as const };
+  const tel = normalizeDigitsString(data.telefone);
+  data.telefone = tel || null;
+  data.wpp = normalizeBoolInt(data.wpp) || isLikelyBrazilMobile(tel) ? 1 : 0;
+  return { ok: true as const };
+};
+
+const isValidHourHHMM = (value: unknown) => {
+  const s = String(value ?? "").trim();
+  if (!/^\d{2}:\d{2}$/.test(s)) return false;
+  const h = Number(s.slice(0, 2));
+  const m = Number(s.slice(3, 5));
+  return Number.isInteger(h) && Number.isInteger(m) && h >= 0 && h <= 23 && m >= 0 && m <= 59;
+};
+
+const validatePlantaoContato = (data: Record<string, unknown>) => {
+  const tipo = normalizeEnumText(data.tipo);
+  const raw = String(data.numero_ou_url ?? data.telefone ?? "").trim();
+  if (!raw) return { ok: false as const, error: "numero_ou_url é obrigatório." };
+  if (tipo === "website") {
+    const u = normalizeWebsiteValue(raw);
+    if (!u) return { ok: false as const, error: "URL inválida em numero_ou_url (use http/https)." };
+    data.numero_ou_url = u;
+    data.telefone = null;
+    data.wpp = 0;
+    data.tipo = "website";
+    return { ok: true as const };
+  }
+  // telefone: somente números; WhatsApp fica no booleano wpp.
+  const digits = normalizeDigitsString(raw);
+  if (!digits) return { ok: false as const, error: "Número inválido em numero_ou_url." };
+  data.numero_ou_url = digits;
+  data.telefone = digits;
+  data.wpp = normalizeBoolInt(data.wpp) || isLikelyBrazilMobile(digits) ? 1 : 0;
+  data.tipo = "telefone";
+  return { ok: true as const };
+};
+
+const validatePlantaoHorario = (data: Record<string, unknown>, idSingular: string) => {
+  const dia = Number(data.dia_semana);
+  if (!Number.isFinite(dia) || dia < 0 || dia > 6) {
+    return { ok: false as const, error: "dia_semana inválido. Use 0 (domingo) a 6 (sábado)." };
+  }
+  if (!isValidHourHHMM(data.hora_inicio) || !isValidHourHHMM(data.hora_fim)) {
+    return { ok: false as const, error: "hora_inicio/hora_fim inválidos. Use HH:MM (24h)." };
+  }
+  const clinicaId = String(data.plantao_clinica_id ?? "").trim();
+  if (clinicaId) {
+    const exists = db.queryEntries<any>(
+      `SELECT id FROM ${TBL("cooperativa_plantao_clinicas")} WHERE id = ? AND id_singular = ? LIMIT 1`,
+      [clinicaId, idSingular],
+    )?.[0];
+    if (!exists?.id) {
+      return { ok: false as const, error: "plantao_clinica_id não pertence à cooperativa informada." };
+    }
+    data.plantao_clinica_id = clinicaId;
+  } else {
+    data.plantao_clinica_id = null;
+  }
+  data.dia_semana = Math.trunc(dia);
+  return { ok: true as const };
+};
+
+const isValidEmailValue = (value: unknown) => {
+  const v = String(value ?? "").trim();
+  if (!v) return false;
+  if (v.length > 254) return false;
+  // Validação simples e pragmática (evita bloquear emails válidos por regras RFC complexas).
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+};
+
+const normalizeEmailValue = (value: unknown) => {
+  const v = String(value ?? "").trim();
+  if (!v) return null;
+  return v.toLowerCase();
+};
+
+const normalizeWebsiteValue = (value: unknown) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  let u: URL;
+  try {
+    u = new URL(withScheme);
+  } catch {
+    return null;
+  }
+  const proto = (u.protocol || "").toLowerCase();
+  if (proto !== "http:" && proto !== "https:") return null;
+  // Comparação/armazenamento: remover fragmento e padronizar host; manter query.
+  u.hash = "";
+  u.protocol = proto;
+  u.hostname = u.hostname.toLowerCase();
+  // Remover "/" final, exceto root.
+  if (u.pathname.length > 1 && u.pathname.endsWith("/")) {
+    u.pathname = u.pathname.slice(0, -1);
+  }
+  return u.toString();
+};
+
+const validateAndNormalizeContato = (data: Record<string, unknown>) => {
+  const tipo = normalizeEnumText(data.tipo);
+  const valor = data.valor;
+  if (tipo === "email") {
+    const normalized = normalizeEmailValue(valor);
+    if (!normalized || !isValidEmailValue(normalized)) {
+      return { ok: false as const, error: "Email inválido em valor.", normalizedValor: null };
+    }
+    return { ok: true as const, normalizedValor: normalized };
+  }
+  if (tipo === "website") {
+    const normalized = normalizeWebsiteValue(valor);
+    if (!normalized) {
+      return { ok: false as const, error: "URL inválida em valor (use http/https).", normalizedValor: null };
+    }
+    return { ok: true as const, normalizedValor: normalized };
+  }
+  if (tipo === "telefone" || tipo === "whatsapp" || tipo === "celular") {
+    const digits = normalizeDigitsString(valor);
+    if (!digits) {
+      return { ok: false as const, error: "Telefone inválido em valor.", normalizedValor: null };
+    }
+    data.tipo = "telefone";
+    data.wpp = normalizeBoolInt(data.wpp) || tipo === "whatsapp" || isLikelyBrazilMobile(digits) ? 1 : 0;
+    return { ok: true as const, normalizedValor: digits };
+  }
+  return { ok: true as const, normalizedValor: valor ?? null };
+};
+
+const dedupeCooperativaContatosByTargets = (targets: string[]) => {
+  if (!targets.length) return { deleted: 0 };
+  let deleted = 0;
+  for (const idSingular of targets) {
+    const rows = db.queryEntries<any>(
+      `SELECT id, tipo, valor, principal, criado_em
+         FROM ${TBL("cooperativa_contatos")}
+        WHERE id_singular = ?`,
+      [idSingular],
+    ) || [];
+    const groups = new Map<string, any[]>();
+    for (const r of rows) {
+      const tipo = normalizeAuxImportRow("contatos", { tipo: r.tipo, subtipo: null, valor: r.valor, principal: r.principal })?.tipo;
+      const normalizedTipo = normalizeEnumText(tipo);
+      let normalizedValor: string | null = String(r.valor ?? "").trim();
+      if (normalizedTipo === "email") {
+        normalizedValor = normalizeEmailValue(normalizedValor);
+      } else if (normalizedTipo === "website") {
+        normalizedValor = normalizeWebsiteValue(normalizedValor);
+      }
+      if (!normalizedTipo || !normalizedValor) continue;
+      const key = `${idSingular}|${normalizedTipo}|${normalizedValor}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(r);
+    }
+    for (const list of groups.values()) {
+      if (list.length <= 1) continue;
+      list.sort((a, b) => {
+        const pa = Number(a.principal || 0);
+        const pb = Number(b.principal || 0);
+        if (pa !== pb) return pb - pa;
+        const ca = String(a.criado_em || "");
+        const cb = String(b.criado_em || "");
+        if (ca !== cb) return cb.localeCompare(ca);
+        return String(a.id || "").localeCompare(String(b.id || ""));
+      });
+      const keep = list[0];
+      const toDelete = list.slice(1).map((x) => String(x.id || "")).filter(Boolean);
+      if (!toDelete.length) continue;
+      const placeholders = toDelete.map(() => "?").join(",");
+      db.query(
+        `DELETE FROM ${TBL("cooperativa_contatos")} WHERE id IN (${placeholders})`,
+        toDelete as any,
+      );
+      deleted += toDelete.length;
+      // Garantir que o "keep" permaneça principal se existia algum principal no grupo.
+      if (list.some((x) => Number(x.principal || 0) === 1) && Number(keep.principal || 0) !== 1) {
+        db.query(
+          `UPDATE ${TBL("cooperativa_contatos")} SET principal = 1 WHERE id = ?`,
+          [keep.id],
+        );
+      }
+    }
+  }
+  return { deleted };
 };
 
 const canViewDiretorCelularByRole = (userData: any, cooperativaId: string) => {
@@ -3764,7 +4374,7 @@ app.post("/cooperativas/:id/diretores/:diretorId/solicitar-celular", requireAuth
     )[0];
     if (!diretor) return c.json({ error: "Diretor não encontrado" }, 404);
 
-    const telefone = normalizeDigitsString(diretor.telefone_celular || "");
+    const telefone = normalizeDigitsString(diretor.telefone || diretor.telefone_celular || "");
     if (!telefone) return c.json({ error: "Diretor sem celular cadastrado" }, 400);
 
     const canViewByRole = canViewDiretorCelularByRole(userData, cooperativaId);
@@ -4026,10 +4636,23 @@ app.get("/cooperativas/:id/aux/:resource", requireAuth, async (c) => {
       return c.json({ error: "Acesso negado" }, 403);
     }
 
-    const rows = db.queryEntries<any>(
-      `SELECT * FROM ${def.table} WHERE id_singular = ? ORDER BY ativo DESC`,
-      [cooperativaId],
-    ) || [];
+    let rows: any[] = [];
+    try {
+      rows = db.queryEntries<any>(
+        `SELECT * FROM ${def.table} WHERE id_singular = ? ORDER BY ativo DESC`,
+        [cooperativaId],
+      ) || [];
+    } catch (queryError) {
+      const msg = String((queryError as any)?.message || "").toLowerCase();
+      // Tolerância para ambiente sem migração aplicada ainda: evita quebrar a tela.
+      if (
+        (resource === "regulatorio" || resource === "colaboradores") &&
+        msg.includes("no such table")
+      ) {
+        return c.json([]);
+      }
+      throw queryError;
+    }
     if (resource !== "diretores") {
       return c.json(rows);
     }
@@ -4050,9 +4673,10 @@ app.get("/cooperativas/:id/aux/:resource", requireAuth, async (c) => {
         ...row,
         divulgar_celular: divulgar ? 1 : 0,
         telefone_celular_restrito: hidePhone,
-        pode_solicitar_celular: hidePhone && Boolean(normalizeDigitsString(row.telefone_celular || "")),
+        pode_solicitar_celular: hidePhone && Boolean(normalizeDigitsString(row.telefone || row.telefone_celular || "")),
         celular_request_status: requestStatus,
-        telefone_celular: hidePhone ? null : row.telefone_celular,
+        telefone: hidePhone ? null : (row.telefone || row.telefone_celular || null),
+        telefone_celular: hidePhone ? null : (row.telefone || row.telefone_celular || null),
       };
     });
 
@@ -4071,9 +4695,50 @@ app.post("/cooperativas/:id/aux/:resource", requireAuth, async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const picked = pickAuxPayload(resource, body);
     if (!picked) return c.json({ error: "Recurso inválido" }, 400);
-    if (resource === "enderecos") {
+    if (resource === "plantao") {
+      const already = db.queryEntries<any>(
+        `SELECT id FROM ${TBL("cooperativa_plantao")} WHERE id_singular = ? LIMIT 1`,
+        [cooperativaId],
+      )?.[0];
+      if (already?.id) {
+        return c.json({ error: "Já existe um registro de plantão para esta singular. Edite o registro existente." }, 400);
+      }
+    }
+    if (resource === "plantao_clinicas") {
+      const cd = normalizeCdMunicipio7((picked.data as any).cd_municipio_7);
+      if (!cd) {
+        return c.json({ error: "cd_municipio_7 obrigatório e deve ter 7 dígitos (IBGE)." }, 400);
+      }
+      (picked.data as any).cd_municipio_7 = cd;
+    }
+    if (resource === "enderecos" || resource === "plantao_clinicas") {
       const normalized = applyEnderecoByCdMunicipio7(picked.data as Record<string, unknown>);
       if (!normalized.ok) return c.json({ error: normalized.error }, 400);
+    }
+    if (["auditores", "diretores", "enderecos", "ouvidores", "lgpd", "colaboradores", "plantao_clinicas"].includes(resource)) {
+      const normalized = normalizeTelefoneAndWpp(picked.data as Record<string, unknown>);
+      if (!normalized.ok) return c.json({ error: "Telefone inválido." }, 400);
+    }
+    if (resource === "plantao_contatos") {
+      const ok = validatePlantaoContato(picked.data as Record<string, unknown>);
+      if (!ok.ok) return c.json({ error: ok.error }, 400);
+    }
+    if (resource === "contatos") {
+      const ok = validateAndNormalizeContato(picked.data as Record<string, unknown>);
+      if (!ok.ok) return c.json({ error: ok.error }, 400);
+      (picked.data as any).valor = ok.normalizedValor;
+    }
+    if (resource === "plantao_horarios") {
+      const ok = validatePlantaoHorario(picked.data as Record<string, unknown>, cooperativaId);
+      if (!ok.ok) return c.json({ error: ok.error }, 400);
+    }
+    if (resource === "regulatorio") {
+      const ok = validateRegulatorio(picked.data as Record<string, unknown>);
+      if (!ok.ok) return c.json({ error: ok.error }, 400);
+    }
+    if (resource === "colaboradores") {
+      const ok = validateColaborador(picked.data as Record<string, unknown>);
+      if (!ok.ok) return c.json({ error: ok.error }, 400);
     }
 
     const authUser = c.get("user");
@@ -4103,6 +4768,10 @@ app.post("/cooperativas/:id/aux/:resource", requireAuth, async (c) => {
     return c.json(row ?? { id, id_singular: cooperativaId, ...picked.data });
   } catch (error) {
     console.error("[coop-aux] erro ao criar:", error);
+    const msg = String((error as any)?.message || "");
+    if (msg.includes("UNIQUE constraint failed") && msg.includes(`${TBL("cooperativa_plantao")}.id_singular`)) {
+      return c.json({ error: "Já existe um registro de plantão para esta singular. Edite o existente." }, 400);
+    }
     return c.json({ error: "Erro ao salvar registro" }, 500);
   }
 });
@@ -4116,9 +4785,41 @@ app.put("/cooperativas/:id/aux/:resource/:itemId", requireAuth, async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const picked = pickAuxPayload(resource, body);
     if (!picked) return c.json({ error: "Recurso inválido" }, 400);
-    if (resource === "enderecos") {
+    if (resource === "plantao_clinicas") {
+      const cd = normalizeCdMunicipio7((picked.data as any).cd_municipio_7);
+      if (!cd) {
+        return c.json({ error: "cd_municipio_7 obrigatório e deve ter 7 dígitos (IBGE)." }, 400);
+      }
+      (picked.data as any).cd_municipio_7 = cd;
+    }
+    if (resource === "enderecos" || resource === "plantao_clinicas") {
       const normalized = applyEnderecoByCdMunicipio7(picked.data as Record<string, unknown>);
       if (!normalized.ok) return c.json({ error: normalized.error }, 400);
+    }
+    if (["auditores", "diretores", "enderecos", "ouvidores", "lgpd", "colaboradores", "plantao_clinicas"].includes(resource)) {
+      const normalized = normalizeTelefoneAndWpp(picked.data as Record<string, unknown>);
+      if (!normalized.ok) return c.json({ error: "Telefone inválido." }, 400);
+    }
+    if (resource === "plantao_contatos") {
+      const ok = validatePlantaoContato(picked.data as Record<string, unknown>);
+      if (!ok.ok) return c.json({ error: ok.error }, 400);
+    }
+    if (resource === "contatos") {
+      const ok = validateAndNormalizeContato(picked.data as Record<string, unknown>);
+      if (!ok.ok) return c.json({ error: ok.error }, 400);
+      (picked.data as any).valor = ok.normalizedValor;
+    }
+    if (resource === "plantao_horarios") {
+      const ok = validatePlantaoHorario(picked.data as Record<string, unknown>, cooperativaId);
+      if (!ok.ok) return c.json({ error: ok.error }, 400);
+    }
+    if (resource === "regulatorio") {
+      const ok = validateRegulatorio(picked.data as Record<string, unknown>);
+      if (!ok.ok) return c.json({ error: ok.error }, 400);
+    }
+    if (resource === "colaboradores") {
+      const ok = validateColaborador(picked.data as Record<string, unknown>);
+      if (!ok.ok) return c.json({ error: ok.error }, 400);
     }
 
     const authUser = c.get("user");
@@ -4209,27 +4910,26 @@ app.post("/cooperativas/:id/aux/:resource/import", requireAuth, async (c) => {
       }
 
       let inserted = 0;
+      const seenKeys = new Set<string>();
+
+      // Limpar duplicidades anteriores para evitar acumular lixo por importações repetidas.
+      if (resource === "contatos" && mode !== "replace") {
+        dedupeCooperativaContatosByTargets([cooperativaId]);
+      }
+      let skippedOtherSingular = 0;
       for (const raw of items) {
-        // Segurança: mesmo que o CSV/planilha tenha id_singular, não permitimos importar para outra cooperativa.
+        // Import por singular: se vier arquivo com múltiplos id_singular, processa apenas o destino atual.
         if (
           raw &&
           typeof raw === "object" &&
           "id_singular" in raw &&
-          raw.id_singular &&
-          normalizeIdSingular(raw.id_singular) !== String(cooperativaId)
+          raw.id_singular
         ) {
-          if (!IS_POSTGRES) {
-            try {
-              db.execute("ROLLBACK");
-            } catch {}
+          const rowIdSingular = normalizeIdSingular(raw.id_singular);
+          if (rowIdSingular && rowIdSingular !== String(cooperativaId)) {
+            skippedOtherSingular++;
+            continue;
           }
-          return c.json(
-            {
-              error:
-                `Arquivo contém id_singular (${raw.id_singular}) diferente do destino (${cooperativaId}).`,
-            },
-            400,
-          );
         }
 
         const sanitized = normalizeAuxImportRow(
@@ -4243,7 +4943,19 @@ app.post("/cooperativas/:id/aux/:resource/import", requireAuth, async (c) => {
 
         const picked = pickAuxPayload(resource, sanitized);
         if (!picked) continue;
-        if (resource === "enderecos") {
+        if (resource === "plantao_clinicas") {
+          const cd = normalizeCdMunicipio7((picked.data as any).cd_municipio_7);
+          if (!cd) {
+            if (!IS_POSTGRES) {
+              try {
+                db.execute("ROLLBACK");
+              } catch {}
+            }
+            return c.json({ error: "cd_municipio_7 obrigatório e deve ter 7 dígitos (IBGE)." }, 400);
+          }
+          (picked.data as any).cd_municipio_7 = cd;
+        }
+        if (resource === "enderecos" || resource === "plantao_clinicas") {
           const normalized = applyEnderecoByCdMunicipio7(picked.data as Record<string, unknown>);
           if (!normalized.ok) {
             if (!IS_POSTGRES) {
@@ -4252,6 +4964,94 @@ app.post("/cooperativas/:id/aux/:resource/import", requireAuth, async (c) => {
               } catch {}
             }
             return c.json({ error: normalized.error }, 400);
+          }
+        }
+        if (["auditores", "diretores", "enderecos", "ouvidores", "lgpd", "colaboradores", "plantao_clinicas"].includes(resource)) {
+          normalizeTelefoneAndWpp(picked.data as Record<string, unknown>);
+        }
+        if (resource === "plantao_contatos") {
+          const ok = validatePlantaoContato(picked.data as Record<string, unknown>);
+          if (!ok.ok) {
+            if (!IS_POSTGRES) {
+              try {
+                db.execute("ROLLBACK");
+              } catch {}
+            }
+            return c.json({ error: ok.error }, 400);
+          }
+        }
+        if (resource === "plantao_horarios") {
+          const ok = validatePlantaoHorario(picked.data as Record<string, unknown>, cooperativaId);
+          if (!ok.ok) {
+            if (!IS_POSTGRES) {
+              try {
+                db.execute("ROLLBACK");
+              } catch {}
+            }
+            return c.json({ error: ok.error }, 400);
+          }
+        }
+        if (resource === "regulatorio") {
+          const ok = validateRegulatorio(picked.data as Record<string, unknown>);
+          if (!ok.ok) {
+            if (!IS_POSTGRES) {
+              try {
+                db.execute("ROLLBACK");
+              } catch {}
+            }
+            return c.json({ error: ok.error }, 400);
+          }
+        }
+        if (resource === "colaboradores") {
+          const ok = validateColaborador(picked.data as Record<string, unknown>);
+          if (!ok.ok) {
+            if (!IS_POSTGRES) {
+              try {
+                db.execute("ROLLBACK");
+              } catch {}
+            }
+            return c.json({ error: ok.error }, 400);
+          }
+        }
+        if (resource === "contatos") {
+          const res = validateAndNormalizeContato(picked.data as Record<string, unknown>);
+          if (!res.ok) {
+            if (!IS_POSTGRES) {
+              try {
+                db.execute("ROLLBACK");
+              } catch {}
+            }
+            return c.json(
+              {
+                error: "Arquivo contém linhas inválidas para contatos.",
+                invalid_rows: [
+                  {
+                    reason: res.error,
+                    id_singular: cooperativaId,
+                    row: sanitized,
+                  },
+                ],
+              },
+              400,
+            );
+          }
+          (picked.data as any).valor = res.normalizedValor;
+
+          const tipo = normalizeEnumText((picked.data as any).tipo);
+          const valorKey = String((picked.data as any).valor ?? "").trim();
+          const key = `${cooperativaId}|${tipo}|${valorKey}`;
+          if (tipo && valorKey) {
+            if (seenKeys.has(key)) continue;
+            seenKeys.add(key);
+          }
+
+          // Evitar duplicar se já existe no banco.
+          if (tipo && valorKey) {
+            const exists = db.queryEntries<any>(
+              `SELECT id FROM ${def.table} WHERE id_singular = ? AND tipo = ? AND valor = ? LIMIT 1`,
+              [cooperativaId, tipo, valorKey],
+            )?.[0];
+            if (exists?.id) continue;
           }
         }
         if (picked.def.columns.includes("ativo")) {
@@ -4275,7 +5075,7 @@ app.post("/cooperativas/:id/aux/:resource/import", requireAuth, async (c) => {
       if (!IS_POSTGRES) {
         db.execute("COMMIT");
       }
-      return c.json({ ok: true, inserted });
+      return c.json({ ok: true, inserted, skipped_other_singular: skippedOtherSingular });
     } catch (e) {
       if (!IS_POSTGRES) {
         try {
@@ -4299,6 +5099,15 @@ app.post("/cooperativas/:id/aux/:resource/import", requireAuth, async (c) => {
           {
             error:
               "Erro de relacionamento no arquivo importado. Verifique se o id_singular existe em cooperativas.",
+            details: msg,
+          },
+          400,
+        );
+      }
+      if (msg.includes("UNIQUE constraint failed") && msg.includes(`${TBL("cooperativa_plantao")}.id_singular`)) {
+        return c.json(
+          {
+            error: "Já existe um registro de plantão para esta singular. Use edição ou importação em modo replace.",
             details: msg,
           },
           400,
@@ -4382,9 +5191,13 @@ app.post("/admin/gestao-dados/aux/:resource/import", requireAuth, async (c) => {
           db.query(`DELETE FROM ${def.table} WHERE id_singular = ?`, [targetId]);
         }
       }
+      if (resource === "contatos" && mode !== "replace") {
+        dedupeCooperativaContatosByTargets(Array.from(groups.keys()));
+      }
 
       for (const [targetId, rows] of groups.entries()) {
         let inserted = 0;
+        const seenKeys = new Set<string>();
         for (const raw of rows) {
           const sanitized = normalizeAuxImportRow(
             resource,
@@ -4397,7 +5210,19 @@ app.post("/admin/gestao-dados/aux/:resource/import", requireAuth, async (c) => {
 
           const picked = pickAuxPayload(resource, sanitized);
           if (!picked) continue;
-          if (resource === "enderecos") {
+          if (resource === "plantao_clinicas") {
+            const cd = normalizeCdMunicipio7((picked.data as any).cd_municipio_7);
+            if (!cd) {
+              if (!IS_POSTGRES) {
+                try {
+                  db.execute("ROLLBACK");
+                } catch {}
+              }
+              return c.json({ error: "cd_municipio_7 obrigatório e deve ter 7 dígitos (IBGE)." }, 400);
+            }
+            (picked.data as any).cd_municipio_7 = cd;
+          }
+          if (resource === "enderecos" || resource === "plantao_clinicas") {
             const normalized = applyEnderecoByCdMunicipio7(picked.data as Record<string, unknown>);
             if (!normalized.ok) {
               if (!IS_POSTGRES) {
@@ -4406,6 +5231,105 @@ app.post("/admin/gestao-dados/aux/:resource/import", requireAuth, async (c) => {
                 } catch {}
               }
               return c.json({ error: normalized.error }, 400);
+            }
+          }
+          if (["auditores", "diretores", "enderecos", "ouvidores", "lgpd", "colaboradores", "plantao_clinicas"].includes(resource)) {
+            normalizeTelefoneAndWpp(picked.data as Record<string, unknown>);
+          }
+          if (resource === "plantao_contatos") {
+            const ok = validatePlantaoContato(picked.data as Record<string, unknown>);
+            if (!ok.ok) {
+              if (!IS_POSTGRES) {
+                try {
+                  db.execute("ROLLBACK");
+                } catch {}
+              }
+              return c.json(
+                { error: "Arquivo contém linhas inválidas para contatos de plantão.", invalid_rows: [{ reason: ok.error, id_singular: targetId, row: sanitized }] },
+                400,
+              );
+            }
+          }
+          if (resource === "plantao_horarios") {
+            const ok = validatePlantaoHorario(picked.data as Record<string, unknown>, targetId);
+            if (!ok.ok) {
+              if (!IS_POSTGRES) {
+                try {
+                  db.execute("ROLLBACK");
+                } catch {}
+              }
+              return c.json(
+                { error: "Arquivo contém linhas inválidas para horários de plantão.", invalid_rows: [{ reason: ok.error, id_singular: targetId, row: sanitized }] },
+                400,
+              );
+            }
+          }
+          if (resource === "regulatorio") {
+            const ok = validateRegulatorio(picked.data as Record<string, unknown>);
+            if (!ok.ok) {
+              if (!IS_POSTGRES) {
+                try {
+                  db.execute("ROLLBACK");
+                } catch {}
+              }
+              return c.json(
+                { error: "Arquivo contém linhas inválidas para dados regulatórios.", invalid_rows: [{ reason: ok.error, id_singular: targetId, row: sanitized }] },
+                400,
+              );
+            }
+          }
+          if (resource === "colaboradores") {
+            const ok = validateColaborador(picked.data as Record<string, unknown>);
+            if (!ok.ok) {
+              if (!IS_POSTGRES) {
+                try {
+                  db.execute("ROLLBACK");
+                } catch {}
+              }
+              return c.json(
+                { error: "Arquivo contém linhas inválidas para colaboradores.", invalid_rows: [{ reason: ok.error, id_singular: targetId, row: sanitized }] },
+                400,
+              );
+            }
+          }
+          if (resource === "contatos") {
+            const res = validateAndNormalizeContato(picked.data as Record<string, unknown>);
+            if (!res.ok) {
+              if (!IS_POSTGRES) {
+                try {
+                  db.execute("ROLLBACK");
+                } catch {}
+              }
+              return c.json(
+                {
+                  error: "Arquivo contém linhas inválidas para contatos.",
+                  invalid_rows: [
+                    {
+                      reason: res.error,
+                      id_singular: targetId,
+                      row: sanitized,
+                    },
+                  ],
+                },
+                400,
+              );
+            }
+            (picked.data as any).valor = res.normalizedValor;
+
+            const tipo = normalizeEnumText((picked.data as any).tipo);
+            const valorKey = String((picked.data as any).valor ?? "").trim();
+            const key = `${targetId}|${tipo}|${valorKey}`;
+            if (tipo && valorKey) {
+              if (seenKeys.has(key)) continue;
+              seenKeys.add(key);
+            }
+
+            if (tipo && valorKey) {
+              const exists = db.queryEntries<any>(
+                `SELECT id FROM ${def.table} WHERE id_singular = ? AND tipo = ? AND valor = ? LIMIT 1`,
+                [targetId, tipo, valorKey],
+              )?.[0];
+              if (exists?.id) continue;
             }
           }
           if (picked.def.columns.includes("ativo")) {
@@ -4454,6 +5378,15 @@ app.post("/admin/gestao-dados/aux/:resource/import", requireAuth, async (c) => {
           {
             error:
               "Erro de relacionamento no arquivo importado. Verifique se o id_singular existe em cooperativas.",
+            details: msg,
+          },
+          400,
+        );
+      }
+      if (msg.includes("UNIQUE constraint failed") && msg.includes(`${TBL("cooperativa_plantao")}.id_singular`)) {
+        return c.json(
+          {
+            error: "Importação inválida: só é permitido 1 registro de plantão por id_singular.",
             details: msg,
           },
           400,
@@ -4946,8 +5879,11 @@ app.post("/operadores", requireAuth, async (c) => {
     const emailRaw = (body.email || "").trim();
     const email = emailRaw.toLowerCase();
     const cargo = (body.cargo || "").trim();
-    const telefone = (body.telefone || "").trim();
-    const whatsapp = (body.whatsapp || "").trim();
+    const telefone = normalizeDigitsString(body.telefone || "");
+    const whatsappInput = normalizeDigitsString(body.whatsapp || "");
+    const wpp = normalizeBoolInt(body.wpp) === 1 || Boolean(whatsappInput) ||
+      isLikelyBrazilMobile(telefone);
+    const whatsapp = wpp ? (whatsappInput || telefone) : "";
     let idSingular =
       (body.id_singular || body.cooperativa_id || userData.cooperativa_id || "")
         .trim();
@@ -4990,9 +5926,9 @@ app.post("/operadores", requireAuth, async (c) => {
       db.query(
         `INSERT INTO ${
           TBL("operadores")
-        } (nome, id_singular, email, telefone, whatsapp, cargo, status, created_at)
-         VALUES (?,?,?,?,?,?,?,?)`,
-        [nome, idSingular, email, telefone, whatsapp, cargo, 1, now],
+        } (nome, id_singular, email, telefone, whatsapp, wpp, cargo, status, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+        [nome, idSingular, email, telefone, whatsapp, wpp ? 1 : 0, cargo, 1, now],
       );
     } catch (e) {
       console.error("Erro ao inserir operador:", e);
@@ -5169,6 +6105,7 @@ app.put("/operadores/:id", requireAuth, async (c) => {
     const forcarTrocaSenha = body.forcar_troca_senha === false ? false : true;
     const allowed: Record<string, any> = {};
     const whitelist = ["nome", "telefone", "whatsapp", "cargo", "ativo"];
+    whitelist.push("wpp");
     const canEditRole = isConfAdmin || userData.papel === "admin";
     if (canEditRole) {
       whitelist.push("papel");
@@ -5212,10 +6149,29 @@ app.put("/operadores/:id", requireAuth, async (c) => {
       allowed.cargo = allowed.cargo.trim();
     }
     if ("telefone" in allowed && typeof allowed.telefone === "string") {
-      allowed.telefone = allowed.telefone.trim();
+      allowed.telefone = normalizeDigitsString(allowed.telefone);
     }
     if ("whatsapp" in allowed && typeof allowed.whatsapp === "string") {
-      allowed.whatsapp = allowed.whatsapp.trim();
+      allowed.whatsapp = normalizeDigitsString(allowed.whatsapp);
+    }
+    if ("wpp" in allowed) {
+      allowed.wpp = normalizeBoolInt(allowed.wpp);
+    }
+    if ("telefone" in allowed || "wpp" in allowed || "whatsapp" in allowed) {
+      const resolvedTel = "telefone" in allowed
+        ? String(allowed.telefone || "")
+        : String(operador.telefone || "");
+      const resolvedLegacyWhatsapp = "whatsapp" in allowed
+        ? String(allowed.whatsapp || "")
+        : String(operador.whatsapp || "");
+      const resolvedWpp = "wpp" in allowed
+        ? normalizeBoolInt(allowed.wpp) === 1
+        : normalizeBoolInt((operador as any).wpp) === 1 ||
+          Boolean(resolvedLegacyWhatsapp) ||
+          isLikelyBrazilMobile(resolvedTel);
+      allowed.telefone = resolvedTel;
+      allowed.wpp = resolvedWpp ? 1 : 0;
+      allowed.whatsapp = resolvedWpp ? (resolvedLegacyWhatsapp || resolvedTel) : "";
     }
     if ("papel" in allowed && !canEditRole) {
       delete allowed.papel;
@@ -5283,6 +6239,11 @@ app.put("/operadores/:id", requireAuth, async (c) => {
         const resolvedWhatsapp = "whatsapp" in allowed
           ? allowed.whatsapp
           : operador.whatsapp;
+        const resolvedWpp = "wpp" in allowed
+          ? normalizeBoolInt(allowed.wpp) === 1
+          : normalizeBoolInt((operador as any).wpp) === 1 ||
+            Boolean(resolvedWhatsapp) ||
+            isLikelyBrazilMobile(normalizeDigitsString(resolvedTelefone || ""));
         const resolvedCargo = "cargo" in allowed
           ? allowed.cargo
           : operador.cargo;
@@ -5336,7 +6297,7 @@ app.put("/operadores/:id", requireAuth, async (c) => {
               resolvedNome,
               resolvedNome || operador.email,
               resolvedTelefone || "",
-              resolvedWhatsapp || "",
+              resolvedWpp ? (resolvedWhatsapp || resolvedTelefone || "") : "",
               resolvedCargo || "",
               operador.id_singular,
               resolvedRole,
@@ -7304,7 +8265,7 @@ if (import.meta.main) {
         console.log(
           `[server] Iniciando servidor HTTP local na porta ${port}...`,
         );
-        Deno.serve({ port }, app.fetch);
+        Deno.serve({ hostname: "0.0.0.0", port }, app.fetch);
         return;
       } catch (error) {
         if (error instanceof Deno.errors.AddrInUse) {

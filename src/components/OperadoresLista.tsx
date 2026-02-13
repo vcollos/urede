@@ -13,9 +13,7 @@ import {
   Search, 
   Plus, 
   Phone,
-  MessageSquare,
   Building,
-  User,
   Edit,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -47,7 +45,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     nome: '',
     cargo: '',
     telefone: '',
-    whatsapp: '',
+    wpp: false,
     ativo: true,
     papel: 'operador' as 'operador' | 'admin',
     definir_senha: false,
@@ -63,7 +61,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     email: '',
     cargo: '',
     telefone: '',
-    whatsapp: '',
+    wpp: false,
     id_singular: '',
     senha_provisoria: '',
     confirmar_senha: '',
@@ -174,6 +172,23 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     return phone || 'N/A';
   };
 
+  const normalizeDigits = (value: string) => String(value || '').replace(/\D/g, '');
+
+  const isLikelyBrazilMobile = (value: string) => {
+    const digits = normalizeDigits(value);
+    if (!digits) return false;
+    if (digits.startsWith('55') && digits.length === 13) return digits.charAt(4) === '9';
+    if (digits.length === 11) return digits.charAt(2) === '9';
+    return false;
+  };
+
+  const isOperadorWpp = (operador: Operador) => {
+    if (typeof operador.wpp === 'boolean') return operador.wpp;
+    const legacyWhatsapp = String(operador.whatsapp || '').trim();
+    if (legacyWhatsapp) return true;
+    return isLikelyBrazilMobile(operador.telefone || '');
+  };
+
   const currentCooperativa = cooperativas.find((c) => c.id_singular === user?.cooperativa_id);
   const isConfUser = !!user && (user.papel === 'confederacao' || currentCooperativa?.tipo === 'CONFEDERACAO');
   const isFederacaoUser = !!user && (user.papel === 'federacao' || currentCooperativa?.tipo === 'FEDERACAO');
@@ -235,7 +250,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
       nome: operador.nome,
       cargo: operador.cargo,
       telefone: operador.telefone || '',
-      whatsapp: operador.whatsapp || '',
+      wpp: isOperadorWpp(operador),
       ativo: operador.ativo,
       papel: toBaseRole(operador.papel),
       definir_senha: false,
@@ -266,7 +281,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
         nome: editForm.nome.trim(),
         cargo: editForm.cargo.trim(),
         telefone: editForm.telefone.trim(),
-        whatsapp: editForm.whatsapp.trim(),
+        wpp: editForm.wpp,
         ativo: editForm.ativo,
       };
 
@@ -310,7 +325,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
       email: '',
       cargo: '',
       telefone: '',
-      whatsapp: '',
+      wpp: false,
       id_singular: defaultSingular,
       senha_provisoria: '',
       confirmar_senha: '',
@@ -330,7 +345,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
       email: '',
       cargo: '',
       telefone: '',
-      whatsapp: '',
+      wpp: false,
       senha_provisoria: '',
       confirmar_senha: '',
       forcar_troca_senha: true,
@@ -363,7 +378,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
         email: createForm.email.trim().toLowerCase(),
         cargo: createForm.cargo.trim(),
         telefone: createForm.telefone.trim(),
-        whatsapp: createForm.whatsapp.trim(),
+        wpp: createForm.wpp,
         id_singular: createForm.id_singular,
         senha_temporaria: senhaTemporaria,
         forcar_troca_senha: createForm.forcar_troca_senha,
@@ -383,7 +398,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
         email: '',
         cargo: '',
         telefone: '',
-        whatsapp: '',
+        wpp: false,
         id_singular: payload.id_singular,
         senha_provisoria: '',
         confirmar_senha: '',
@@ -400,12 +415,12 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Responsáveis</h1>
-          <p className="text-gray-600">Gerencie os responsáveis do sistema</p>
+          <h1 className="text-2xl font-bold text-gray-900">Usuários</h1>
+          <p className="text-gray-600">Gerencie os usuários do sistema</p>
         </div>
         <div className="text-center py-8">
           <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Carregando responsáveis...</p>
+          <p className="text-gray-600">Carregando usuários...</p>
         </div>
       </div>
     );
@@ -415,8 +430,8 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Responsáveis</h1>
-          <p className="text-gray-600">Gerencie os responsáveis do sistema</p>
+          <h1 className="text-2xl font-bold text-gray-900">Usuários</h1>
+          <p className="text-gray-600">Gerencie os usuários do sistema</p>
         </div>
         <div className="text-center py-8">
           <p className="text-red-600">Erro: {error}</p>
@@ -430,8 +445,8 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
       {/* Header */}
       <div className="flex items-center justify-between">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Responsáveis</h1>
-        <p className="text-gray-600">Gerencie os responsáveis do sistema</p>
+        <h1 className="text-2xl font-bold text-gray-900">Usuários</h1>
+        <p className="text-gray-600">Gerencie os usuários do sistema</p>
       </div>
         {isAuthenticated && canCreate && (
           <Button
@@ -440,7 +455,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
             disabled={availableCooperativas.length === 0}
           >
             <Plus className="w-4 h-4 mr-2" />
-            Novo Responsável
+            Novo Usuário
           </Button>
         )}
       </div>
@@ -518,7 +533,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
               <div className="relative flex-1 md:max-w-xs">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                 <Input
-                  placeholder="Buscar responsáveis..."
+                  placeholder="Buscar usuários..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
@@ -552,18 +567,18 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
             </div>
             
             <div className="text-sm text-gray-500">
-              {operadoresFiltrados.length} responsável(is) encontrado(s)
+              {operadoresFiltrados.length} usuário(s) encontrado(s)
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Tabela de Responsáveis */}
+      {/* Tabela de Usuários */}
       <Card>
         <CardHeader>
-          <CardTitle>Lista de Responsáveis</CardTitle>
+          <CardTitle>Lista de Usuários</CardTitle>
           <CardDescription>
-            Visualize e gerencie todos os responsáveis cadastrados no sistema
+            Visualize e gerencie todos os usuários cadastrados no sistema
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -571,7 +586,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Responsável</TableHead>
+                  <TableHead>Usuário</TableHead>
                   <TableHead className="hidden md:table-cell">Cooperativa</TableHead>
                   <TableHead className="hidden lg:table-cell">Cargo</TableHead>
                   <TableHead className="hidden lg:table-cell">Acesso</TableHead>
@@ -585,7 +600,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
                 {operadoresFiltrados.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-8 text-gray-500">
-                      Nenhum responsável encontrado
+                      Nenhum usuário encontrado
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -624,17 +639,10 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
                       </TableCell>
 
                       <TableCell className="hidden xl:table-cell">
-                        <div className="space-y-1">
-                          <div className="flex items-center space-x-2 text-sm text-gray-600">
-                            <Phone className="w-3 h-3" />
-                            <span>{formatPhone(operador.telefone)}</span>
-                          </div>
-                          {operador.whatsapp && (
-                            <div className="flex items-center space-x-2 text-sm text-gray-600">
-                              <MessageSquare className="w-3 h-3" />
-                              <span>{formatPhone(operador.whatsapp)}</span>
-                            </div>
-                          )}
+                        <div className="flex items-center space-x-2 text-sm text-gray-600">
+                          <Phone className="w-3 h-3" />
+                          <span>{formatPhone(operador.telefone)}</span>
+                          {isOperadorWpp(operador) && <i className="fa-brands fa-whatsapp text-emerald-600 text-sm" aria-label="WhatsApp" />}
                         </div>
                       </TableCell>
                       
@@ -684,9 +692,9 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
       >
         <DialogContent className="w-full max-w-[min(520px,calc(100dvw-2rem))] max-h-[min(90dvh,calc(100dvh-2rem))] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Editar operador</DialogTitle>
+            <DialogTitle>Editar usuário</DialogTitle>
             <DialogDescription>
-              Atualize as informações do operador. Algumas alterações dependem da sua permissão.
+              Atualize as informações do usuário. Algumas alterações dependem da sua permissão.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleEditSubmit} className="space-y-4">
@@ -722,12 +730,14 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="operador-whatsapp">WhatsApp</Label>
-                  <Input
-                    id="operador-whatsapp"
-                    value={editForm.whatsapp}
-                    onChange={(e) => setEditForm((prev) => ({ ...prev, whatsapp: e.target.value }))}
-                  />
+                  <Label htmlFor="operador-wpp">WhatsApp</Label>
+                  <div className="h-10 flex items-center rounded-md border border-input px-3">
+                    <Switch
+                      id="operador-wpp"
+                      checked={editForm.wpp}
+                      onCheckedChange={(value) => setEditForm((prev) => ({ ...prev, wpp: value }))}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -861,9 +871,9 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
       >
         <DialogContent className="w-full max-w-[min(520px,calc(100dvw-2rem))] max-h-[min(90dvh,calc(100dvh-2rem))] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Novo operador</DialogTitle>
+            <DialogTitle>Novo usuário</DialogTitle>
             <DialogDescription>
-              Preencha os campos abaixo para convidar um novo operador para sua cooperativa.
+              Preencha os campos abaixo para convidar um novo usuário para sua cooperativa.
               O acesso inicial é de operador; níveis superiores podem ser atribuídos posteriormente.
             </DialogDescription>
           </DialogHeader>
@@ -909,11 +919,15 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="novo-whatsapp">WhatsApp</Label>
-                  <Input
-                    id="novo-whatsapp"
-                    value={createForm.whatsapp}
-                    onChange={(e) => setCreateForm((prev) => ({ ...prev, whatsapp: e.target.value }))}
-                  />
+                  <div className="h-10 flex items-center rounded-md border border-input px-3">
+                    <Switch
+                      id="novo-whatsapp"
+                      checked={createForm.wpp}
+                      onCheckedChange={(checked) =>
+                        setCreateForm((prev) => ({ ...prev, wpp: checked }))
+                      }
+                    />
+                  </div>
                 </div>
               </div>
               <div className="space-y-2">

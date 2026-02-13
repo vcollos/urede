@@ -179,11 +179,11 @@ function AppContent() {
       case 'importacao':
         return <PedidosImportPage onBack={() => setActiveTab('pedidos')} />;
       case 'gestao_dados':
-        return <GestaoDadosPage />;
+        return user?.papel === 'admin' ? <GestaoDadosPage /> : <Dashboard onNavigateToPedidos={navigateToPedidosWithFilter} />;
       case 'cooperativas':
         return <CooperativasView />;
       case 'operadores':
-        return <OperadoresLista />;
+        return user?.papel === 'admin' ? <OperadoresLista /> : <Dashboard onNavigateToPedidos={navigateToPedidosWithFilter} />;
       case 'cidades':
         return <CidadesView />;
       case 'configuracoes':

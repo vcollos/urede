@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, Download, Plus, Search, Shield, Upload, X } from 'lucide-react';
+import { Check, Download, MessageCircle, Plus, Search, Shield, Upload, X } from 'lucide-react';
 
 import { apiService } from '../services/apiService';
 import { parseTabularFile } from '../utils/import/parseTabularFile';
@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { Switch } from './ui/switch';
 import { Textarea } from './ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { cn } from './ui/utils';
@@ -51,13 +52,14 @@ const RESOURCES: ResourceDef[] = [
       { key: 'primeiro_nome', label: 'Nome' },
       { key: 'sobrenome', label: 'Sobrenome' },
       { key: 'email', label: 'Email' },
-      { key: 'telefone_celular', label: 'Celular' },
+      { key: 'telefone', label: 'Telefone' },
     ],
     fields: [
       { key: 'primeiro_nome', label: 'Primeiro nome', type: 'text' },
       { key: 'sobrenome', label: 'Sobrenome', type: 'text' },
       { key: 'email', label: 'Email', type: 'text' },
-      { key: 'telefone_celular', label: 'Telefone celular', type: 'text' },
+      { key: 'telefone', label: 'Telefone', type: 'text' },
+      { key: 'wpp', label: 'É WhatsApp', type: 'boolean' },
       { key: 'ativo', label: 'Ativo', type: 'boolean' },
     ],
   },
@@ -109,8 +111,8 @@ const RESOURCES: ResourceDef[] = [
       { key: 'primeiro_nome', label: 'Nome' },
       { key: 'sobrenome', label: 'Sobrenome' },
       { key: 'email', label: 'Email' },
-      { key: 'telefone_celular', label: 'Celular' },
-      { key: 'divulgar_celular', label: 'Divulgação' },
+      { key: 'telefone', label: 'Telefone' },
+      { key: 'divulgar_celular', label: 'Visível?' },
       { key: 'inicio_mandato', label: 'Início' },
       { key: 'fim_mandato', label: 'Fim' },
     ],
@@ -120,11 +122,89 @@ const RESOURCES: ResourceDef[] = [
       { key: 'primeiro_nome', label: 'Primeiro nome', type: 'text' },
       { key: 'sobrenome', label: 'Sobrenome', type: 'text' },
       { key: 'email', label: 'Email', type: 'text' },
-      { key: 'telefone_celular', label: 'Telefone celular', type: 'text' },
+      { key: 'telefone', label: 'Telefone', type: 'text' },
+      { key: 'wpp', label: 'É WhatsApp', type: 'boolean' },
       { key: 'divulgar_celular', label: 'Divulgar celular', type: 'boolean' },
       { key: 'inicio_mandato', label: 'Ano início mandato', type: 'number' },
       { key: 'fim_mandato', label: 'Ano fim mandato', type: 'number' },
       { key: 'ativo', label: 'Ativo', type: 'boolean' },
+    ],
+  },
+  {
+    key: 'colaboradores',
+    title: 'Colaboradores',
+    description: 'Cadastro de colaboradores por singular. Use múltiplos departamentos separados por ; (ponto e vírgula).',
+    displayColumns: [
+      { key: 'nome', label: 'Nome' },
+      { key: 'sobrenome', label: 'Sobrenome' },
+      { key: 'email', label: 'E-mail' },
+      { key: 'telefone', label: 'Telefone' },
+      { key: 'departamento', label: 'Departamento(s)' },
+      { key: 'chefia', label: 'Chefia' },
+    ],
+    fields: [
+      { key: 'nome', label: 'Nome', type: 'text' },
+      { key: 'sobrenome', label: 'Sobrenome', type: 'text' },
+      { key: 'email', label: 'E-mail', type: 'text' },
+      { key: 'telefone', label: 'Telefone', type: 'text' },
+      { key: 'wpp', label: 'É WhatsApp', type: 'boolean' },
+      { key: 'departamento', label: 'Departamento(s)', type: 'text' },
+      { key: 'chefia', label: 'Chefia', type: 'boolean' },
+      { key: 'ativo', label: 'Ativo', type: 'boolean' },
+    ],
+    templateExamples: [
+      {
+        nome: 'Maria',
+        sobrenome: 'Silva',
+        email: 'maria.silva@cooperativa.coop.br',
+        telefone: '11999998888',
+        wpp: '1',
+        departamento: 'INTERCÂMBIO; COMERCIAL',
+        chefia: '1',
+      },
+    ],
+  },
+  {
+    key: 'regulatorio',
+    title: 'Dados regulatórios',
+    description: 'Cadastro obrigatório por unidade (matriz/filial) com responsável técnico e dados CRO/ANS.',
+    displayColumns: [
+      { key: 'tipo_unidade', label: 'Unidade' },
+      { key: 'nome_unidade', label: 'Nome da unidade' },
+      { key: 'reg_ans', label: 'REG ANS' },
+      { key: 'responsavel_tecnico', label: 'Responsável técnico' },
+      { key: 'email_responsavel_tecnico', label: 'E-mail do responsável' },
+      { key: 'cro_responsavel_tecnico', label: 'CRO responsável técnico' },
+      { key: 'cro_unidade', label: 'CRO da unidade' },
+    ],
+    fields: [
+      {
+        key: 'tipo_unidade',
+        label: 'Tipo da unidade',
+        type: 'select',
+        options: [
+          { value: 'matriz', label: 'Matriz' },
+          { value: 'filial', label: 'Filial' },
+        ],
+      },
+      { key: 'nome_unidade', label: 'Nome da unidade', type: 'text' },
+      { key: 'reg_ans', label: 'REG ANS', type: 'text' },
+      { key: 'responsavel_tecnico', label: 'Responsável técnico', type: 'text' },
+      { key: 'email_responsavel_tecnico', label: 'E-mail do responsável', type: 'text' },
+      { key: 'cro_responsavel_tecnico', label: 'CRO do responsável técnico', type: 'text' },
+      { key: 'cro_unidade', label: 'CRO da unidade', type: 'text' },
+      { key: 'ativo', label: 'Ativo', type: 'boolean' },
+    ],
+    templateExamples: [
+      {
+        tipo_unidade: 'matriz',
+        nome_unidade: 'Sede Administrativa',
+        reg_ans: '340120',
+        responsavel_tecnico: 'João da Silva',
+        email_responsavel_tecnico: 'responsavel.tecnico@cooperativa.coop.br',
+        cro_responsavel_tecnico: 'CRO-SP 12345',
+        cro_unidade: 'CRO-SP EPAO 2054',
+      },
     ],
   },
   {
@@ -140,8 +220,7 @@ const RESOURCES: ResourceDef[] = [
       { key: 'logradouro', label: 'Logradouro' },
       { key: 'numero', label: 'Nº' },
       { key: 'bairro', label: 'Bairro' },
-      { key: 'telefone_fixo', label: 'Fixo' },
-      { key: 'telefone_celular', label: 'Celular' },
+      { key: 'telefone', label: 'Telefone' },
     ],
     fields: [
       {
@@ -163,8 +242,8 @@ const RESOURCES: ResourceDef[] = [
       { key: 'bairro', label: 'Bairro', type: 'text' },
       { key: 'cidade', label: 'Cidade', type: 'text' },
       { key: 'uf', label: 'UF', type: 'text' },
-      { key: 'telefone_fixo', label: 'Telefone fixo', type: 'text' },
-      { key: 'telefone_celular', label: 'Telefone celular', type: 'text' },
+      { key: 'telefone', label: 'Telefone', type: 'text' },
+      { key: 'wpp', label: 'É WhatsApp', type: 'boolean' },
       { key: 'ativo', label: 'Ativo', type: 'boolean' },
     ],
     templateExamples: [
@@ -177,8 +256,8 @@ const RESOURCES: ResourceDef[] = [
         numero: '100',
         complemento: '',
         bairro: 'Se',
-        telefone_fixo: '1133334444',
-        telefone_celular: '11999998888',
+        telefone: '11999998888',
+        wpp: '1',
       },
     ],
   },
@@ -201,7 +280,7 @@ const RESOURCES: ResourceDef[] = [
         options: [
           { value: 'email', label: 'E-mail' },
           { value: 'telefone', label: 'Telefone' },
-          { value: 'whatsapp', label: 'WhatsApp' },
+          { value: 'website', label: 'Website' },
           { value: 'outro', label: 'Outro' },
         ],
       },
@@ -217,9 +296,17 @@ const RESOURCES: ResourceDef[] = [
           { value: 'divulgacao', label: 'Divulgação' },
           { value: 'comercial pf', label: 'Comercial PF' },
           { value: 'comercial pj', label: 'Comercial PJ' },
+          { value: 'institucional', label: 'Institucional' },
+          { value: 'portal do prestador', label: 'Portal do Prestador' },
+          { value: 'portal do cliente', label: 'Portal do Cliente' },
+          { value: 'portal da empresa', label: 'Portal da Empresa' },
+          { value: 'portal do corretor', label: 'Portal do Corretor' },
+          { value: 'e-commerce', label: 'E-Commerce' },
+          { value: 'portal do cooperado', label: 'Portal do Cooperado' },
         ],
       },
       { key: 'valor', label: 'Valor', type: 'text' },
+      { key: 'wpp', label: 'É WhatsApp', type: 'boolean' },
       { key: 'label', label: 'Label', type: 'text' },
       { key: 'principal', label: 'Principal', type: 'boolean' },
       { key: 'ativo', label: 'Ativo', type: 'boolean' },
@@ -227,14 +314,21 @@ const RESOURCES: ResourceDef[] = [
     templateExamples: [
       { tipo: 'email', subtipo: 'lgpd', valor: 'lgpd@cooperativa.coop.br', label: 'Encarregado LGPD', principal: '1' },
       { tipo: 'telefone', subtipo: 'plantão', valor: '1133334444', label: 'Plantão 24h', principal: '0' },
-      { tipo: 'whatsapp', subtipo: 'geral', valor: '11999998888', label: 'Atendimento geral', principal: '0' },
+      { tipo: 'telefone', subtipo: 'geral', valor: '11999998888', wpp: '1', label: 'Atendimento geral', principal: '0' },
       { tipo: 'telefone', subtipo: 'emergência', valor: '0800123456', label: 'Emergência', principal: '0' },
       { tipo: 'email', subtipo: 'divulgação', valor: 'contato@cooperativa.coop.br', label: 'Divulgação institucional', principal: '0' },
       { tipo: 'telefone', subtipo: 'divulgação', valor: '1132104567', label: 'Divulgação telefone', principal: '0' },
-      { tipo: 'whatsapp', subtipo: 'divulgação', valor: '11987654321', label: 'Divulgação WhatsApp', principal: '0' },
+      { tipo: 'telefone', subtipo: 'divulgação', valor: '11987654321', wpp: '1', label: 'Divulgação WhatsApp', principal: '0' },
       { tipo: 'outro', subtipo: 'divulgação', valor: 'canal oficial', label: 'Divulgação outros canais', principal: '0' },
       { tipo: 'telefone', subtipo: 'comercial pf', valor: '11981234567', label: 'Comercial PF', principal: '0' },
       { tipo: 'telefone', subtipo: 'comercial pj', valor: '1131234567', label: 'Comercial PJ', principal: '0' },
+      { tipo: 'website', subtipo: 'institucional', valor: 'https://www.uniodonto.coop.br', label: 'Institucional', principal: '1' },
+      { tipo: 'website', subtipo: 'portal do prestador', valor: 'https://prestador.uniodonto.coop.br', label: 'Portal do Prestador', principal: '0' },
+      { tipo: 'website', subtipo: 'portal do cliente', valor: 'https://cliente.uniodonto.coop.br', label: 'Portal do Cliente', principal: '0' },
+      { tipo: 'website', subtipo: 'portal da empresa', valor: 'https://empresa.uniodonto.coop.br', label: 'Portal da Empresa', principal: '0' },
+      { tipo: 'website', subtipo: 'portal do corretor', valor: 'https://corretor.uniodonto.coop.br', label: 'Portal do Corretor', principal: '0' },
+      { tipo: 'website', subtipo: 'e-commerce', valor: 'https://loja.uniodonto.coop.br', label: 'E-Commerce', principal: '0' },
+      { tipo: 'website', subtipo: 'portal do cooperado', valor: 'https://cooperado.uniodonto.coop.br', label: 'Portal do Cooperado', principal: '0' },
     ],
   },
   {
@@ -261,15 +355,14 @@ const RESOURCES: ResourceDef[] = [
       { key: 'primeiro_nome', label: 'Nome' },
       { key: 'sobrenome', label: 'Sobrenome' },
       { key: 'email', label: 'Email' },
-      { key: 'telefone_fixo', label: 'Fixo' },
-      { key: 'telefone_celular', label: 'Celular' },
+      { key: 'telefone', label: 'Telefone' },
     ],
     fields: [
       { key: 'primeiro_nome', label: 'Primeiro nome', type: 'text' },
       { key: 'sobrenome', label: 'Sobrenome', type: 'text' },
       { key: 'email', label: 'Email', type: 'text' },
-      { key: 'telefone_fixo', label: 'Telefone fixo', type: 'text' },
-      { key: 'telefone_celular', label: 'Telefone celular', type: 'text' },
+      { key: 'telefone', label: 'Telefone', type: 'text' },
+      { key: 'wpp', label: 'É WhatsApp', type: 'boolean' },
       { key: 'ativo', label: 'Ativo', type: 'boolean' },
     ],
   },
@@ -284,6 +377,102 @@ const RESOURCES: ResourceDef[] = [
       { key: 'modelo_atendimento', label: 'Modelo de atendimento', type: 'text' },
       { key: 'descricao', label: 'Descrição', type: 'textarea' },
       { key: 'ativo', label: 'Ativo', type: 'boolean' },
+    ],
+  },
+  {
+    key: 'plantao_contatos',
+    title: 'Contatos do plantão',
+    displayColumns: [
+      { key: 'tipo', label: 'Tipo' },
+      { key: 'numero_ou_url', label: 'Número / URL' },
+      { key: 'principal', label: 'Principal' },
+      { key: 'descricao', label: 'Descrição' },
+    ],
+    fields: [
+      {
+        key: 'tipo',
+        label: 'Tipo',
+        type: 'select',
+        options: [
+          { value: 'telefone', label: 'Telefone' },
+          { value: 'website', label: 'Website' },
+        ],
+      },
+      { key: 'numero_ou_url', label: 'Número ou URL', type: 'text' },
+      { key: 'wpp', label: 'É WhatsApp', type: 'boolean' },
+      { key: 'descricao', label: 'Descrição', type: 'text' },
+      { key: 'principal', label: 'Principal', type: 'boolean' },
+      { key: 'ativo', label: 'Ativo', type: 'boolean' },
+    ],
+    templateExamples: [
+      { tipo: 'telefone', numero_ou_url: '1133334444', principal: '1', descricao: 'Central de urgência 24h' },
+      { tipo: 'telefone', numero_ou_url: '11999998888', wpp: '1', principal: '0', descricao: 'Triagem e agendamento' },
+      { tipo: 'website', numero_ou_url: 'https://plantao.uniodonto.coop.br', principal: '0', descricao: 'Portal de orientação' },
+    ],
+  },
+  {
+    key: 'plantao_horarios',
+    title: 'Horários do plantão',
+    displayColumns: [
+      { key: 'plantao_clinica_id', label: 'Clínica (ID)' },
+      { key: 'dia_semana', label: 'Dia' },
+      { key: 'hora_inicio', label: 'Início' },
+      { key: 'hora_fim', label: 'Fim' },
+      { key: 'observacao', label: 'Observação' },
+    ],
+    fields: [
+      { key: 'plantao_clinica_id', label: 'ID da clínica (opcional)', type: 'text' },
+      { key: 'dia_semana', label: 'Dia da semana (0-6)', type: 'number' },
+      { key: 'hora_inicio', label: 'Hora início (HH:MM)', type: 'text' },
+      { key: 'hora_fim', label: 'Hora fim (HH:MM)', type: 'text' },
+      { key: 'observacao', label: 'Observação', type: 'text' },
+      { key: 'ativo', label: 'Ativo', type: 'boolean' },
+    ],
+    templateExamples: [
+      { plantao_clinica_id: '', dia_semana: '1', hora_inicio: '08:00', hora_fim: '18:00', observacao: 'Central telefônica' },
+      { plantao_clinica_id: '', dia_semana: '6', hora_inicio: '00:00', hora_fim: '23:59', observacao: 'Sábado 24h' },
+    ],
+  },
+  {
+    key: 'plantao_clinicas',
+    title: 'Clínicas próprias do plantão',
+    description: 'Informe o IBGE (cd_municipio_7) e o sistema preenche cidade/UF automaticamente.',
+    displayColumns: [
+      { key: 'cd_municipio_7', label: 'IBGE' },
+      { key: 'nome_local', label: 'Nome' },
+      { key: 'cidade', label: 'Cidade' },
+      { key: 'uf', label: 'UF' },
+      { key: 'telefone', label: 'Telefone' },
+      { key: 'descricao', label: 'Descrição' },
+    ],
+    fields: [
+      { key: 'cd_municipio_7', label: 'IBGE', type: 'text' },
+      { key: 'nome_local', label: 'Nome do local', type: 'text' },
+      { key: 'cep', label: 'CEP', type: 'text' },
+      { key: 'logradouro', label: 'Logradouro', type: 'text' },
+      { key: 'numero', label: 'Número', type: 'text' },
+      { key: 'complemento', label: 'Complemento', type: 'text' },
+      { key: 'bairro', label: 'Bairro', type: 'text' },
+      { key: 'cidade', label: 'Cidade (automático)', type: 'text' },
+      { key: 'uf', label: 'UF (automático)', type: 'text' },
+      { key: 'telefone', label: 'Telefone', type: 'text' },
+      { key: 'wpp', label: 'É WhatsApp', type: 'boolean' },
+      { key: 'descricao', label: 'Descrição', type: 'textarea' },
+      { key: 'ativo', label: 'Ativo', type: 'boolean' },
+    ],
+    templateExamples: [
+      {
+        cd_municipio_7: '3550308',
+        nome_local: 'Clínica 24h Centro',
+        cep: '01001000',
+        logradouro: 'Praca da Se',
+        numero: '100',
+        complemento: '',
+        bairro: 'Se',
+        telefone: '11999998888',
+        wpp: '1',
+        descricao: 'Atendimento 24h; referência para urgência/emergência.',
+      },
     ],
   },
 ];
@@ -315,6 +504,7 @@ const formatEnumLabel = (fieldKey: string, value: unknown) => {
       email: 'E-mail',
       telefone: 'Telefone',
       whatsapp: 'WhatsApp',
+      website: 'Website',
       outro: 'Outro',
       fiscal: 'Fiscal',
       administrativo: 'Administrativo',
@@ -336,6 +526,14 @@ const formatEnumLabel = (fieldKey: string, value: unknown) => {
       divulgacao: 'Divulgação',
       'comercial pf': 'Comercial PF',
       'comercial pj': 'Comercial PJ',
+      institucional: 'Institucional',
+      'portal do prestador': 'Portal do Prestador',
+      'portal do cliente': 'Portal do Cliente',
+      'portal da empresa': 'Portal da Empresa',
+      'portal do corretor': 'Portal do Corretor',
+      'e-commerce': 'E-Commerce',
+      ecommerce: 'E-Commerce',
+      'portal do cooperado': 'Portal do Cooperado',
     };
     return map[norm] ?? s;
   }
@@ -346,6 +544,27 @@ const formatEnumLabel = (fieldKey: string, value: unknown) => {
       suplente: 'Suplente',
     };
     return map[norm] ?? s;
+  }
+
+  if (fieldKey === 'tipo_unidade') {
+    const map: Record<string, string> = {
+      matriz: 'Matriz',
+      filial: 'Filial',
+    };
+    return map[norm] ?? s;
+  }
+
+  if (fieldKey === 'dia_semana') {
+    const map: Record<string, string> = {
+      '0': 'Domingo',
+      '1': 'Segunda',
+      '2': 'Terça',
+      '3': 'Quarta',
+      '4': 'Quinta',
+      '5': 'Sexta',
+      '6': 'Sábado',
+    };
+    return map[s] ?? s;
   }
 
   return s;
@@ -363,13 +582,19 @@ const formatCell = (value: unknown, fieldKey?: string) => {
 const onlyDigits = (value: unknown) => String(value ?? '').replace(/\D/g, '');
 
 const maskPhone = (value: unknown) => {
-  const digits = onlyDigits(value);
+  let digits = onlyDigits(value);
   if (!digits) return '';
+  if (digits.startsWith('55') && digits.length >= 12) {
+    digits = digits.slice(2);
+  }
   if (digits.startsWith('0800')) {
-    const base = digits.slice(0, 11);
+    const base = digits.slice(0, 12);
     if (base.length <= 4) return base;
-    if (base.length <= 7) return `${base.slice(0, 4)} ${base.slice(4)}`;
-    return `${base.slice(0, 4)} ${base.slice(4, 7)} ${base.slice(7, 11)}`;
+    if (base.length <= 8) return `${base.slice(0, 4)} ${base.slice(4)}`;
+    return `${base.slice(0, 4)} ${base.slice(4, 8)} ${base.slice(8, 12)}`;
+  }
+  if (digits.length === 11 && digits.charAt(2) === '9') {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 3)} ${digits.slice(3, 7)}-${digits.slice(7, 11)}`;
   }
   if (digits.length <= 10) {
     if (digits.length <= 2) return `(${digits}`;
@@ -403,11 +628,51 @@ const normalizeKey = (value: unknown) =>
     .replace(/[\u0300-\u036f]/g, '')
     .trim();
 
-const isPhoneField = (fieldKey: string) => ['telefone', 'telefone_fixo', 'telefone_celular'].includes(fieldKey);
+const getDiretorSortRank = (cargo: unknown, pasta?: unknown) => {
+  const c = normalizeKey(cargo);
+  const p = normalizeKey(pasta);
+  const role = [c, p].filter(Boolean).join(' ').trim();
+  if (!role) return 2;
+  if (role.includes('presidente') && !role.includes('vice')) return 0;
+  if (role.includes('vice') && role.includes('presidente')) return 1;
+  return 2;
+};
+
+const getDiretorSortName = (row: AuxRow) => {
+  const nome = `${String(row.primeiro_nome ?? '').trim()} ${String(row.sobrenome ?? '').trim()}`.trim();
+  return normalizeKey(nome);
+};
+
+const getDiretorSortCargo = (row: AuxRow) => {
+  const cargo = String(row.cargo ?? '').trim();
+  const pasta = String(row.pasta ?? '').trim();
+  return normalizeKey([cargo, pasta].filter(Boolean).join(' '));
+};
+
+const compareDiretores = (a: AuxRow, b: AuxRow) => {
+  const rankDiff = getDiretorSortRank(a.cargo, a.pasta) - getDiretorSortRank(b.cargo, b.pasta);
+  if (rankDiff !== 0) return rankDiff;
+
+  const nameDiff = getDiretorSortName(a).localeCompare(getDiretorSortName(b), 'pt-BR');
+  if (nameDiff !== 0) return nameDiff;
+
+  return getDiretorSortCargo(a).localeCompare(getDiretorSortCargo(b), 'pt-BR');
+};
+
+const isPhoneField = (fieldKey: string) => ['telefone'].includes(fieldKey);
+
+const parseDepartamentoTags = (value: unknown) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return [];
+  return raw
+    .split(/[;,|]/g)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+};
 
 const isStandardizedField = (fieldKey: string, def?: ResourceDef) => {
   const normalized = normalizeKey(fieldKey);
-  if (['tipo', 'subtipo', 'posicao'].includes(normalized)) return true;
+  if (['tipo', 'subtipo', 'posicao', 'tipo_unidade'].includes(normalized)) return true;
   if (!def) return false;
   return def.fields.some((field) => field.key === fieldKey && field.type === 'select');
 };
@@ -451,6 +716,12 @@ const getBadgeToneClass = (fieldKey: string, value: unknown) => {
       : 'bg-sky-50 text-sky-700 border-sky-200';
   }
 
+  if (key === 'tipo_unidade') {
+    return val === 'matriz'
+      ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+      : 'bg-amber-50 text-amber-700 border-amber-200';
+  }
+
   return 'bg-slate-100 text-slate-700 border-slate-200';
 };
 
@@ -460,7 +731,7 @@ function buildTemplateCsv(def: ResourceDef) {
     .map((f) => f.key)
     .filter((k) => k !== 'ativo')
     // Endereços: cidade/UF são preenchidos automaticamente a partir do código IBGE.
-    .filter((k) => !(def.key === 'enderecos' && (k === 'cidade' || k === 'uf')));
+    .filter((k) => !((def.key === 'enderecos' || def.key === 'plantao_clinicas') && (k === 'cidade' || k === 'uf')));
   const escapeCsv = (value: unknown) => {
     const s = String(value ?? '');
     if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
@@ -495,12 +766,15 @@ const applyInputMask = (fieldKey: string, value: string, row?: AuxRow) => {
   if (normalizedField === 'valor' && row && ['telefone', 'whatsapp'].includes(normalizeKey(row.tipo))) {
     return maskPhone(value);
   }
+  if (normalizedField === 'numero_ou_url' && row && ['telefone', 'whatsapp'].includes(normalizeKey(row.tipo))) {
+    return maskPhone(value);
+  }
   return value;
 };
 
 const formatDisplayValue = (value: unknown, fieldKey: string, row?: AuxRow, def?: ResourceDef) => {
   const normalizedField = normalizeKey(fieldKey);
-  if (normalizedField === 'telefone_celular' && row && toBool(row.telefone_celular_restrito)) {
+  if (normalizedField === 'telefone' && row && toBool(row.telefone_celular_restrito)) {
     return (
       <span className="inline-flex items-center gap-1 text-amber-700">
         <Shield className="h-3.5 w-3.5" />
@@ -514,16 +788,54 @@ const formatDisplayValue = (value: unknown, fieldKey: string, row?: AuxRow, def?
   if (normalizedField === 'divulgar_celular') {
     return toBool(value) ? <Check className="h-4 w-4 text-emerald-600" aria-label="Divulgação ativa" /> : '';
   }
+  if (normalizedField === 'wpp') {
+    return toBool(value) ? <MessageCircle className="h-4 w-4 text-emerald-600" aria-label="WhatsApp" /> : '';
+  }
+  if (normalizedField === 'chefia') {
+    return toBool(value) ? <Check className="h-4 w-4 text-emerald-600" aria-label="Chefia" /> : '';
+  }
   if (normalizedField === 'ativo') {
     return toBool(value)
       ? <Check className="h-4 w-4 text-emerald-600" aria-label="Ativo" />
       : <X className="h-4 w-4 text-red-500" aria-label="Inativo" />;
   }
+  if (normalizedField === 'departamento') {
+    const tags = parseDepartamentoTags(value);
+    if (!tags.length) return '—';
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {tags.map((tag, idx) => (
+          <Badge
+            key={`${tag}-${idx}`}
+            variant="outline"
+            className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-700"
+          >
+            {tag}
+          </Badge>
+        ))}
+      </div>
+    );
+  }
   if (normalizedField.includes('cpf')) return maskCpf(value);
   if (normalizedField.includes('cnpj')) return maskCnpj(value);
   if (isPhoneField(normalizedField)) return maskPhone(value);
   if (normalizedField === 'valor' && row && ['telefone', 'whatsapp'].includes(normalizeKey(row.tipo))) {
-    return maskPhone(value);
+    const formatted = maskPhone(value);
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <span>{formatted}</span>
+        {toBool(row.wpp) && <MessageCircle className="h-4 w-4 text-emerald-600" aria-label="WhatsApp" />}
+      </span>
+    );
+  }
+  if (normalizedField === 'numero_ou_url' && row && ['telefone', 'whatsapp'].includes(normalizeKey(row.tipo))) {
+    const formatted = maskPhone(value);
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <span>{formatted}</span>
+        {toBool(row.wpp) && <MessageCircle className="h-4 w-4 text-emerald-600" aria-label="WhatsApp" />}
+      </span>
+    );
   }
   if (isStandardizedField(fieldKey, def)) {
     const label = formatCell(value, fieldKey);
@@ -547,6 +859,12 @@ type CooperativaAuxiliaresTabProps = {
 
 export function CooperativaAuxiliaresTab({ idSingular, canEdit, resourceKey }: CooperativaAuxiliaresTabProps) {
   const { user } = useAuth();
+  const plantaoScopedKeys = useMemo(() => ['plantao', 'plantao_clinicas', 'plantao_contatos', 'plantao_horarios'], []);
+  const showScopedSelector = resourceKey === 'plantao';
+  const selectorResources = useMemo(
+    () => (showScopedSelector ? RESOURCES.filter((r) => plantaoScopedKeys.includes(r.key)) : RESOURCES),
+    [showScopedSelector, plantaoScopedKeys],
+  );
   const [internalActiveKey, setInternalActiveKey] = useState<string>(RESOURCES[0].key);
   const [data, setData] = useState<Record<string, AuxRow[]>>({});
   const [, setLoadingKey] = useState<string | null>(null);
@@ -567,9 +885,10 @@ export function CooperativaAuxiliaresTab({ idSingular, canEdit, resourceKey }: C
   const [isLoadingPhoneRequests, setIsLoadingPhoneRequests] = useState(false);
   const [requestingDirectorId, setRequestingDirectorId] = useState<string | null>(null);
   const [processingPhoneRequestId, setProcessingPhoneRequestId] = useState<string | null>(null);
+  const [updatingFieldId, setUpdatingFieldId] = useState<string | null>(null);
 
   const defs = useMemo(() => new Map(RESOURCES.map((r) => [r.key, r])), []);
-  const activeKey = resourceKey && defs.has(resourceKey) ? resourceKey : internalActiveKey;
+  const activeKey = resourceKey && defs.has(resourceKey) && !showScopedSelector ? resourceKey : internalActiveKey;
   const activeDef = defs.get(activeKey)!;
   const rows = data[activeKey] ?? [];
   const subtipoField = activeDef.fields.find((field) => field.key === 'subtipo');
@@ -577,7 +896,7 @@ export function CooperativaAuxiliaresTab({ idSingular, canEdit, resourceKey }: C
 
   const filteredRows = useMemo(() => {
     const query = normalizeKey(searchTerm);
-    return rows.filter((row) => {
+    const base = rows.filter((row) => {
       if (activeKey === 'contatos' && subtipoFilter !== 'all' && normalizeKey(row.subtipo) !== subtipoFilter) {
         return false;
       }
@@ -591,6 +910,9 @@ export function CooperativaAuxiliaresTab({ idSingular, canEdit, resourceKey }: C
         return normalizeKey(asText).includes(query);
       });
     });
+    if (activeKey !== 'diretores') return base;
+
+    return base.slice().sort(compareDiretores);
   }, [activeDef.displayColumns, activeKey, rows, searchTerm, subtipoFilter]);
 
   const canModerateDiretorPhoneRequests = useMemo(
@@ -677,6 +999,36 @@ export function CooperativaAuxiliaresTab({ idSingular, canEdit, resourceKey }: C
       setError(e instanceof Error ? e.message : 'Erro ao remover registro');
     }
   };
+
+  const isInlineToggleField = useCallback((key: string, fieldKey: string) => {
+    if (key === 'diretores' && fieldKey === 'divulgar_celular') return true;
+    if (key === 'contatos' && fieldKey === 'principal') return true;
+    if (key === 'colaboradores' && fieldKey === 'chefia') return true;
+    return false;
+  }, []);
+
+  const updateInlineBooleanField = useCallback(async (key: string, row: AuxRow, fieldKey: string, checked: boolean) => {
+    if (!canEdit) return;
+    const rowId = String(row.id ?? '');
+    if (!rowId) return;
+    const lockId = `${key}:${rowId}:${fieldKey}`;
+    try {
+      setUpdatingFieldId(lockId);
+      setError('');
+      setData((prev) => ({
+        ...prev,
+        [key]: (prev[key] ?? []).map((item) => (item.id === row.id ? { ...item, [fieldKey]: checked } : item)),
+      }));
+      await apiService.updateCooperativaAuxItem(idSingular, key, rowId, { [fieldKey]: checked });
+      await load(key);
+    } catch (e) {
+      console.error('Erro ao atualizar campo booleano:', e);
+      setError(e instanceof Error ? e.message : 'Erro ao atualizar valor');
+      await load(key);
+    } finally {
+      setUpdatingFieldId(null);
+    }
+  }, [canEdit, idSingular, load]);
 
   const handleImportFile = async (file: File | null) => {
     setImportFile(file);
@@ -788,6 +1140,18 @@ export function CooperativaAuxiliaresTab({ idSingular, canEdit, resourceKey }: C
 
   // lazy load
   useEffect(() => {
+    if (showScopedSelector) {
+      if (!plantaoScopedKeys.includes(internalActiveKey)) {
+        setInternalActiveKey('plantao');
+      }
+      return;
+    }
+    if (resourceKey && defs.has(resourceKey)) {
+      setInternalActiveKey(resourceKey);
+    }
+  }, [defs, internalActiveKey, plantaoScopedKeys, resourceKey, showScopedSelector]);
+
+  useEffect(() => {
     void ensureLoaded(activeKey);
   }, [activeKey, ensureLoaded]);
 
@@ -813,9 +1177,9 @@ export function CooperativaAuxiliaresTab({ idSingular, canEdit, resourceKey }: C
         </div>
       )}
 
-      {!resourceKey && (
+      {(!resourceKey || showScopedSelector) && (
         <div className="flex flex-wrap gap-2">
-          {RESOURCES.map((r) => (
+          {selectorResources.map((r) => (
             <Button
               key={r.key}
               variant={activeKey === r.key ? 'default' : 'outline'}
@@ -1083,7 +1447,20 @@ export function CooperativaAuxiliaresTab({ idSingular, canEdit, resourceKey }: C
                   filteredRows.map((row) => (
                     <TableRow key={row.id}>
                       {activeDef.displayColumns.map((col) => (
-                        <TableCell key={col.key}>{formatDisplayValue(row[col.key], col.key, row, activeDef)}</TableCell>
+                        <TableCell key={col.key}>
+                          {isInlineToggleField(activeKey, col.key) ? (
+                            <div className="flex items-center justify-center md:justify-start">
+                              <Switch
+                                checked={toBool(row[col.key])}
+                                onCheckedChange={(checked) => void updateInlineBooleanField(activeKey, row, col.key, checked)}
+                                disabled={!canEdit || updatingFieldId === `${activeKey}:${String(row.id)}:${col.key}`}
+                                aria-label={`Alternar ${col.label}`}
+                              />
+                            </div>
+                          ) : (
+                            formatDisplayValue(row[col.key], col.key, row, activeDef)
+                          )}
+                        </TableCell>
                       ))}
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">

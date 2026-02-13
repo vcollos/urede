@@ -62,7 +62,7 @@ class ApiService {
     email: string;
     cargo?: string;
     telefone?: string;
-    whatsapp?: string;
+    wpp?: boolean;
     id_singular: string;
     senha_temporaria?: string;
     forcar_troca_senha?: boolean;

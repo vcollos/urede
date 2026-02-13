@@ -67,3 +67,23 @@ Notas:
 
 - O projeto não depende mais de serviços externos. Todo acesso é local (SQLite).
 - Para agendamentos, use um scheduler externo que faça POST `/` com header `x-cron: true` e body `{ "task": "escalar" }`.
+
+## Padrão de Telefone (Regra de Dados)
+
+Regra vigente do sistema (cadastros e importações):
+- Usar um único campo `telefone` (string com somente dígitos).
+- Usar `wpp` (boolean/integer 0/1) para indicar se o telefone também atende por WhatsApp.
+- Colunas legadas (`telefone_fixo`, `telefone_celular`, `whatsapp` texto) permanecem apenas para compatibilidade.
+
+Formatação no frontend (Brasil):
+- Celular: `(DD) 9 0000-0000` (11 dígitos, 3º dígito = 9).
+- Fixo: `(DD) 0000-0000` (10 dígitos).
+- 0800: `0800 0000 0000` (quando vier com 12 dígitos).
+
+Migração aplicada:
+- `db/migrations/sqlite/20260213_015_telefone_unificado_wpp.sql`
+- `db/migrations/sqlite/20260213_016_operadores_telefone_wpp.sql`
+
+Administração:
+- O menu `Usuários` (antes `Responsáveis`) e `Gestão de dados` ficam dentro de `Configurações`.
+- Ambos são visíveis apenas para perfis `admin`.

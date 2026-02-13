@@ -38,9 +38,37 @@ const deriveDefaultBase = () => {
   return '';
 };
 
-const DEFAULT_API_BASE = (envApiBaseUrl && envApiBaseUrl.trim())
-  ? envApiBaseUrl.replace(/\/$/, '')
-  : deriveDefaultBase();
+const isLoopbackHostname = (host: string) =>
+  host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0';
+
+const isLoopbackUrl = (value: string) => {
+  try {
+    const parsed = new URL(value);
+    return isLoopbackHostname(parsed.hostname);
+  } catch {
+    return false;
+  }
+};
+
+const deriveApiBase = () => {
+  const trimmed = envApiBaseUrl?.trim();
+  const derived = deriveDefaultBase();
+
+  if (!trimmed) return derived;
+
+  // Se o frontend estiver aberto por IP/rede e o env apontar para loopback,
+  // priorizamos a URL derivada para evitar chamadas locais inválidas no celular.
+  if (typeof window !== 'undefined' && window.location) {
+    const currentHost = window.location.hostname || '';
+    if (!isLoopbackHostname(currentHost) && isLoopbackUrl(trimmed)) {
+      return derived || trimmed.replace(/\/$/, '');
+    }
+  }
+
+  return trimmed.replace(/\/$/, '');
+};
+
+const DEFAULT_API_BASE = deriveApiBase();
 
 export const serverUrl = DEFAULT_API_BASE || '';
 

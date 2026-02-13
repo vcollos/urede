@@ -199,6 +199,16 @@ bash scripts/import-csv-sqlite.sh
 ## 9. Estrutura de Pastas (Simplificada)
 
 ```
+
+---
+
+## Atualizações Recentes (Admin e Usuários)
+
+- Telefones de `urede_operadores` foram unificados em `telefone` com flag booleana `wpp`.
+- O campo legado `whatsapp` texto permanece apenas para retrocompatibilidade.
+- Na UI de usuários, o contato é exibido em uma única linha de telefone com ícone do WhatsApp quando `wpp=true`.
+- O menu `Responsáveis` foi renomeado para `Usuários`.
+- `Usuários` e `Gestão de dados` agora aparecem como subitens de `Configurações`, somente para administradores.
 .
 ├── src/
 │   ├── App.tsx
@@ -254,6 +264,20 @@ bash scripts/import-csv-sqlite.sh
 ### 10.3 Cooperativas / Operadores
 - `CooperativasView` (componente inline em `App`) -> `/cooperativas`, `/operadores`, `/cidades`
 - `OperadoresLista` -> `/operadores`
+
+### 10.5 Padrão de Telefonia (vigente)
+- Campo canônico: `telefone` (string, somente números).
+- Indicador de WhatsApp: `wpp` (0/1).
+- Em contatos (`cooperativa_contatos` e `cooperativa_plantao_contatos`), `tipo` telefônico é padronizado para `telefone`; WhatsApp é identificado por `wpp=1`.
+- Colunas legadas (`telefone_fixo`, `telefone_celular`, `whatsapp` texto) são mantidas para retrocompatibilidade, mas não devem ser usadas em novas implementações.
+
+Regras de exibição:
+- Celular BR: `(DD) 9 0000-0000`
+- Fixo BR: `(DD) 0000-0000`
+- 0800: `0800 0000 0000`
+
+Migração de referência:
+- `db/migrations/sqlite/20260213_015_telefone_unificado_wpp.sql`
 
 ### 10.4 Dashboard
 - `/dashboard/stats` + `/pedidos`

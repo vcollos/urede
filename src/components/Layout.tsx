@@ -265,12 +265,16 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
     { id: 'relatorios', label: 'Relatórios', icon: PieChart },
     { id: 'pedidos', label: 'Pedidos', icon: FileText },
     ...(canCreatePedido ? [{ id: 'importacao', label: 'Pedidos em lote', icon: UploadCloud }] : []),
-    ...(isAdmin ? [{ id: 'gestao_dados', label: 'Gestão de dados', icon: Database }] : []),
     { id: 'cooperativas', label: 'Cooperativas', icon: Building2 },
-    { id: 'operadores', label: 'Responsáveis', icon: User },
     { id: 'cidades', label: 'Cidades', icon: Map },
     { id: 'configuracoes', label: 'Configurações', icon: Settings },
   ];
+  const configuracoesSubItems = isAdmin
+    ? [
+      { id: 'operadores', label: 'Usuários', icon: User },
+      { id: 'gestao_dados', label: 'Gestão de dados', icon: Database },
+    ]
+    : [];
 
   const cooperativaScopeLabel = (() => {
     switch (cooperativaTipo) {
@@ -306,11 +310,16 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
   })();
 
   const handleTabChange = (tab: string) => {
+    if (tab === 'cooperativas' && activeTab === 'cooperativas') {
+      window.dispatchEvent(new CustomEvent('cooperativas:go-list'));
+    }
     onTabChange(tab);
     setMobileNavOpen(false);
   };
 
-  const activeTabLabel = menuItems.find((item) => item.id === activeTab)?.label ?? 'Dashboard';
+  const activeTabLabel = menuItems.find((item) => item.id === activeTab)?.label
+    ?? configuracoesSubItems.find((item) => item.id === activeTab)?.label
+    ?? 'Dashboard';
 
   const renderAlertsDropdown = (triggerClass?: string) => {
     const hasUnread = unreadCount > 0;
@@ -451,22 +460,50 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
             <div className="space-y-2">
               {menuItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = activeTab === item.id;
+                const isConfigGroup = item.id === 'configuracoes';
+                const isActive = isConfigGroup
+                  ? activeTab === 'configuracoes' || configuracoesSubItems.some((sub) => sub.id === activeTab)
+                  : activeTab === item.id;
                 return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => handleTabChange(item.id)}
-                    className={cn(
-                      'w-full flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold transition',
-                      isActive
-                        ? 'bg-gradient-to-r from-[#7B6EF6] to-[#A77BFF] text-white shadow-[0_18px_35px_-20px_rgba(123,110,246,0.6)]'
-                        : 'bg-white/80 text-gray-600 hover:text-gray-900 hover:bg-white shadow-sm border border-white/40'
+                  <div key={item.id} className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => handleTabChange(item.id)}
+                      className={cn(
+                        'w-full flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold transition',
+                        isActive
+                          ? 'bg-gradient-to-r from-[#7B6EF6] to-[#A77BFF] text-white shadow-[0_18px_35px_-20px_rgba(123,110,246,0.6)]'
+                          : 'bg-white/80 text-gray-600 hover:text-gray-900 hover:bg-white shadow-sm border border-white/40'
+                      )}
+                    >
+                      <Icon className="w-4 h-4" />
+                      {item.label}
+                    </button>
+                    {isConfigGroup && configuracoesSubItems.length > 0 && (
+                      <div className="pl-3 space-y-1">
+                        {configuracoesSubItems.map((sub) => {
+                          const SubIcon = sub.icon;
+                          const isSubActive = activeTab === sub.id;
+                          return (
+                            <button
+                              key={sub.id}
+                              type="button"
+                              onClick={() => handleTabChange(sub.id)}
+                              className={cn(
+                                'w-full flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition',
+                                isSubActive
+                                  ? 'bg-white text-[#5B46C8] border border-[#D8D1FF]'
+                                  : 'text-gray-600 hover:text-gray-900 hover:bg-white/80'
+                              )}
+                            >
+                              <SubIcon className="w-4 h-4" />
+                              {sub.label}
+                            </button>
+                          );
+                        })}
+                      </div>
                     )}
-                  >
-                    <Icon className="w-4 h-4" />
-                    {item.label}
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -653,25 +690,55 @@ export function Layout({ children, activeTab, onTabChange, onCreatePedido, onOpe
               <div className="space-y-2">
                 {menuItems.map((item) => {
                   const Icon = item.icon;
-                  const isActive = activeTab === item.id;
+                  const isConfigGroup = item.id === 'configuracoes';
+                  const isActive = isConfigGroup
+                    ? activeTab === 'configuracoes' || configuracoesSubItems.some((sub) => sub.id === activeTab)
+                    : activeTab === item.id;
 
                   return (
-                    <Button
-                      key={`mobile-${item.id}`}
-                      variant={isActive ? 'default' : 'ghost'}
-                      className={`w-full justify-start ${
-                        isActive
-                          ? 'bg-purple-600 text-white hover:bg-purple-700'
-                          : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
-                      }`}
-                      onClick={() => {
-                        handleTabChange(item.id);
-                        setMobileNavOpen(false);
-                      }}
-                    >
-                      <Icon className="w-4 h-4 mr-3" />
-                      {item.label}
-                    </Button>
+                    <div key={`mobile-${item.id}`} className="space-y-2">
+                      <Button
+                        variant={isActive ? 'default' : 'ghost'}
+                        className={`w-full justify-start ${
+                          isActive
+                            ? 'bg-purple-600 text-white hover:bg-purple-700'
+                            : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
+                        }`}
+                        onClick={() => {
+                          handleTabChange(item.id);
+                          setMobileNavOpen(false);
+                        }}
+                      >
+                        <Icon className="w-4 h-4 mr-3" />
+                        {item.label}
+                      </Button>
+                      {isConfigGroup && configuracoesSubItems.length > 0 && (
+                        <div className="pl-4 space-y-1">
+                          {configuracoesSubItems.map((sub) => {
+                            const SubIcon = sub.icon;
+                            const isSubActive = activeTab === sub.id;
+                            return (
+                              <Button
+                                key={`mobile-sub-${sub.id}`}
+                                variant={isSubActive ? 'default' : 'ghost'}
+                                className={`w-full justify-start ${
+                                  isSubActive
+                                    ? 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                                    : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
+                                }`}
+                                onClick={() => {
+                                  handleTabChange(sub.id);
+                                  setMobileNavOpen(false);
+                                }}
+                              >
+                                <SubIcon className="w-4 h-4 mr-3" />
+                                {sub.label}
+                              </Button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>

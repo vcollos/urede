@@ -99,6 +99,22 @@ CREATE TABLE IF NOT EXISTS urede_cooperativa_auditores (
 );
 CREATE INDEX IF NOT EXISTS idx_coop_auditores_id_singular ON urede_cooperativa_auditores(id_singular);
 
+CREATE TABLE IF NOT EXISTS urede_cooperativa_colaboradores (
+  id TEXT PRIMARY KEY NOT NULL DEFAULT (lower(hex(randomblob(16)))),
+  id_singular TEXT NOT NULL REFERENCES urede_cooperativas(id_singular) ON DELETE CASCADE,
+  nome TEXT NOT NULL,
+  sobrenome TEXT,
+  email TEXT,
+  telefone TEXT,
+  telefone_tipo TEXT NOT NULL DEFAULT 'telefone' CHECK (telefone_tipo IN ('telefone','whatsapp')),
+  departamento TEXT NOT NULL,
+  chefia INTEGER DEFAULT 0,
+  ativo INTEGER DEFAULT 1,
+  criado_em TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+CREATE INDEX IF NOT EXISTS idx_coop_colaboradores_id_singular ON urede_cooperativa_colaboradores(id_singular);
+CREATE INDEX IF NOT EXISTS idx_coop_colaboradores_email ON urede_cooperativa_colaboradores(email);
+
 CREATE TABLE IF NOT EXISTS urede_cooperativa_conselhos (
   id TEXT PRIMARY KEY NOT NULL DEFAULT (lower(hex(randomblob(16)))),
   id_singular TEXT NOT NULL REFERENCES urede_cooperativas(id_singular) ON DELETE CASCADE,
@@ -199,6 +215,21 @@ CREATE TABLE IF NOT EXISTS urede_cooperativa_plantao (
 );
 CREATE INDEX IF NOT EXISTS idx_coop_plantao_id_singular ON urede_cooperativa_plantao(id_singular);
 
+CREATE TABLE IF NOT EXISTS urede_cooperativa_regulatorio (
+  id TEXT PRIMARY KEY NOT NULL DEFAULT (lower(hex(randomblob(16)))),
+  id_singular TEXT NOT NULL REFERENCES urede_cooperativas(id_singular) ON DELETE CASCADE,
+  tipo_unidade TEXT NOT NULL CHECK (tipo_unidade IN ('matriz','filial')),
+  nome_unidade TEXT,
+  reg_ans TEXT,
+  responsavel_tecnico TEXT NOT NULL,
+  email_responsavel_tecnico TEXT NOT NULL,
+  cro_responsavel_tecnico TEXT NOT NULL,
+  cro_unidade TEXT NOT NULL,
+  ativo INTEGER DEFAULT 1,
+  criado_em TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+CREATE INDEX IF NOT EXISTS idx_coop_regulatorio_id_singular ON urede_cooperativa_regulatorio(id_singular);
+
 -- urede_cidades (ordem das colunas igual ao CSV)
 CREATE TABLE IF NOT EXISTS urede_cidades (
   CD_MUNICIPIO_7    TEXT PRIMARY KEY,
@@ -243,6 +274,7 @@ CREATE TABLE IF NOT EXISTS urede_operadores (
   email       TEXT,
   telefone    TEXT,
   whatsapp    TEXT,
+  wpp         INTEGER DEFAULT 0,
   cargo       TEXT,
   status      INTEGER CHECK (status IN (0,1))
 );
