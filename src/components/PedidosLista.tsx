@@ -149,26 +149,7 @@ export function PedidosLista({
     const loadPedidos = async () => {
       try {
         setIsLoading(true);
-        let pedidosData = await apiService.getPedidos();
-
-        const pedidosParaTransferir = pedidosData.filter(
-          (pedido) =>
-            !pedido.excluido &&
-            pedido.dias_restantes <= 0 &&
-            (pedido.status === 'novo' || pedido.status === 'em_andamento') &&
-            pedido.nivel_atual !== 'confederacao'
-        );
-
-        if (pedidosParaTransferir.length > 0) {
-          try {
-            await Promise.all(
-              pedidosParaTransferir.map((pedido) => apiService.transferirPedido(pedido.id))
-            );
-            pedidosData = await apiService.getPedidos();
-          } catch (transferError) {
-            console.error('Erro ao aplicar regra de transferência automática:', transferError);
-          }
-        }
+        const pedidosData = await apiService.getPedidos();
 
         setPedidos(pedidosData.filter((pedido) => !pedido.excluido));
       } catch (err) {
@@ -891,8 +872,7 @@ export function PedidosLista({
                   <Button
                     type="button"
                     variant="outline"
-                    size="sm"
-                    className="w-full md:w-48 justify-between"
+                    className="w-full md:w-48 h-10 justify-between rounded-md border border-input bg-background px-3 py-2 text-sm font-normal shadow-none"
                   >
                     <span className="truncate text-left">{statusButtonLabel}</span>
                     <svg

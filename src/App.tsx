@@ -22,6 +22,17 @@ import { GestaoDadosPage } from './components/GestaoDadosPage';
 // Componente interno que usa o AuthContext
 function AppContent() {
   const { isAuthenticated, isLoading, user, refreshUser } = useAuth();
+  const tabPathMap: Record<string, string> = {
+    dashboard: '/',
+    pedidos: '/pedidos',
+    importacao: '/importacao',
+    gestao_dados: '/gestao_dados',
+    cooperativas: '/cooperativas',
+    operadores: '/operadores',
+    cidades: '/cidades',
+    configuracoes: '/configuracoes',
+    relatorios: '/relatorios',
+  };
   const deriveTabFromPath = useMemo(() => {
     return (pathname: string) => {
       if (pathname.startsWith('/cooperativas')) return 'cooperativas';
@@ -66,6 +77,7 @@ function AppContent() {
   useEffect(() => {
     const handle = () => {
       setActiveTab(deriveTabFromPath(window.location.pathname));
+      setSelectedPedido(null);
     };
     window.addEventListener('popstate', handle);
     return () => window.removeEventListener('popstate', handle);
@@ -137,6 +149,19 @@ function AppContent() {
     setSelectedPedido(null);
   };
 
+  const handleSidebarTabChange = (tab: string) => {
+    const path = tabPathMap[tab] ?? '/';
+    if (typeof window !== 'undefined' && window.location.pathname !== path) {
+      window.history.pushState({ tab }, '', path);
+    }
+    setShowNovoPedido(false);
+    setSelectedPedido(null);
+    if (tab !== 'pedidos') {
+      setPedidosPresetFilter(null);
+    }
+    setActiveTab(tab);
+  };
+
   const navigateToPedidosWithFilter = (filter: PedidosFilterPreset) => {
     setActiveTab('pedidos');
     setSelectedPedido(null);
@@ -166,10 +191,23 @@ function AppContent() {
         return (
           <Dashboard
             onNavigateToPedidos={navigateToPedidosWithFilter}
-            onViewPedido={(pedido) => setSelectedPedido(pedido)}
+            onViewPedido={(pedido) => {
+              setSelectedPedido(pedido);
+              setActiveTab('pedidos');
+            }}
           />
         );
       case 'pedidos':
+        if (selectedPedido) {
+          return (
+            <PedidoDetalhes
+              pedido={selectedPedido}
+              inline
+              onClose={() => setSelectedPedido(null)}
+              onUpdatePedido={handleUpdatePedido}
+            />
+          );
+        }
         return (
           <PedidosLista
             onViewPedido={(pedido) => setSelectedPedido(pedido)}
@@ -200,7 +238,7 @@ function AppContent() {
     <div className="h-screen bg-gray-50 dark:bg-slate-950">
       <Layout
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={handleSidebarTabChange}
         onCreatePedido={openNovoPedido}
         onOpenPedido={handleOpenPedidoFromAlert}
         onOpenImportacao={handleOpenImportacao}
@@ -216,13 +254,6 @@ function AppContent() {
         />
       )}
 
-      {selectedPedido && (
-        <PedidoDetalhes
-          pedido={selectedPedido}
-          onClose={() => setSelectedPedido(null)}
-          onUpdatePedido={handleUpdatePedido}
-        />
-      )}
     </div>
   );
 }

@@ -41,6 +41,7 @@ interface PedidoDetalhesProps {
   pedido: Pedido;
   onClose: () => void;
   onUpdatePedido: (pedidoId: string, updates: Partial<Pedido>) => void;
+  inline?: boolean;
 }
 
 const comentarioRegex = /\(\d{2}\/\d{2}\/\d{4}.*\):/;
@@ -52,7 +53,7 @@ const extractInitialJustificativa = (conteudo: string) => {
   return lines.slice(0, cutoff).join('\n').trim();
 };
 
-export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalhesProps) {
+export function PedidoDetalhes({ pedido, onClose, onUpdatePedido, inline = false }: PedidoDetalhesProps) {
   const [novoStatus, setNovoStatus] = useState(pedido.status);
   const [comentario, setComentario] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
@@ -290,53 +291,99 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
     ? extractInitialJustificativa(pedido.observacoes)
     : '';
 
-  return (
-    <Dialog open onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
-      <DialogContent
-        className="w-full max-h-[90vh] overflow-y-auto p-0"
-        style={{ maxWidth: '960px' }}
-      >
-        <DialogHeader className="border-b p-6 text-left">
-          <div className="flex items-center justify-between gap-4">
-            <div className="min-w-0 flex-1">
-              <DialogTitle className="truncate text-xl font-semibold text-gray-900">
-                {pedido.titulo}
-              </DialogTitle>
-              <DialogDescription className="mt-1 text-sm text-gray-500">
-                ID: {pedido.id} • Criado em {formatDateShort(pedido.data_criacao)}
-              </DialogDescription>
-              <p className="text-xs text-gray-600 mt-1">
-                {pedido.ponto_de_vista === 'feita' && 'Solicitação feita'}
-                {pedido.ponto_de_vista === 'recebida' && 'Solicitação recebida'}
-                {pedido.ponto_de_vista === 'interna' && 'Interna'}
-                {(!pedido.ponto_de_vista || pedido.ponto_de_vista === 'acompanhamento') && 'Acompanhamento'}
-                {(pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome)
-                  ? ` • Responsável: ${pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome}`
-                  : ''}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              {canDelete() && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" aria-label="Mais opções">
-                      <MoreVertical className="w-5 h-5" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onClick={handleDelete}
-                      disabled={isDeleting}
-                    >
-                      {isDeleting ? 'Excluindo...' : 'Excluir pedido'}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
+  const content = (
+    <>
+        {inline ? (
+          <div className="border-b p-6 text-left">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <h1 className="truncate text-xl font-semibold text-gray-900">
+                  {pedido.titulo}
+                </h1>
+                <p className="mt-1 text-sm text-gray-500">
+                  ID: {pedido.id} • Criado em {formatDateShort(pedido.data_criacao)}
+                </p>
+                <p className="mt-1 text-xs text-gray-600">
+                  {pedido.ponto_de_vista === 'feita' && 'Solicitação feita'}
+                  {pedido.ponto_de_vista === 'recebida' && 'Solicitação recebida'}
+                  {pedido.ponto_de_vista === 'interna' && 'Interna'}
+                  {(!pedido.ponto_de_vista || pedido.ponto_de_vista === 'acompanhamento') && 'Acompanhamento'}
+                  {(pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome)
+                    ? ` • Responsável: ${pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome}`
+                    : ''}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={onClose}>
+                  Voltar para pedidos
+                </Button>
+                {canDelete() && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" aria-label="Mais opções">
+                        <MoreVertical className="w-5 h-5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={handleDelete}
+                        disabled={isDeleting}
+                      >
+                        {isDeleting ? 'Excluindo...' : 'Excluir pedido'}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
             </div>
           </div>
-        </DialogHeader>
+        ) : (
+          <DialogHeader className="border-b p-6 text-left">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <DialogTitle className="truncate text-xl font-semibold text-gray-900">
+                  {pedido.titulo}
+                </DialogTitle>
+                <DialogDescription className="mt-1 text-sm text-gray-500">
+                  ID: {pedido.id} • Criado em {formatDateShort(pedido.data_criacao)}
+                </DialogDescription>
+                <p className="mt-1 text-xs text-gray-600">
+                  {pedido.ponto_de_vista === 'feita' && 'Solicitação feita'}
+                  {pedido.ponto_de_vista === 'recebida' && 'Solicitação recebida'}
+                  {pedido.ponto_de_vista === 'interna' && 'Interna'}
+                  {(!pedido.ponto_de_vista || pedido.ponto_de_vista === 'acompanhamento') && 'Acompanhamento'}
+                  {(pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome)
+                    ? ` • Responsável: ${pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome}`
+                    : ''}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={onClose}>
+                  Voltar para pedidos
+                </Button>
+                {canDelete() && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" aria-label="Mais opções">
+                        <MoreVertical className="w-5 h-5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={handleDelete}
+                        disabled={isDeleting}
+                      >
+                        {isDeleting ? 'Excluindo...' : 'Excluir pedido'}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
+            </div>
+          </DialogHeader>
+        )}
 
         <div className="p-6 space-y-6">
           <Tabs defaultValue="detalhes" className="h-full">
@@ -681,6 +728,24 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
             </TabsContent>
           </Tabs>
         </div>
+    </>
+  );
+
+  if (inline) {
+    return (
+      <div className="w-full overflow-hidden rounded-2xl border bg-white shadow-sm">
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <Dialog open onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
+      <DialogContent
+        className="w-full max-h-[90vh] overflow-y-auto p-0"
+        style={{ maxWidth: '960px' }}
+      >
+        {content}
       </DialogContent>
     </Dialog>
   );
