@@ -68,6 +68,13 @@ Notas:
 - O projeto não depende mais de serviços externos. Todo acesso é local (SQLite).
 - Para agendamentos, use um scheduler externo que faça POST `/` com header `x-cron: true` e body `{ "task": "escalar" }`.
 
+## Backup Automático do Banco
+
+- O repositório inclui hook de `pre-push` em `.githooks/pre-push`.
+- O hook executa `scripts/backup-db.sh` e gera snapshot em `backups/db/` antes de cada push.
+- Ative no clone local com:
+  - `git config core.hooksPath .githooks`
+
 ## Padrão de Telefone (Regra de Dados)
 
 Regra vigente do sistema (cadastros e importações):

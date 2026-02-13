@@ -25,3 +25,4 @@ data/*.sqlite-wal
 data/*.sqlite-shm
 data/*.nwal
 data/*.nwal-shm
+backups/db/
