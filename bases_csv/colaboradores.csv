@@ -1,0 +1,509 @@
+id_singular,nome,sobrenome,email,telefone,departamento,chefia
+002,Cosme, Pereira Padilha Tenorio,uniodonto@uniodontogaranhuns.coop.br,87999400122,GERENTE GERAL,1
+002,Maria, Betania Ferreira De Lima,intercambio@uniodontogaranhuns.coop.br,87988311472,INTERCÂMBIO,1
+002,Rita, De Cassia De Melo Medeiros Goncalo,financeiro@uniodontogaranhuns.coop.br,8730251298,FINANCEIRO,1
+002,Adriana, Dos Santos Cabral,faturamento@uniodontosantos.com.br,13997056191,INTERCÂMBIO,1
+002,Alessandra, Leal,cobranca@uniodontosantos.com.br,13991652570,GERENTE GERAL,1
+002,Alessandra, Leal,cobranca@uniodontosantos.com.br,13991652570,FINANCEIRO,1
+004,Claudineia, ,cadastro@uniodontocampogrande.com.br,67998380188,CADASTRO,1
+004,Izaqueu, Santos,comercial@uniodontocampogrande.com.br,67998898878,COMERCIAL,1
+004,Karina, Chimenez,gerencia@uniodontocampogrande.com.br,67998255427,GERENTE GERAL,1
+004,Karina, Chimenez,ouvidoria@uniodontocampogrande.com.br,67998255427,OUVIDOR,1
+004,Lucy, Arakaki,financeiro@uniodontocampogrande.com.br,67998425360,FINANCEIRO,1
+004,Maura, Regina De Souza,aprovacao@uniodontocampogrande.com.br,67998016588,INTERCÂMBIO,1
+005,Ildo, Folador,ildo.uniodonto@gmail.com,54996854270,GERENTE GERAL,1
+005,Ildo, Folador,ildo.uniodonto@gmail.com,5433212165,FINANCEIRO,1
+005,Vanderli, De Quadros,uniodontoere@gmail.com,5433212165,INTERCÂMBIO,1
+005,Vanderli, De Quadros,uniodontoere@gmail.com,5433212165,CADASTRO,1
+006,Andréa, Santos,andrea.santos@uniodontopoa.com.br,51989580876,CADASTRO,1
+006,Jessica, Peralta,ouvidoria@uniodontopoa.com.br,5133024000,OUVIDOR,1
+006,Roberta, Bertoglio,roberta.bertoglio@uniodontopoa.com.br,51981764993,COMERCIAL,1
+006,Rosana, Jung,rosana.jung@uniodontopoa.com.br,51996716747,FINANCEIRO,1
+006,Rossano, Barth Raphaelli,rossano.raphaelli@uniodontopoa.com.br,51996716747,INTERCÂMBIO,1
+006,Liziane, Meireles Dornelles,liziane.dornelles@uniodontopoa.com.br,51999482292,GERENTE GERAL,1
+006,Cintia, Heylmann,cintia.heylmann@uniodontopoa.com.br,51992450053,COMERCIAL,1
+007,Anne, Veronese Campos,averonese@uniodontocampinas.com.br,1933224041,INTERCÂMBIO,1
+007,João, Segato Martinez,jsegato@uniodontocampinas.com.br,1933224007,FINANCEIRO,1
+007,Josana, De Fátima Oliveira,josana.oliveira@uniodontocampinas.com.br,19991424464,COMERCIAL,1
+007,Josana, De Fátima Oliveira,josana.oliveira@uniodontocampinas.com.br,1933224069,CADASTRO,1
+007,Rafael, Andrade Deckmann,rafael@uniodontocampinas.com.br,19994403074,GERENTE GERAL,1
+007,Thais, Yukie De Jesus Okano,ouvidoria@uniodontocampinas.com.br,1933224017,OUVIDOR,1
+007,Arnaldo, Aparecido Guarize,financeiro@uniodonto-sp.com.br,11957716092,GERENTE GERAL,1
+009,Priscila, Marcia Da Silva,cadastro@uniodontobh.ooorg.br,3130257500,CADASTRO,1
+011,Cintia, Batista,cadastrobnu1@uniodontosc.com.br,4730378000,CADASTRO,1
+011,Fabio, Tontini,ouvidoria@uniodontosc.com.br,47984148002,OUVIDOR,1
+011,Naiara, Aparecida Parolli,financeiro@uniodontosc.com.br,4730378000,FINANCEIRO,1
+011,Orliria, De Cássia Da Silva,gerencia@uniodontosc.com.br,47996284784,GERENTE GERAL,1
+011,Rose, Eskelsen Budag,federacao@uniodontosc.com.br,47984148011,COMERCIAL,1
+011,Thalia, Krutli,intercambiogeral@uniodontosc.com.br,4730378029,INTERCÂMBIO,1
+014,Everton, Muniz Xavier,uniodontopf@yahoo.com.br,54992087735,GERENTE GERAL,1
+014,Everton, Muniz Xavier,uniodontopf@yahoo.com.br,54992087735,FINANCEIRO,1
+014,Melina, Falcao Martins,uniodontopf@yahoo.com.br,54992087735,INTERCÂMBIO,1
+014,Melina, Falcao Martins,uniodontopf@yahoo.com.br,54992087735,CADASTRO,1
+015,Aline, Nepomuceno Domingues,intercambio@uniodontouberaba.com.br,3433347700,INTERCÂMBIO,1
+015,Celio, De Oliveira,cadastro@uniodontouberaba.com.br,3433347700,CADASTRO,1
+015,Edna, Maria Manso,financeiro@uniodontouberaba.com.br,3433347700,FINANCEIRO,1
+015,Otaviano, Junior,comercial@uniodontouberaba.com.br,34998697700,COMERCIAL,1
+015,Weslley, Pereira De Souza,gerencia@uniodontouberaba.com.br,3433347700,OUVIDOR,1
+015,Weslley, Pereira Souza,gerencia@uniodontouberaba.com.br,34999917391,GERENTE GERAL,1
+016,Carolina, De Andrade Yamanaka,atendimento2@uniodontopiracicaba.com.br,1934011770,INTERCÂMBIO,1
+016,Claudio, Roberto Zambello,diretoria@uniodontopiracicaba.com.br,1934011771,COMERCIAL,1
+016,Graziela, Cristina Beira Taddei,contabil@uniodontopiracicaba.com.br,1934011776,FINANCEIRO,1
+016,Iara, Cristina De Barros Gazzi,cadastro1@uniodontopiracicaba.com.br,1934011777,CADASTRO,1
+016,Vilma, Elaine Moretti Zambello,gerencia@uniodontopiracicaba.com.br,19981282733,GERENTE GERAL,1
+016,Vilma, Elaine Moretti Zambello,ouvidoria@uniodontopiracicaba.com.br,1934011779,OUVIDOR,1
+017,Bethânia, Dantas Lucio Moreira,gerencia@uniodontorn.com.br,84999128138,GERENTE GERAL,1
+017,Bethânia, Dantas Lucio Moreira,gerencia@uniodontorn.com.br,84999128138,OUVIDOR,1
+017,Eliane, Macedo Alves,supervisor.comercial@uniodontorn.com.br,84991593217,COMERCIAL,1
+017,Lenilda, De Medeiros,rh@uniodontorn.com.br,84999252310,CADASTRO,1
+017,Nadiedja, Miranda Coutinho,auditoria@uniodontorn.com.br,8440094664,INTERCÂMBIO,1
+017,Vandecarla, De Souza Borges,financeiro@uniodontorn.com.br,84999061545,FINANCEIRO,1
+018,Fabio, Augusto Miyamoto Mitidiero,fabiomitidiero@hotmail.com,18997067278,OUVIDOR,1
+018,Jaqueline, Feitosa,uniodontoaracatuba@terra.com.br,1831175272,GERENTE GERAL,1
+018,Jaqueline, Feitosa,uniodontoaracatuba@terra.com.br,1831175272,FINANCEIRO,1
+018,Juliana, Do Amaral Piai,uniodonto.recepcao@terra.com.br,1831175272,CADASTRO,1
+018,Priscila, Demesio Silva,uniodonto.atendimento@terra.com.br,18997318530,COMERCIAL,1
+018,Sanregina, Alonso Machado,uniodonto.sandra@terra.com.br,1831175272,INTERCÂMBIO,1
+018,Deise, De Fátima Aniceto,ouvidoria@uniodontocatanduva.com.br,17996365737,OUVIDOR,1
+018,Deise, Augusta De Oliveira,cadastro@uniodontocatanduva.com.br,17996365737,CADASTRO,1
+018,Deise, De Fátima Aniceto,administrativo@uniodontocatanduva.com.br,17996365737,FINANCEIRO,1
+018,Érica, Medeiros Da Silva,intercambio@uniodontocatanduva.com.br,17991198053,INTERCÂMBIO,1
+018,Roberta, Cristiane Zanqueta Alfredo,vendas@uniodontocatanduva.com.br,17991031567,COMERCIAL,1
+018,Wilson, Rodrigues Centurion Júnior,gerencia@uniodontocatanduva.com.br,17991060285,GERENTE GERAL,1
+018,Ana, Paula Silva Barbosa,uniodontoitabuna.convenio@hotmail.com,7336134760,CADASTRO,1
+018,Franklin, Antonio Cancio Gomes,frankcancio@hotmail.com,7336134760,OUVIDOR,1
+018,Jessica, Santos Silva,uniodontoitabuna.intercambio@hotmail.com,7336134760,INTERCÂMBIO,1
+018,Lais, Santos Silva,uniodontoitabuna.financeiro@hotmail.com,7336134760,COMERCIAL,1
+018,Lais, Santos Silva,uniodontoitabuna.financeiro@hotmail.com,7336134760,FINANCEIRO,1
+018,Maria, Luisa Monção Silva Souza,uniodontoitb@gmail.com,7336134760,GERENTE GERAL,1
+018,Almir, Litz,gerentefinanceiro@uniodontouberlandia.com.br,3432288110,FINANCEIRO,1
+018,Carlos, Alberto,carlos.alberto@uniodontouberlandia.com.br,34991729146,COMERCIAL,1
+018,Luciana, Rosa Neto,luciana@uniodontouberlandia.com.br,3432288121,INTERCÂMBIO,1
+018,Vanessa, De Paiva Moura,vanessa@uniodontouberlandia.com.br,3432288120,CADASTRO,1
+018,Waldir, Filho,gerencia@uniodontouberlandia.com.br,34999713179,GERENTE GERAL,1
+018,Waldir, Filho,ouvidoria@uniodontouberlandia.com.br,3432288125,OUVIDOR,1
+018,Bruna, Rosa Da Silva Dias,uniodontopassoscadastro@outlook.com,35999814081,CADASTRO,1
+018,Dayane, Dos Santos Salermo,intercambiouniodontopassos@gmail.com,35999814081,INTERCÂMBIO,1
+018,Janaina, Silva Abreu Padua,gerencia@uniodontopassos.com.br,35999391713,GERENTE GERAL,1
+018,Janaina, Silva Abreu Padua,gerencia@uniodontopassos.com.br,35999391713,COMERCIAL,1
+018,Janaina, Silva Abreu Padua,gerencia@uniodontopassos.com.br,35999391713,OUVIDOR,1
+018,Janaina, Silva Abreu Padua,gerencia@uniodontopassos.com.br,35999391713,FINANCEIRO,1
+018,Fabiana, Maria Nativio Zanella,uniodontorc@uniodontorc.com.br,1935248738,OUVIDOR,1
+018,Fatima, Aparecida Moreno Talarico,financeiro@uniodontorc.com.br,1935248738,CADASTRO,1
+018,Fatima, Aparecida Moreno Talarico,financeiro@uniodontorc.com.br,1935248738,FINANCEIRO,1
+018,Jose, Paulo Henrique Denofrio,gerencia@uniodontorc.com.br,19993456917,GERENTE GERAL,1
+018,Lilian, Pagani Yamashita,cobranca@uniodontorc.com.br,19991709714,COMERCIAL,1
+018,Mariluci, Galdino Da Cunha,intercambio@uniodontorc.com.br,1935248738,INTERCÂMBIO,1
+018,Bianca, Creximo Lucio,bcreximo@uniodontoriogrande.com.br,53999376158,INTERCÂMBIO,1
+018,Carla, Geovana Bichet De Moraes,cbichet@uniodontoriogrande.com.br,53981043600,GERENTE GERAL,1
+018,Carla, Geovana Bichet De Moraes,ouvidoria@uniodontoriogrande.com.br,53981043600,OUVIDOR,1
+018,Gabriela, De Souza Torma Dias,gdias@uniodontoriogrande.com.br,53999376158,CADASTRO,1
+018,Mirian, Rodrigues Pires,mpires@uniodontoriogrande.com.br,53999241231,FINANCEIRO,1
+018,Vanessa, Franco Bertazzo,vbertazzo@uniodontoriogrande.com.br,53999241231,COMERCIAL,1
+018,Carolina, Fattori,financeiro@uniodontosaocarlos.com.br,1633626060,FINANCEIRO,1
+018,Izilda, Miranda,uniodontosaocarlos@terra.com.br,16991399271,GERENTE GERAL,1
+018,Nivea, Celia Bonadio Coelho,ouvidoria@uniodontosaocarlos.com.br,1633626060,OUVIDOR,1
+018,Rafael, Barbarini,comercial@uniodontosaocarlos.com.br,16993229885,COMERCIAL,1
+018,Rafael, Barbarini,comercial@uniodontosaocarlos.com.br,1633626060,CADASTRO,1
+018,Rita, De Cassia Altieri,intercambio@uniodontosaocarlos.com.br,1633626062,INTERCÂMBIO,1
+018,Anielly, Aparecida Gomes Goncalves,cooperados@uniodontosudoeste.com.br,64999394812,OUVIDOR,1
+018,Diego, Linhares Da Silva,financeiro@uniodontosudoeste.com.br,64999280451,FINANCEIRO,1
+018,Jean, Karlo Batista Rosa,gerencia@uniodontosudoeste.com.br,64999284983,GERENTE GERAL,1
+018,Jean, Karlo Batista Rosa,gerencia@uniodontosudoeste.com.br,64999284983,COMERCIAL,1
+018,Juliana, Costa Goncalves,intercambio@uniodontosudoeste.com.br,64999394812,INTERCÂMBIO,1
+018,Rafael, Martins Fiuza,faturamentoempresa01@uniodontosudoeste.com.br,64999394812,CADASTRO,1
+018,Emerson, Gabriel Flores,finaceiro@uniodontosulms.com.br,67996040183,FINANCEIRO,1
+018,Ingrid, Jaqueline Teixeira Colman,autorizacao@uniodontosulms.com.br,67992147098,INTERCÂMBIO,1
+018,Kassila, Barreto De Oliveira,comercial@uniodontosulms.com.br,67998491877,COMERCIAL,1
+018,Marta, Ribeiro Lima,gerencia@uniodontosulms.com.br,67992139596,GERENTE GERAL,1
+018,Yasmin, De Luca Garcez,ouvidoria@uniodontosulms.com.br,67992147098,OUVIDOR,1
+018,Yasmin, De Luca Garcez,cadastro@uniodontosulms.com.br,6734257434,CADASTRO,1
+019,Lais, Rizzo,comercial@uniodontosalvador.com.br,714009966,COMERCIAL,1
+019,Marly, Bernadete,faturamento@uniodontosalvador.com.br,71991204407,INTERCÂMBIO,1
+019,Tatiana, Santos,adm@uniodontosalvador.com.br,7140099657,OUVIDOR,1
+019,Tatiana, Santos,adm@uniodontosalvador.com.br,7140099657,CADASTRO,1
+019,Tatiana, Santos Conceição Da Silva,adm@uniodontosalvador.com.br,71986587580,GERENTE GERAL,1
+019,Tatiana, Santos,financeiro@uniodontosalvador.com.br,7140099657,FINANCEIRO,1
+020,Adriano, Benedini,adriano.brusadin@uniodontogoiania.com.br,62991939194,INTERCÂMBIO,1
+020,Sergio, Garcia Pesente Neto,sergio.neto@uniodontogoiania.coop.br,61996271084,COMERCIAL,1
+020,Flaviane, Oliveira,cadastro@uniodontogoiania.com.br,6232549110,CADASTRO,1
+020,Michelly, Teixeira Arraes,michelly.arraes@uniodontogoiania.com.br,6232549109,OUVIDOR,1
+020,Nathália, Junqueira,nathalia.lemes@uniodontogoiania.com.br,6232549100,FINANCEIRO,1
+020,Edson, Vicente de Souza,edson.souza@uniodontogoiania.coop.br,62999476314,GERENTE TI,1
+024,Dianuzi, De Mendonça Teles Filha,uniodontorio@uniodontorio.com.br,2121950200,FINANCEIRO,1
+026,Ana, Carolina Rodrigues,cadastro@uniodontoriopreto.com.br,17996379601,CADASTRO,1
+026,Aparecida, Beatriz De Andrade Carnassa,recepcao@uniodontoriopreto.com,17996379601,INTERCÂMBIO,1
+026,Lucileia, Aparecida Pissolato,financeiro@uniodontoriopreto.com.br,17996379601,FINANCEIRO,1
+026,Mileid, Hadad Monserrat,caixa@uniodontoriopreto.com.br,17996379601,FINANCEIRO,1
+026,Patricia, Chagas Goncalves,intercambio@uniodontoriopreto.com.br,17996379601,INTERCÂMBIO,1
+026,Rogeria, Aparecida Gubolin,rogeriagubolin@hotmail.com,17997359227,COMERCIAL,1
+029,Fernando, Paulo Rodrigues Cecim,uniodopa@uniodontobelem.com.br,91991441269,GERENTE GERAL,1
+029,Ilcilene, Merêncio,ilcilene@uniodontobelem.com.br,9132024143,FINANCEIRO,1
+029,Keyla, Cristina Cabral,intercambio@uniodontobelem.com.br,9132024999,INTERCÂMBIO,1
+029,Patricia, Carolyne,cadastro@uniodontobelem.com.br,9132024126,CADASTRO,1
+029,Raimundo, Constâncio Neto,ouvidoria@uniodontobelem.com.br,9132024142,OUVIDOR,1
+029,Waldenis, Lima,comercial@uniodontobelem.com.br,9132024140,COMERCIAL,1
+031,Ana, Paula Rosa,producao@uniodontosorocaba.com.br,1532349424,INTERCÂMBIO,1
+031,Cibele, Simon Romera,ouvidoria@uniodontosorocaba.com.br,1532349424,OUVIDOR,1
+031,Cibele, Simon Romera,posvenda@uniodontosorocaba.com.br,1532349424,COMERCIAL,1
+031,Juscilene, Da Silva,contabilidade@uniodontosorocaba.com.br,1532349424,FINANCEIRO,1
+031,Larissa, Correa,cadastro@uniodontosorocaba.com.br,1532349424,CADASTRO,1
+031,Somente, Supervisoras,diretoria@uniodontosorocaba.com.br,1532349424,GERENTE GERAL,1
+033,Jessenildo, Araujo Dos Santos Filho,jessenildo@uniodontojp.com.br,8321075858,INTERCÂMBIO,1
+033,Joaldi, Andrade Silva,joaldi@uniodontojp.com.br,83999929521,GERENTE GERAL,1
+033,Joaldi, Andrade Silva,joaldi@uniodontojp.com.br,8321075858,FINANCEIRO,1
+033,Joaldi, Andrade Silva,ouvidoria@uniodontojp.com.br,8321075858,OUVIDOR,1
+033,Maricelia, Barbosa De Souza,maricelia@uniodontojp.com.br,8321075858,CADASTRO,1
+033,Sanregina, Nobrega Da Silva,sandra.regina@uniodontojp.com.br,8321075858,COMERCIAL,1
+034,Adriana, Chinelatto,adriana@uniodontojundiai.com.br,1148059999,COMERCIAL,1
+034,Elaini, Galo,faturamento@uniodontojundiai.com.br,1148059999,CADASTRO,1
+034,Josevani, ,intercambio@uniodontojundiai.com.br,1148059999,INTERCÂMBIO,1
+034,Katia, Cervantes,ouvidoria@uniodontojundiai.com.br,1148059999,OUVIDOR,1
+034,Marcos, Garcia,marcos@uniodontojundiai.com.br,11993605717,GERENTE GERAL,1
+034,Vânia, Tasca,financeiro@uniodontojundiai.com.br,1148059999,FINANCEIRO,1
+036,Anayra, Maltez,producao@uniodontorecife.com.br,81992887484,INTERCÂMBIO,1
+036,Andrea, Simone Silva,faleconosco@uniodontorecife.com.br,81999246394,CADASTRO,1
+036,Elaine, Vieira,financeiro@uniodontorecife.com.br,81999246277,FINANCEIRO,1
+036,Elizete, De Araujo,consultor@uniodontorecife.com.br,81999545935,COMERCIAL,1
+036,Marcia, Martins,ouvidoria@uniodontorecife.com.br,81999757095,OUVIDOR,1
+037,Danielle, ,intercambio@uniodontomao.com.br,9221260613,INTERCÂMBIO,1
+037,Fernanda, Goncalves,gerencia.comercial@uniodontomao.com.br,92982361271,COMERCIAL,1
+037,Fernanda, Gonçalves (Gerente Comercial),gerencia.comercial@uniodontomao.com.br,92982361271,GERENTE GERAL,1
+037,Marieth, Bezerra,financeiro@uniodontomao.com.br,9221260616,FINANCEIRO,1
+037,Neila, Ribeiro ( Colaboradora),faleconosco@uniodontomao.com.br,9221260604,OUVIDOR,1
+037,San, Santos,relacionamento@uniodontomao.com.br,9221260629,CADASTRO,1
+038,Emilena, Café,emilena.cafe@uniodontomaceio.com.br,8221233307,INTERCÂMBIO,1
+038,Gildo, Carneiro,gildocarneiro@uniodontomaceio.com.br,8221233313,COMERCIAL,1
+038,Gildo, Carneiro,gildocarneiro@uniodontomaceio.com.br,8221233313,CADASTRO,1
+038,Leonardo, Pimentel,leonardo@uniodontomaceio.com.br,8221233306,FINANCEIRO,1
+038,Ronaldo, Nemesio,gerencia@uniodontomaceio.com.br,82999734894,GERENTE GERAL,1
+038,Ronaldo, Nemesio,ouvidoria@uniodontomaceio.com.br,8221233322,OUVIDOR,1
+040,Daniel, Jereissati Pereira,danielpereira@uniodonto-ce.com.br,8599046805,COMERCIAL,1
+040,Débora, Gurgel Lima,deboralima@uniodonto-ce.com.br,8540095442,INTERCÂMBIO,1
+040,João, Paulo Ribeiro Rocha,joaorocha@uniodonto-ce.com.br,8540095442,FINANCEIRO,1
+040,João, Paulo Ribeiro Rocha,joaorocha@uniodonto-ce.com.br,8540095442,CADASTRO,1
+043,Luciana, De Castro Oliveira,gerencia@uniodontolimeira.com.br,1934427899,GERENTE GERAL,1
+043,Luciana, De Castro Oliveira,gerencia@uniodontolimeira.com.br,1934427899,OUVIDOR,1
+046,Cláudio, Braga,claudio@uniodontolondrina.coop.br,43999964140,GERENTE GERAL,1
+048,Andreia, Cristina Cardoso,cadastro@uniodontoararaquara.com.br,1633037132,CADASTRO,1
+048,Luiz, Henrique Rodrigues Dos Santos,comercial4@uniodontoararaquara.com.br,1633037133,COMERCIAL,1
+048,Nereide, Belotti,financeiro@uniodontoararaquara.com.br,1633037133,FINANCEIRO,1
+048,Patricia, Aparecida Floriano Cachoeira,intercambio@uniodontoararaquara.com.br,1633037134,INTERCÂMBIO,1
+048,Sanbeatriz, Junquetti,ouvidoria@uniodontoararaquara.com.br,1633037137,OUVIDOR,1
+048,Sandra, Beatriz Junquetti ,supervisao@uniodontoararaquara.com.br,16997148196,GERENTE GERAL,1
+049,Wolney, Di Tanno,uniodontoari.adm@gmail.com,3432419191,GERENTE GERAL,1
+051,Edilene, Cristina Moeda,aprovacao@uniodontobebedouro.coop.br,17981354430,INTERCÂMBIO,1
+051,Fabricio, Alexander Warrique,adm@uniodontobebedouro.coop.br,17991819703,GERENTE GERAL,1
+051,Rita, De Cassia Trinca Alves De Lima,financeiro@uniodontobebedouro.coop.br,17992815366,FINANCEIRO,1
+052,Alessandra, Lemos,uniodontopg@uol.com.br,42984025387,INTERCÂMBIO,1
+052,Alessandra, Lemos,uniodontopg@uol.com.br,42984025387,CADASTRO,1
+052,Alessandra, G. Lemos,uniodontopg@uol.com.br,42984025387,GERENTE GERAL,1
+052,Lucia, Choinacki,financeiro@uniodontopg.com.br,42984071788,FINANCEIRO,1
+052,Marcelo, Pellissari,marcelopellissari@hotmail.com,42999000058,COMERCIAL,1
+052,Raquel, Albach Zitkievicz,raquel.albach@hotmail.com,42991035354,OUVIDOR,1
+054,Angelica, Da Silva Santos,uniodont@infonet.com.br,79998392001,GERENTE GERAL,1
+054,Cristiane, Pereira Dos Santos,uniodont@infonet.com.br,79989295487,COMERCIAL,1
+054,Cristiane, Pereira Dos Santos,uniodont@infonet.com.br,79989295487,CADASTRO,1
+054,Flaviane, Santos Souza,uniodont@infonet.com.br,79991590406,INTERCÂMBIO,1
+054,Flaviane, Santos Souza,uniodont@infonet.com.br,79991590406,FINANCEIRO,1
+054,Liomar, Maria De Oliveira Quaranta,liomarquaranta@yahoo.com.br,79998793070,OUVIDOR,1
+056,Clecio, Jose Do Nascimento,ouvidoria@uniodontosulgo.com.br,6434317146,OUVIDOR,1
+059,Adriana, Alves Da Silva,uniodontoamer@uol.com.br,1934616728,INTERCÂMBIO,1
+059,Claudia, Azevedo Velasco Grillo,uniodonto.comercial@uol.com.br,,COMERCIAL,1
+059,Itor, Cesar Da Silva Simoes,uniodontoamer@uol.com.br,1934616728,CADASTRO,1
+059,Reginaldo, Macedo Simões,uniodontoamer@uol.com.br,19991221695,GERENTE GERAL,1
+059,Reginaldo, Macedo Simões,uniodontoamer@uol.com.br,19991221695,OUVIDOR,1
+059,Reginaldo, Macedo Simões,uniodontoamer@uol.com.br,19991221695,FINANCEIRO,1
+061,Aline, Sarria,cadastro@uniodontosf.com.br,2421073356,CADASTRO,1
+061,Caren, Renata,intercambio@uniodontosf.com.br,2421073354,INTERCÂMBIO,1
+061,Cristina, Rosa Pereira,financeiro@uniodontosf.com.br,2421073370,FINANCEIRO,1
+061,Flavia, Chicarino,ouvidoria@uniodontosf.com.br,2433486184,OUVIDOR,1
+061,Gilmar, Finotti,supervisor.comercial@uniodontosf.com.br,2421073377,COMERCIAL,1
+061,Ketlin, Mayumi Dornelas Uchikadow - Diretora,ketlin.diretora@uniodontosf.com.br,24981564113,GERENTE GERAL,1
+062,Lucimar, Reiners Griggi,gerencia@uniodontomt.com.br,65999981860,GERENTE GERAL,1
+062,Rafael, Barbosa Silva,nucleoans@uniodontomt.com.br,65999786982,INTERCÂMBIO,1
+063,Larissa, ,uniodontoptcmg@gmail.com,3438316055,CADASTRO,1
+063,Lécia, ,uniodontoptcmg@gmail.com,3438316055,INTERCÂMBIO,1
+063,Lécia, ,uniodontoptcmg@gmail.com,3438316055,COMERCIAL,1
+063,Lécia, ,uniodontoptcmg@gmail.com,3438316055,FINANCEIRO,1
+063,Lécia, Helena De Souza,uniodontoptcmg@gmail.com,34988671860,GERENTE GERAL,1
+064,Alessandro, Magno Quintana,gerencia@uniodontomacae.com.br,22981312322,GERENTE GERAL,1
+064,Alessandro, Magno Quintana,gerencia@uniodontomacae.com.br,22981312322,FINANCEIRO,1
+064,Alexandre, ,cpd@uniodontomacae.com.br,22999287975,INTERCÂMBIO,1
+064,Marcela, ,cobranca@uniodontomacae.com.br,22992085396,CADASTRO,1
+064,Marcela, ,comercial.marcela@uniodontomacae.com.br,22992085396,COMERCIAL,1
+064,Michele, ,ouvidoria@uniodontomacae.com.br,22992274922,OUVIDOR,1
+066,Fabio, Leite,financeiro@uniodontosjc.com.br,1232026000,FINANCEIRO,1
+066,Regina, Bellato,gerenciageral@uniodontosjc.com.br,12991338175,GERENTE GERAL,1
+066,Regina, Bellato,gerenciageral@uniodontosjc.com.br,1232026000,INTERCÂMBIO,1
+066,Regina, Bellato,gerencia@uniodontosjc.com.br,1232026000,COMERCIAL,1
+066,Regina, Bellato,gerenciageral@uniodontosjc.com.br,1232026000,OUVIDOR,1
+066,Regina, Bellato,gerenciageral@uniodontosjc.com.br,1232026000,CADASTRO,1
+072,Aletea, Hortencio Pedrozo,teia.vendasuni@gmail.com,14997630741,COMERCIAL,1
+072,Alethea, Hortencio Pedrozo,teia.vendasuni@gmail.com,14997630741,CADASTRO,1
+072,Celi, Aparecida Martins Rodrigues,celimartinsavare@gmail.com,14996188284,GERENTE GERAL,1
+072,Celi, Aparecida Martins Rodrigues,celimartinsavare@gmail.com,14996188284,FINANCEIRO,1
+072,Celi, Aparecida Martins Rodrigues,uniodontoavare@uol.com.br,1437322303,OUVIDOR,1
+072,Tatiana, Aparecida Oliveira E Silva,taty1984.oliveira@gmail.com,1437332969,INTERCÂMBIO,1
+074,Josielle, Barbosa Ferreira,uniodonto.front_oeste@hotmail.com,55997137806,COMERCIAL,1
+074,Josielle, Barbosa Ferreira,uniodonto.front_oeste@hotmail.com,55997137806,CADASTRO,1
+074,Liziane, Rodrigues Castro,uniodonto_livramento2@hotmail.com,55999362470,INTERCÂMBIO,1
+074,Liziane, Rodrigues Castro,uniodonto_livramento2@hotmail.com,55999362470,FINANCEIRO,1
+075,Alyne, Siqueira Alves,gerencia@uniodontoprudente.com.br,18981348888,GERENTE GERAL,1
+075,Alyne, Siqueira Alves,gerencia@uniodontoprudente.com.br,18981348888,COMERCIAL,1
+075,Alyne, Siqueira Alves,ouvidoria@uniodontoprudente.com.br,18981348888,OUVIDOR,1
+075,Bruna, Lourenço Domingos / Juliana Luz De Jesus Jordão,faturamento@uniodontoprudente.com.br,1839017766,CADASTRO,1
+075,Cátia, Queiroz Monteiro,financeiro@uniodontoprudente.com.br,18998069560,FINANCEIRO,1
+075,Luiz, Henrique Machado Carvalho,luizhenrique@uniodontoprudente.com.br,18997957967,INTERCÂMBIO,1
+076,Aline, Cristina De Luca Braz,financeiro@uniodontoathenas.coop.br,16996221139,FINANCEIRO,1
+076,Cibele, Cristina Ennes,intercambio@uniodontoathenas.coop.br,1632038500,INTERCÂMBIO,1
+076,Denis, De Lima , gerencia@uniodontoathenas.coop.br,,GERENTE GERAL,1
+076,Jose, Eduardo Bortolin,ouvidoria@uniodontoathenas.coop.br,69978552785,OUVIDOR,1
+076,Juliana, Pulccini Jacob,comercial@uniodontoathenas.coop.br,16997382280,COMERCIAL,1
+079,Adriana, Souza De Matos,intercambio@uniodontojac.com.br,1239548859,INTERCÂMBIO,1
+079,Cleber, Dos Santos,relacoesempresariais@uniodontoja.com.br,1239548859,COMERCIAL,1
+079,Cristiano, De Castro Silva,gerencia@uniodontojac.com.br,12988299974,GERENTE GERAL,1
+079,Elisa, Maria Ferreira,cadastro@uniodontojac.com.br,1239548859,CADASTRO,1
+079,Juliana, Cardoso Rodrigues,financeiro@uniodontojac.com.br,1239548859,FINANCEIRO,1
+079,Marcelo, De Oliveira,ouvidoria@uniodontojac.com.br,1239548859,OUVIDOR,1
+079,Nathalia, Garner Magalhaes,comercial2@uniodontojac.com.br,1239548859,COMERCIAL,1
+084,Aline, Bruna Ferreira Foglio,aline@uniodontolins.com.br,14997737967,CADASTRO,1
+084,Camila, Dorea Fernandes Silva,camiladorea1@gmail.com,75992042000,FINANCEIRO,1
+084,Clicia, Da Silva Bastos Santos,uniodontofs@gmail.com.br,75998774168,GERENTE GERAL,1
+084,Clicia, Da Silva Bastos Santos,uniodontofs@gmail.com.br,5575998774,INTERCÂMBIO,1
+084,Evie, Gomes Gedeao,gedeaoevie@gmail.com,75991804135,OUVIDOR,1
+084,Juliana, Zoilo,juliana@uniodontolins.com.br,14997236356,GERENTE GERAL,1
+084,Juliana, Zoilo,juliana@uniodontolins.com.br,14997236356,OUVIDOR,1
+084,Juliana, Zoilo,juliana@uniodontolins.com.br,14997236356,FINANCEIRO,1
+084,Larissa, Fernanda Honorato,larissa@uniodontolins.com.br,14988215625,INTERCÂMBIO,1
+084,Marcia, De Jesus Santos,uniodontofs@gmail.com.br,7536234611,CADASTRO,1
+085,Carmen, Silvia Pignata,ouvidoria@uniodontosertaozinho.com.br,1621056700,OUVIDOR,1
+085,Erick, Roberto De Matos,financeiro@uniodontosertaozinho.com.br,1621056700,FINANCEIRO,1
+085,Lucimara, De Almeida Ribeiro,gerencia@uniodontosertaozinho.com.br,16991338006,GERENTE GERAL,1
+085,Lucimara, De Almeida Ribeiro,gerencia@uniodontosertaozinho.com.br,1621056700,COMERCIAL,1
+085,Rosemary, Celia Spinelli,cadastro@uniodontosertaozinho.com.br,1621056713,CADASTRO,1
+085,Rosemary, Célia Spinelli,faturamento@uniodontosertaozinho.com.br,1621056713,INTERCÂMBIO,1
+088,Agmere, Elane Dos Santos,gerencia@uniodontocaruaru.com.br,8137237522,CADASTRO,1
+088,Agmere, Elane Dos Santos,gerencia@uniodontocaruaru.com.br,8137237522,FINANCEIRO,1
+088,Agmere, Elane Dos Santos Rocha,gerencia@uniodontocaruaru.com.br,81993196365,GERENTE GERAL,1
+088,Agmere, Elane Dos Santos Rocha,gerencia@uniodontocaruaru.com.br,8137237522,INTERCÂMBIO,1
+088,Eriberto, De Sousa Gomes,uniodontocaruaru@hotmail.com,8137237522,OUVIDOR,1
+088,Vanessa, Karine De Lira Nascimento,ti@uniodontocaruaru.com.br,8137237522,COMERCIAL,1
+090,Caroline, Cristina Dos Santos Castro E Silva,intercambio@uniodontocacapava.com.br,12997874414,INTERCÂMBIO,1
+090,Caroline, Cristina Dos Santos Castro E Silva,comercial@uniodontocacapava.com.br,12997874414,COMERCIAL,1
+090,Maria, Joana Sandim De Oliveira,cadastro@uniodontocacapava.com.br,12997874414,CADASTRO,1
+090,Patricia, Aparecida Marcelino Souza,gerencia@uniodontocacapava.com.br,1236525619,FINANCEIRO,1
+090,Patricia, Aparecida Marcelino Souza,ouvidoriauniodontocacapava@gmail.com,1236525619,OUVIDOR,1
+090,Patrícia, Aparecida Marcelino Souza,gerencia@uniodontocacapava.com.br,12988155412,GERENTE GERAL,1
+093,Luiz, Wagner Sant Ana Da Silva,financeiro@uniodonto-metropolitana.com.br,21988903946,FINANCEIRO,1
+093,Maicon, Da Silva De Paula,gerencia-adm@uniodonto-metropolitana.com.br,21988903946,GERENTE GERAL,1
+093,Maicon, Da Silva De Paula,intercambio@uniodonto-metropolitana.com.br,21988903946,INTERCÂMBIO,1
+093,Mauricio, Eugênio Figueiredo,mauricioeugeniomlx@gmail.com,21964132915,COMERCIAL,1
+093,Rodrigo, Pessoa De Souza,cadastro@uniodonto-metropolitana.com.br,21988943995,CADASTRO,1
+093,Rubens, Mattos Pinheiro,ouvidoria@uniodonto-metropolitana.com.br,21988736097,OUVIDOR,1
+094,Elaine, Molina Mantovani,atendimento@uniodontosjrpardo.com.br,1936814229,CADASTRO,1
+094,Luciana, Cremasco,financeiro@uniodontosjrpardo.com.br,1936814229,GERENTE GERAL,1
+094,Luciana, Cremasco,financeiro@uniodontosjrpardo.com.br,1936814229,FINANCEIRO,1
+094,Marisa, Rocha Dias,intercambio@uniodontosjrpardo.com.br,1936565818,INTERCÂMBIO,1
+094,Simone, Zerbinate Campos,vendas@uniodontosjrpardo.com.br,1936565818,COMERCIAL,1
+098,Aline, Kavata,aline@uniodontomaringa.com.br,44988288014,COMERCIAL,1
+098,Darci, Arruda,gerencia@uniodontomaringa.com.br,44988088115,GERENTE GERAL,1
+098,Debora, Brigida Ferreira Machado,debora@uniodontomaringa.com.br,4432271150,CADASTRO,1
+098,Dennis, Rogers,comercial@uniodontomaringa.com.br,44988273931,COMERCIAL,1
+098,Jessica, Fernanda Selengrim,jessica@uniodontomaringa.com.br,4432271150,OUVIDOR,1
+098,Patricia, Angelica Schelles,intercambio@uniodontomaringa.com.br,4432271150,COMERCIAL,1
+098,Simone, Terezinha Marcinko,financeiro@uniodontomaringa.com.br,4432271150,FINANCEIRO,1
+100,Daniele, Cristina Barros Criado,vendas@uniodontovotuporanga.com.br,17981231847,COMERCIAL,1
+100,Gabriela, Burjaili Barcelos,diretoria@uniodontovotuporanga.com.br,17996318468,GERENTE GERAL,1
+100,Jussara, Velho Da Silveira,aprovacao@uniodontovotuporanga.com.br,17981231847,INTERCÂMBIO,1
+100,Luana, Aparecida Da Silveira Pimentel,financeiro@uniodontovotuporanga.com.br,17981231847,FINANCEIRO,1
+101,Cintia, Bissoli,financeiro@uniodontodemarilia.com.br,143413565,CADASTRO,1
+101,Karina, Ap Gonçalves Da Costa,uniodontogerenciacop@gmail.com,14997893954,FINANCEIRO,1
+101,Karina, Ap Gonçalves Da Costa,uniodontogerenciacop@gmail.com,14997893954,GERENTE GERAL,1
+101,Karina, Ap Gonçalves Da Costa,uniodontogerenciacop@gmail.com,14997893954,OUVIDOR,1
+101,Rosa, Maria Ducatti Gomes,adm@uniodontobauru.com.br,1434135665,INTERCÂMBIO,1
+105,Francieli, Cristina Batista,atendimento@uniodontomontealto.com.br,16992714420,COMERCIAL,1
+105,Francieli, Cristina Batista,atendimento@uniodontomontealto.com.br,16992714420,CADASTRO,1
+105,Marcio, Rogerio Lima Costa,ouvidoriauniodontoma@gmail.com,16992136143,OUVIDOR,1
+105,Maria, Helena Guedes Da Silva,financeiro@uniodontomontealto.com.br,16999937751,GERENTE GERAL,1
+105,Maria, Helena Guedes Da Silva,financeiro@uniodontomontealto.com.br,16999937751,INTERCÂMBIO,1
+105,Maria, Helena Guedes Da Silva,financeiro@uniodontomontealto.com.br,16999937751,FINANCEIRO,1
+114,Ana, Paula E Daniele,uniodontonf@hotmail.com,2225239354,CADASTRO,1
+114,Ana, Paula Ou Daniele,uniodontonf@hotmail.com,2225239354,INTERCÂMBIO,1
+114,Mario, Roberto De Souza Lopes,uniodontonf@hotmail.com,2225239354,GERENTE GERAL,1
+114,Mario, Roberto De Souza Lopes,uniodontonf@hotmail.com,2225239354,FINANCEIRO,1
+114,Somos, Prestadora,uniodontonf@hotmail.com,2121950200,COMERCIAL,1
+118,Alessandra, Oliveira,uniodontororaima118@gmail.com,9536234900,INTERCÂMBIO,1
+118,Gilenio, Pinheiro Da Silva,diretoria@uniodontorr.com.br,95991141050,COMERCIAL,1
+118,Pedro, Igor Moreira Ferreira,supervisao@uniodontorr.com.br,9536234900,FINANCEIRO,1
+118,Thayza, Vieira Da Silva,ouvidoria@uniodontorr.com.br,9536234900,OUVIDOR,1
+118,Thayza, Vieira Da Silva / Alessanoliveira Da Silva,uniodontororaima118@gmail.com,9536234900,CADASTRO,1
+120,Lucas, Henrique Baleeiro,comercial@uniodontotaquaritinga.com.br,16997334972,COMERCIAL,1
+120,Maiara, Prandi Nunes Da Silva,recepcao@uniodontotaquaritinga.com.br,16997022237,CADASTRO,1
+120,Mitsuo, Sakurai,ouvidoria@uniodontotaquaritinga.com.br,16997111163,OUVIDOR,1
+120,Pauline, Aurora Rebecchi,intercambio@uniodontotaquaritinga.com.br,16997916192,INTERCÂMBIO,1
+120,Rosana, Guedes Barreto,rosana@uniodontotaquaritinga.com.br,16997143425,GERENTE GERAL,1
+120,Rosana, Guedes Barreto,rosana@uniodontotaquaritinga.com.br,16997143425,FINANCEIRO,1
+121,Andréa, Cristina Das Neves Moreira,aprovacaounifer@terra.com.br,17996152420,INTERCÂMBIO,1
+121,Bruna, Aparecida Soares De Queiroz Oliveira,uniodontofer@terra.com.br,17996040886,FINANCEIRO,1
+121,Marcelo, Henrique Luz Teixeira,marcelounihenrique@gmail.com,17991663484,OUVIDOR,1
+121,Sansandrin, De Carvalho,faturamentounifer@terra.com.br,17988083077,CADASTRO,1
+127,Ariane, Caroline Da Silva,intercambiob@uniodontobotucatu.com.br,14996030826,INTERCÂMBIO,1
+127,Caroline, Dos Santos Silva,recepcao@uniodontobotucatu.com.br,14996841769,CADASTRO,1
+127,Juliana, De Oliveira Piazentin,gerencia1@uniodontobotucatu.com.br,14996926740,GERENTE GERAL,1
+127,Amanda, Tissi Ribeiro Colli,intercambio@uniodontoleo.com.br,32988167189,INTERCÂMBIO,1
+127,Ana, Claudia De Oliveira Lacerda Gomes,cadastro@uniodontoleo.com.br,32988167189,CADASTRO,1
+127,Vanderci, Gama De Andrade,gerencia@uniodontoleo.com.br,32999708617,GERENTE GERAL,1
+128,Luana, Tomas De Jesus,ouvidoria@uniodontotaubate.com.br,12991767814,OUVIDOR,1
+128,Luana, Tomas De Jesus,vendas01@uniodontotaubate.com.br,12991767814,CADASTRO,1
+128,Marcio, Ohara,uniodonto@uniodontotaubate.com.br,12991175145,GERENTE GERAL,1
+128,Thais, Aparecida Gonçalves Lamosa,faturamento@uniodontotaubate.com.br,12997469958,INTERCÂMBIO,1
+128,Thais, Aparecida Gonçalves Lamosa,faturamento@uniodontotaubate.com.br,12997469958,FINANCEIRO,1
+129,Aracelle, De Moura Sena,vendas@uniodontopinda.com.br,12991557970,COMERCIAL,1
+129,Fabiana, Da Silva Souza,ouvidoria@uniodontopinda.com.br,12991525323,OUVIDOR,1
+129,Gabriela, Cristina Dos Santos Silva,faturamento@uniodontopinda.com.br,12991525323,CADASTRO,1
+129,Lucas, Fabiano Carlini,gerencia@uniodontopinda.com.br,12988104967,GERENTE GERAL,1
+129,Patricia, Torchio Cavalcante Leite,financeiro@uniodontopinda.com.br,12991525323,FINANCEIRO,1
+129,Vinicius, Augusto Guerra Dos Reis,intercambio@uniodontopinda.com.br,12991525323,INTERCÂMBIO,1
+132,Cristiano, R Da Silva,uniodontojales@terra.com.br,17997454250,CADASTRO,1
+132,Cristiano, R Da Silva,uniodontojales@terra.com.br,1736329600,FINANCEIRO,1
+132,Cristiano, Rodrigo Da Silva,uniodontojales@terra.com.br,17997454250,GERENTE GERAL,1
+132,Cristiano, Rodrigo Da Silva,uniodontojales@terra.com.br,17997454250,COMERCIAL,1
+132,Jessica, Valentim,uniodontojales.intercambio@gmail.com,1736329600,INTERCÂMBIO,1
+132,Nabor, Noboru Kanawa,uniodontojales@terra.com.br,1736329600,OUVIDOR,1
+134,Alleine, Cristina Mota,producao@uniodontovalehistorico.com.br,12997173293,INTERCÂMBIO,1
+134,Camiliana, França,cadastro@uniodontovalehistorico.com.br,1231532900,CADASTRO,1
+134,Celia, Apda Leite Tammenhain,vendas@uniodontovalehistorico.com.br,12981990179,COMERCIAL,1
+134,Wanda, Mello,admwanda@uniodontovalehistorico.com.br,1231532900,GERENTE GERAL,1
+134,Monica, D'angelo,financeiro@uniodontovalehistorico.com.br,12992129315,FINANCEIRO,1
+134,Wanda, Mello,admwanda@uniodontovalehistorico.com.br,1231532900,OUVIDOR,1
+138,Danielle, Galvão Pinto,daniellegalvao30@gmail.com,96991242376,COMERCIAL,1
+138,Heliane, Rodrigues Da Costa,helianercosta@gmail.com,96991409606,CADASTRO,1
+138,Ivone, Do Socorro Dos Reis Cardoso,producao@uniodontoap.com.br,96991192483,INTERCÂMBIO,1
+138,Jackson, Monteiro Macedo,financeiro@uniodontoap.com.br,96981450310,FINANCEIRO,1
+138,Tatiara, Moraes Galvão,uniodontoap@uniodontoap.com.br,96999728301,OUVIDOR,1
+139,Allan, Fabricio Carneiro De Souza,allan.carneiro@outlook.com,35987017000,GERENTE GERAL,1
+139,Allan, Fabricio Carneiro De Souza,allan.carneiro@outlook.com,35987017000,INTERCÂMBIO,1
+139,Allan, Fabricio Carneiro De Souza,allan.carneiro@outlook.com,35987017000,FINANCEIRO,1
+139,Thainara, ,uniodonto.atendimento@live.com,3533322727,OUVIDOR,1
+144,André, Picolo Cecarello,auditoria@uniodontopirassununga.com.br,19999794463,OUVIDOR,1
+144,Andreia, Regina Menrenciano,vendas@uniodontopirassununga.com.br,19998526070,INTERCÂMBIO,1
+144,Andreia, Regina Merenciano,vendas@uniodontopirassununga.com.br,1935611165,CADASTRO,1
+144,Maria, Cristina De Freitas Bueno,atendimentoportoferreira@uniodontopirassununga.com.br,19999794463,COMERCIAL,1
+144,Paula, Roberta Bertoli,uniopirass@uniodontopirassununga.com.br,19998526070,GERENTE GERAL,1
+144,Paula, Roberta Bertoli,uniopirass@uniodontopirassununga.com.br,1935611165,FINANCEIRO,1
+148,Edezite, Antonino Da Silva,cobranca@uniodontomossoro.com.br,8433161115,COMERCIAL,1
+148,Jean, Carlo Delfino Fernandes,ouvidoria@uniodontomossoro.com.br,8433162990,OUVIDOR,1
+148,Maria, De Fátima Marinho,gerencia@uniodontomossoro.com.br,84998645188,GERENTE GERAL,1
+148,Maria, De Fátima Marinho,gerencia@uniodontomossoro.com.br,8433161115,FINANCEIRO,1
+148,Wilgna, Vieira Galdino,atendimento1@uniodontomossoro.com.br,8433161115,INTERCÂMBIO,1
+148,Wilgna, Vieira Galdino,atendimento1@uniodontomossoro.com.br,8433161115,CADASTRO,1
+155,Jaine, Arantes,atendimento@uniodontobraganca.com.br,11971173285,INTERCÂMBIO,1
+155,Jaine, Arantes,atendimento@uniodontobraganca.com.br,1140335703,CADASTRO,1
+155,Sabrina, Cardoso Menin,uniodontob@uol.com.br,11992010876,GERENTE GERAL,1
+155,Sabrina, Cardoso Menin,uniodontob@uol.com.br,1140335703,OUVIDOR,1
+155,Sabrina, Cardoso Menin,uniodontob@uol.com.br,1140335703,FINANCEIRO,1
+156,Washington, Jose Miranda Dorigheto,gerencia@uniodontoes.coop.br,2835111500,GERENTE GERAL,1
+161,Fabricio, Rodrigues Leite,financeiro@uniodontocampos.com.br,22992351461,COMERCIAL,1
+161,Fabricio, Rodrigues Leite,financeiro@uniodontocampos.com.br,22992351461,FINANCEIRO,1
+161,Felipe, Borges Nascimento,cadastro@uniodontocampos.com.br,22992351461,CADASTRO,1
+161,Gizelle, Maria Peres Siqueira Fernandes,gerencia@uniodontocampos.com.br,22992311006,GERENTE GERAL,1
+161,Renata, Almeida Clemente,orcamento@uniodontocampos.com.br,22992351461,INTERCÂMBIO,1
+162,Geyzon, Robson Martins De Lacerda,gerencia@uniodontopauloafonso.com.br,75991972539,GERENTE GERAL,1
+164,Alessandra, Camilo,atendeimentouniodonto@terra.com.br,48998146443,COMERCIAL,1
+164,Alessandra, Camilo,atendimento@uniodontosulcatarinense.coop.br,48998146443,CADASTRO,1
+164,Daiane, Albino Tertuliano,faturamento@uniodontosulcatarinense.coop.br,48998146433,INTERCÂMBIO,1
+164,Daiane, Albino Tertuliano,faturamento@uniodontosulcatarinense.coop.br,48998146443,FINANCEIRO,1
+164,Daiane,Alessandra,faturamento@uniodontosulcatarinense.coop.br,4830457462,OUVIDOR,1
+164,Daiane, Albino Tertuliano,faturamentouniodonto@terra.com.br,48999230503,GERENTE GERAL,1
+166,Beatriz, Vitoria Andrade De Lima,cobranca@uniodontorondonia.com.br,69993989545,COMERCIAL,1
+166,Jessica, Marques Do Vale,financeiro@uniodontorondonia.com.br,69993989545,FINANCEIRO,1
+166,Maria, Claudia Silva Davy,producao@uniodontorondonia.com.br,69993989545,INTERCÂMBIO,1
+166,Soraia, Lessa Pereira,cadastro@uniodontorondonia.com.br,69993989545,CADASTRO,1
+166,Soraia, Lessa Pereira,gerencia@uniodontorondonia.com.br,69993989545,GERENTE GERAL,1
+166,Soraia, Lessa Pereira,ouvidoria@uniodontorondonia.com.br,69993989545,OUVIDOR,1
+167,Ana, Luzia Marinho,uniodonto@uniodontoarapiraca.com.br,82996403670,FINANCEIRO,1
+167,Genildo, Bispo Dos Santos,gerencia@uniodontoarapiraca.com.br,82999898377,GERENTE GERAL,1
+167,Genildo, Bispo Dos Santos,leno_uniodonto@hotmail.com,82999898377,INTERCÂMBIO,1
+167,Luyara, Teixeira Florencio,uniodontoarapcomercia@gmail.com,82999200333,COMERCIAL,1
+167,Priscila, Gama Dos Santos,uniodonto@uniodontoarapiraca.com.br,82999200333,INTERCÂMBIO,1
+169,Hégila, Jamilly Dantas De Almeida,gerencia@uniodontoacre.com.br,68992174050,GERENTE GERAL,1
+169,Nivia, Castro Lima,intercambio.uniodontoriobranco@gmail.com,68992174050,INTERCÂMBIO,1
+169,Priscila, Bello Pinheiro,administrativo@uniodontoacre.com.br,68992174050,COMERCIAL,1
+169,Priscila, Bello Pinheiro,administrativo@uniodontoacre.com.br,68992174050,FINANCEIRO,1
+169,Ranielly, Lima De Moraes,aprovacao.uniodontoriobranco@gmail.com,68992174050,CADASTRO,1
+170,Adriana, Cristina Canuto Joaquim,adriana.canuto@uniodontoresende.com.br,24998366098,GERENTE GERAL,1
+170,Adriana, Machado,adriana.machado@uniodontoresende.com.br,2433540020,INTERCÂMBIO,1
+170,Bruno, Guedes,bruno.guede@uniodontoresende.com.br,2433540020,COMERCIAL,1
+170,Leidiane, Rodrigues,leidiane.rodrigues@uniodontoresende.com.br,2433540020,FINANCEIRO,1
+170,Loraine, Carvalho,loraine.carvalho@uniodontoresende.com.br,2433540020,CADASTRO,1
+170,Marcos, Vinicius,ouvidoria@uniodontoresende.com.br,2421093370,OUVIDOR,1
+174,Alexancoelho, Dos Santos Franco,uniodontovs.alexandra@gmail.com,51995007914,OUVIDOR,1
+174,Alexancoelho, Dos Santos Franco,uniodontovs.alexandra@gmail.com,5130373406,INTERCÂMBIO,1
+174,Janete, Limas,uniodontovs.janete@gmail.com,51993355325,GERENTE GERAL,1
+174,Janete, Limas,uniodontovs.janete@gmail.com,51993355325,FINANCEIRO,1
+174,Katiele, Vitoria Da Silva Larreia,uniodontovskatiele@gmail.com,51995007914,FINANCEIRO,1
+174,Luiz, Francisco Monteiro Flores,lxmflores@terra.com.br,5130373406,COMERCIAL,1
+174,Miguel, Joao Juliano Vargas,miguel.vargas@terra.com.br,51999886263,FINANCEIRO,1
+174,Rafaela, Da Silva Rodrigues Cardoso De Aguiar,rafaelarod@hotmail.com,51981060288,INTERCÂMBIO,1
+174,Rafaela, Da Silva Rodrigues Cardoso De Aguiar,rafaelarod@hotmail.com,51981060288,CADASTRO,1
+174,Sabrina, Schlichting Pulz,ssabrina@terra.com.br,51984222044,OUVIDOR,1
+174,Sheila, Florisbal Goulart,sheilauniodonto@gmail.com,5130373406,CADASTRO,1
+176,Alex, Araujo De Oliveira,cadastro@uniodontoni.com.br,2126684004,CADASTRO,1
+176,Aline, De Carvalho Neves,faturamento@uniodontoni.com.br,2126684004,INTERCÂMBIO,1
+176,Fernando, Tomas Silva,diretor.financeiro@uniodontoni.com.br,2126684004,COMERCIAL,1
+176,Fernando, Tomas Silva,diretor.financeiro@uniodontoni.com.br,2126684004,FINANCEIRO,1
+176,Fernando, Tomas Silva,ouvidoria@uniodontoni.com.br,2126684004,OUVIDOR,1
+176,Reinaldo, Batista De Almeida,gerencia@uniodontoni.com.br,21988849618,GERENTE GERAL,1
+183,Samuel, Victor Firmo Da Silva,gerenciaadm@uniodontobahiasul.com.br,73988160209,GERENTE GERAL,1
+183,Laudo, Rogério Dos Santos,rogerio@uniodonto.coop.br,61985940268,GERENTE GERAL,1
+183,Cristhiane, Sousa Lopes Santiago,gerencia@uniodontoitajuba.com.br,35988219924,GERENTE GERAL,1
+183,Ana, Paula Krause Rott,ana.paula301@hotmail.com,55996422084,GERENTE GERAL,1
+183,Newton, De Azevedo Tezuka,newton.tezuka@uniodontopocos.com.br,35988625864,GERENTE GERAL,1
+183,Dayane, Andresa Dantas,dayaneandresa2@hotmail.com,84996600179,GERENTE GERAL,1
+183,Andreza, Aparecida Ribeiro Da Silva Dias,gerencia@uniodontotresrios.com,24992315358,GERENTE GERAL,1
+183,Anelise, Weschenfelder De Moraes,admsc@uniodontovtrp.com.br,51981365182,GERENTE GERAL,1
+190,Cintia, Batista,cadastrobnu1@uniodontosc.com.br,4730378000,CADASTRO,1
+190,Fabio, Tontini,ouvidoria@uniodontosc.com.br,47984148002,OUVIDOR,1
+190,Naiara, Aparecida Parolli,financeiro@uniodontosc.com.br,4730378000,FINANCEIRO,1
+190,Orliria, De Cássia Da Silva,gerencia@uniodontosc.com.br,47996284784,GERENTE GERAL,1
+190,Rose, Eskelsen Budag,federacao@uniodontosc.com.br,47984148011,COMERCIAL,1
+190,Thalia, Krutli,intercambiogeral@uniodontosc.com.br,4730378029,INTERCÂMBIO,1
+190,Joeliza, Hantchuk,intercambio@uniodontosc.com.br,4730378020,INTERCÂMBIO,1
+192,Graziano, Bezerra,graziano@uniodontocuritiba.coop.br,41996187648,GERENTE GERAL,1
+192,Graziano, Bezerra,graziano@uniodontocuritiba.coop.br,4130192200,FINANCEIRO,1
+192,Graziano, Bezerra,uniodontocuritiba@uniodonto.com.br,4130192200,OUVIDOR,1
+192,Marcos, Bucco,marcos@uniodontocuritiba.coop.br,4130192200,CADASTRO,1
+192,Paulo, Binhara,uniodontocuritiba3@uniodonto.com.br,4130192200,INTERCÂMBIO,1
+192,Thiago, Dias,comercial@uniodontocuritiba.coop.br,4130192200,COMERCIAL,1
+800,Carlos, Alberto,carlos.alberto@uniodontouberlandia.com.br,34991729146,COMERCIAL,1
+800,Renata, Barbosa Cândido,faturamento@uniodontomg.com.br,3132415521,INTERCÂMBIO,1
+800,Rodrigo, Augusto Fonseca Pinto,uniodontomg@uniodontomg.com.br,3132415521,FINANCEIRO,1
+800,Waldir, Filho,gerencia@unidontomg.com.br,34999713179,GERENTE GERAL,1
+801,Alessandra, Fontana,assessoria_cooperado@uniodonto-rs.com.br,51981179514,OUVIDOR,1
+801,Anelise, Da Cruz Tentardini,autorizacao01@uniodonto-rs.com.br,51981460558,INTERCÂMBIO,1
+801,Henriqueta, De Queiroz,administrativo@uniodonto-rs.com.br,51982380900,CADASTRO,1
+801,Julio, Cesar Maciel,julio.maciel@uniodontopoa.com.br,51999825334,COMERCIAL,1
+801,Maria, Mercedes Icart Furtado,uniodontors@uniodonto-rs.com.br,51993178581,GERENTE GERAL,1
+801,Maria, Mercedes Icart Furtado,uniodontors@uniodonto-rs.com.br,51993178581,FINANCEIRO,1
+805,Emanuela, Feitosa Nobrega,clinicarenobrega@globo.com,68984285555,CADASTRO,1
+900,Adonias, Alves,adoniasalves@uniodontopaulista.com.br,11993833503,COMERCIAL,1
+900,Ana, Carolina De Jesus,producao@uniodontopaulista.com.br,1131253040,INTERCÂMBIO,1
+900,Ana, Carolina De Jesus,ouvidoria@uniodontopaulista.com.br,1131253040,OUVIDOR,1
+900,André, Felisberto,comercial@uniodontopaulista.com.br,1131253040,COMERCIAL,1
+900,Rafael, Ramos,financeiro@uniodontopaulista.com.br,1131253040,FINANCEIRO,1
+905,Dra., Kenia Acciarito,kenia.presidente@uniodontosf.com.br,24992418666,FINANCEIRO,1
+906,Jammylle, Ingrid,jammylle@uniodontonordeste.com.br,82987280810,COMERCIAL,1
+906,Jammylle, Ingrid,jammylle@uniodontonordeste.com.br,82987280810,CADASTRO,1
+906,Jaqueline, Pereira,jaqueline@uniodontonordeste.com.br,82996857348,INTERCÂMBIO,1
+906,Jaqueline, Pereira,jaqueline@uniodontonordeste.com.br,82996857348,OUVIDOR,1
+906,Jaqueline, Pereira,jaqueline@uniodontonordeste.com.br,82996857348,FINANCEIRO,1
+906,Ronaldo, Nemésio,ronaldonemesio@uniodontomaceio.com.br,82999734894,GERENTE GERAL,1
+908,Leide, ,secretaria@uniodontogoiania.com.br,62998517159,GERENTE GERAL,1
+909,Cintia, Batista,cadastrobnu1@uniodontosc.com.br,4730378000,CADASTRO,1
+909,Fabio, Tontini,ouvidoria@uniodontosc.com.br,47984148002,OUVIDOR,1
+909,Naiara, Aparecida Parolli,financeiro@uniodontosc.com.br,4730378000,FINANCEIRO,1
+909,Orliria, De Cássia Da Silva,gerencia@uniodontosc.com.br,47996284784,GERENTE GERAL,1
+909,Rose, Eskelsen Budag,federacao@uniodontosc.com.br,47984148011,COMERCIAL,1
+909,Thalia, Krutli,intercambiogeral@uniodontosc.com.br,4730378029,INTERCÂMBIO,1
+999,Claudio,Braga,claudio@uniodontolondrina.coop.br,43999964140,GERENTE GERAL,1

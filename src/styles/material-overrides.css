@@ -143,6 +143,11 @@ button[data-slot="button"] {
   border-radius: 999px;
 }
 
+/* Icon buttons should keep square geometry from size classes. */
+button[data-slot="button"][class*="size-"] {
+  min-height: 0;
+}
+
 .quick-action-button {
   display: inline-flex;
   align-items: center;
@@ -179,6 +184,22 @@ button[data-slot="button"] {
 .quick-action-button svg {
   width: 18px;
   height: 18px;
+}
+
+/* Toolbar actions (baixar/importar/adicionar) in cadastros auxiliares. */
+.aux-toolbar-icon-btn {
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px;
+  min-height: 40px !important;
+  padding: 0 !important;
+  border-radius: 999px !important;
+  flex: 0 0 40px;
+}
+
+.aux-toolbar-icon-btn svg {
+  width: 16px;
+  height: 16px;
 }
 
 /* Alerts trigger */

@@ -41,6 +41,7 @@ interface PedidoDetalhesProps {
   pedido: Pedido;
   onClose: () => void;
   onUpdatePedido: (pedidoId: string, updates: Partial<Pedido>) => void;
+  inline?: boolean;
 }
 
 const comentarioRegex = /\(\d{2}\/\d{2}\/\d{4}.*\):/;
@@ -52,7 +53,7 @@ const extractInitialJustificativa = (conteudo: string) => {
   return lines.slice(0, cutoff).join('\n').trim();
 };
 
-export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalhesProps) {
+export function PedidoDetalhes({ pedido, onClose, onUpdatePedido, inline = false }: PedidoDetalhesProps) {
   const [novoStatus, setNovoStatus] = useState(pedido.status);
   const [comentario, setComentario] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
@@ -260,13 +261,15 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
   };
 
   const formatDate = (value: string | Date) => {
-    return new Date(value).toLocaleDateString('pt-BR', {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return 'Data indisponível';
+    return parsed.toLocaleDateString('pt-BR', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
-    });
+    }).replace(',', ' •');
   };
 
   const formatDateShort = (value: string | Date) => {
@@ -290,53 +293,110 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
     ? extractInitialJustificativa(pedido.observacoes)
     : '';
 
-  return (
-    <Dialog open onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
-      <DialogContent
-        className="w-full max-h-[90vh] overflow-y-auto p-0"
-        style={{ maxWidth: '960px' }}
-      >
-        <DialogHeader className="border-b p-6 text-left">
-          <div className="flex items-center justify-between gap-4">
-            <div className="min-w-0 flex-1">
-              <DialogTitle className="truncate text-xl font-semibold text-gray-900">
-                {pedido.titulo}
-              </DialogTitle>
-              <DialogDescription className="mt-1 text-sm text-gray-500">
-                ID: {pedido.id} • Criado em {formatDateShort(pedido.data_criacao)}
-              </DialogDescription>
-              <p className="text-xs text-gray-600 mt-1">
-                {pedido.ponto_de_vista === 'feita' && 'Solicitação feita'}
-                {pedido.ponto_de_vista === 'recebida' && 'Solicitação recebida'}
-                {pedido.ponto_de_vista === 'interna' && 'Interna'}
-                {(!pedido.ponto_de_vista || pedido.ponto_de_vista === 'acompanhamento') && 'Acompanhamento'}
-                {(pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome)
-                  ? ` • Responsável: ${pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome}`
-                  : ''}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              {canDelete() && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" aria-label="Mais opções">
-                      <MoreVertical className="w-5 h-5" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onClick={handleDelete}
-                      disabled={isDeleting}
-                    >
-                      {isDeleting ? 'Excluindo...' : 'Excluir pedido'}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
+  const sortedAuditoriaLogs = useMemo(
+    () => [...auditoriaLogs].sort((a, b) => {
+      const tsA = new Date(a.timestamp).getTime();
+      const tsB = new Date(b.timestamp).getTime();
+      const safeA = Number.isNaN(tsA) ? 0 : tsA;
+      const safeB = Number.isNaN(tsB) ? 0 : tsB;
+      return safeB - safeA;
+    }),
+    [auditoriaLogs]
+  );
+
+  const content = (
+    <>
+        {inline ? (
+          <div className="border-b p-6 text-left">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <h1 className="truncate text-xl font-semibold text-gray-900">
+                  {pedido.titulo}
+                </h1>
+                <p className="mt-1 text-sm text-gray-500">
+                  ID: {pedido.id} • Criado em {formatDateShort(pedido.data_criacao)}
+                </p>
+                <p className="mt-1 text-xs text-gray-600">
+                  {pedido.ponto_de_vista === 'feita' && 'Solicitação feita'}
+                  {pedido.ponto_de_vista === 'recebida' && 'Solicitação recebida'}
+                  {pedido.ponto_de_vista === 'interna' && 'Interna'}
+                  {(!pedido.ponto_de_vista || pedido.ponto_de_vista === 'acompanhamento') && 'Acompanhamento'}
+                  {(pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome)
+                    ? ` • Responsável: ${pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome}`
+                    : ''}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={onClose}>
+                  Voltar para pedidos
+                </Button>
+                {canDelete() && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" aria-label="Mais opções">
+                        <MoreVertical className="w-5 h-5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={handleDelete}
+                        disabled={isDeleting}
+                      >
+                        {isDeleting ? 'Excluindo...' : 'Excluir pedido'}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
             </div>
           </div>
-        </DialogHeader>
+        ) : (
+          <DialogHeader className="border-b p-6 text-left">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <DialogTitle className="truncate text-xl font-semibold text-gray-900">
+                  {pedido.titulo}
+                </DialogTitle>
+                <DialogDescription className="mt-1 text-sm text-gray-500">
+                  ID: {pedido.id} • Criado em {formatDateShort(pedido.data_criacao)}
+                </DialogDescription>
+                <p className="mt-1 text-xs text-gray-600">
+                  {pedido.ponto_de_vista === 'feita' && 'Solicitação feita'}
+                  {pedido.ponto_de_vista === 'recebida' && 'Solicitação recebida'}
+                  {pedido.ponto_de_vista === 'interna' && 'Interna'}
+                  {(!pedido.ponto_de_vista || pedido.ponto_de_vista === 'acompanhamento') && 'Acompanhamento'}
+                  {(pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome)
+                    ? ` • Responsável: ${pedido.responsavel_atual_nome || pedido.cooperativa_responsavel_nome}`
+                    : ''}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={onClose}>
+                  Voltar para pedidos
+                </Button>
+                {canDelete() && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" aria-label="Mais opções">
+                        <MoreVertical className="w-5 h-5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={handleDelete}
+                        disabled={isDeleting}
+                      >
+                        {isDeleting ? 'Excluindo...' : 'Excluir pedido'}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
+            </div>
+          </DialogHeader>
+        )}
 
         <div className="p-6 space-y-6">
           <Tabs defaultValue="detalhes" className="h-full">
@@ -624,15 +684,18 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
                     <History className="w-5 h-5 mr-2" />
                     Histórico de Atividades
                   </CardTitle>
+                  <CardDescription className="inline-flex w-fit items-center rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">
+                    Ordem: mais novo para mais antigo
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {auditoriaLogs.length === 0 ? (
+                    {sortedAuditoriaLogs.length === 0 ? (
                       <p className="text-gray-500 text-center py-4">
                         Nenhuma atividade registrada
                       </p>
                     ) : (
-                      auditoriaLogs.map((log) => {
+                      sortedAuditoriaLogs.map((log) => {
                         const detalhes = (log.detalhes || '')
                           .split('|')
                           .map((item) => item.trim())
@@ -641,35 +704,42 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
                         return (
                           <div
                             key={log.id}
-                            className="relative flex items-start space-x-3 rounded-lg bg-gray-50 p-3"
+                            className="rounded-lg bg-gray-50 p-3"
                           >
-                            <span
-                              className="absolute right-3 top-3 rounded-full text-xs font-medium"
-                              style={{ backgroundColor: '#01CABE', color: '#00FFF0', padding: '5px 10px' }}
-                            >
-                              por {log.usuario_display_nome || log.usuario_nome}
-                            </span>
-                            <div className="mt-2 h-2 w-2 flex-shrink-0 rounded-full bg-blue-500" />
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-gray-900">{log.acao}</p>
-                              {detalhes.map((item, index) => {
-                                const isComentario = item.toLowerCase().startsWith('comentário:');
-                                const content = isComentario
-                                  ? item.replace(/^Comentário:\s*/i, '')
-                                  : item;
-                                return isComentario ? (
-                                  <div
-                                    key={index}
-                                    className="mt-2 rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-700"
-                                    dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
-                                  />
-                                ) : (
-                                  <p key={index} className="mt-1 text-sm text-gray-700">
-                                    {item}
-                                  </p>
-                                );
-                              })}
-                              <p className="mt-1 text-xs text-gray-500">{formatDate(log.timestamp)}</p>
+                            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-700">
+                                <Calendar className="h-3.5 w-3.5" />
+                                {formatDate(log.timestamp)}
+                              </span>
+                              <span
+                                className="rounded-full text-xs font-medium"
+                                style={{ backgroundColor: '#01CABE', color: '#00FFF0', padding: '5px 10px' }}
+                              >
+                                por {log.usuario_display_nome || log.usuario_nome}
+                              </span>
+                            </div>
+                            <div className="flex items-start space-x-3">
+                              <div className="mt-2 h-2 w-2 flex-shrink-0 rounded-full bg-blue-500" />
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-gray-900">{log.acao}</p>
+                                {detalhes.map((item, index) => {
+                                  const isComentario = item.toLowerCase().startsWith('comentário:');
+                                  const content = isComentario
+                                    ? item.replace(/^Comentário:\s*/i, '')
+                                    : item;
+                                  return isComentario ? (
+                                    <div
+                                      key={index}
+                                      className="mt-2 rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-700"
+                                      dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
+                                    />
+                                  ) : (
+                                    <p key={index} className="mt-1 text-sm text-gray-700">
+                                      {item}
+                                    </p>
+                                  );
+                                })}
+                              </div>
                             </div>
                           </div>
                         );
@@ -681,6 +751,24 @@ export function PedidoDetalhes({ pedido, onClose, onUpdatePedido }: PedidoDetalh
             </TabsContent>
           </Tabs>
         </div>
+    </>
+  );
+
+  if (inline) {
+    return (
+      <div className="w-full overflow-hidden rounded-2xl border bg-white shadow-sm">
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <Dialog open onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
+      <DialogContent
+        className="w-full max-h-[90vh] overflow-y-auto p-0"
+        style={{ maxWidth: '960px' }}
+      >
+        {content}
       </DialogContent>
     </Dialog>
   );

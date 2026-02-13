@@ -17,6 +17,9 @@ const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") || "*")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
+const ALLOW_PRIVATE_NETWORK_ORIGINS = (
+  Deno.env.get("ALLOW_PRIVATE_NETWORK_ORIGINS") ?? "true"
+).toLowerCase() !== "false";
 
 const app = new Hono();
 console.log("[cors] allowed origins", ALLOWED_ORIGINS);
@@ -24,6 +27,21 @@ console.log("[cors] allowed origins", ALLOWED_ORIGINS);
 const isOriginAllowed = (origin?: string | null): boolean => {
   if (!origin) return true; // permitir chamadas server-to-server e curl
   if (ALLOWED_ORIGINS.includes("*")) return true;
+  if (ALLOW_PRIVATE_NETWORK_ORIGINS) {
+    try {
+      const { hostname } = new URL(origin);
+      const isLoopback = hostname === "localhost" || hostname === "127.0.0.1" ||
+        hostname === "::1";
+      const isPrivate10 = hostname.startsWith("10.");
+      const isPrivate192 = hostname.startsWith("192.168.");
+      const isPrivate172 = /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname);
+      if (isLoopback || isPrivate10 || isPrivate192 || isPrivate172) {
+        return true;
+      }
+    } catch {
+      // ignora origins inválidas e segue para regras explícitas
+    }
+  }
   // suporta curingas simples do tipo "*.dominio.com"
   for (const rule of ALLOWED_ORIGINS) {
     if (rule === origin) return true;
@@ -158,6 +176,8 @@ const mapCooperativa = (row: any) => {
     data_fundacao: row.DATA_FUNDACAO ?? row.data_fundacao ?? "",
     raz_social: row.RAZ_SOCIAL ?? row.raz_social ?? "",
     codigo_ans: row.CODIGO_ANS ?? row.codigo_ans ?? "",
+    resp_tecnico: row.resp_tecnico ?? row.RESP_TECNICO ?? "",
+    cro_resp_tecnico: row.cro_resp_tecnico ?? row.CRO_RESP_TECNICO ?? "",
     federacao: row.FEDERACAO ?? row.federacao ?? "",
     software: row.SOFTWARE ?? row.software ?? "",
     tipo,
@@ -178,7 +198,11 @@ const mapCidade = (row: any) => ({
   uf_municipio: row.UF_MUNICIPIO ?? row.uf_municipio,
   nm_regiao: row.NM_REGIAO ?? row.nm_regiao,
   cidades_habitantes: row.CIDADES_HABITANTES ?? row.cidades_habitantes,
-  id_singular: row.ID_SINGULAR ?? row.id_singular,
+  // compat: id_singular segue representando a cooperativa de credenciamento
+  id_singular: row.id_singular_credenciamento ?? row.ID_SINGULAR ?? row.id_singular,
+  id_singular_credenciamento: row.id_singular_credenciamento ?? row.ID_SINGULAR ?? null,
+  id_singular_vendas: row.id_singular_vendas ?? null,
+  reg_ans: row.reg_ans ?? row.REG_ANS ?? null,
   nm_singular: row.NM_SINGULAR ?? row.nm_singular ?? null,
 });
 
@@ -188,6 +212,9 @@ const mapOperador = (row: any) => ({
   email: row.email ?? "",
   telefone: row.telefone ?? "",
   whatsapp: row.whatsapp ?? "",
+  wpp: normalizeBoolInt(row.wpp) === 1 ||
+    Boolean(String(row.whatsapp ?? "").trim()) ||
+    isLikelyBrazilMobile(normalizeDigitsString(row.telefone ?? "")),
   cargo: row.cargo ?? "",
   id_singular: row.id_singular ?? "",
   ativo: (row.status ?? true) as boolean,
@@ -204,6 +231,21 @@ const mapCoberturaLog = (row: any) => ({
   cooperativa_origem_nome: row.cooperativa_origem_nome ?? null,
   cooperativa_destino: row.cooperativa_destino ?? null,
   cooperativa_destino_nome: row.cooperativa_destino_nome ?? null,
+  usuario_email: row.usuario_email ?? "",
+  usuario_nome: row.usuario_nome ?? "",
+  usuario_papel: row.usuario_papel ?? "",
+  detalhes: row.detalhes ?? null,
+  timestamp: row.timestamp ?? null,
+});
+
+const mapCooperativaOverviewLog = (row: any) => ({
+  id: row.id,
+  cooperativa_id: row.cooperativa_id,
+  cooperativa_nome: row.cooperativa_nome ?? row.UNIODONTO ?? null,
+  campo: row.campo ?? "",
+  acao: row.acao ?? "",
+  valor_anterior: row.valor_anterior ?? null,
+  valor_novo: row.valor_novo ?? null,
   usuario_email: row.usuario_email ?? "",
   usuario_nome: row.usuario_nome ?? "",
   usuario_papel: row.usuario_papel ?? "",
@@ -407,6 +449,62 @@ const ensureAuthUsersSchema = () => {
   }
 };
 
+const ensureAuthUserCooperativasSchema = () => {
+  try {
+    db.query(`CREATE TABLE IF NOT EXISTS auth_user_cooperativas (
+      user_email TEXT NOT NULL,
+      cooperativa_id TEXT NOT NULL,
+      is_primary INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+      updated_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+      PRIMARY KEY (user_email, cooperativa_id)
+    )`);
+  } catch (error) {
+    console.warn("[auth_user_cooperativas] falha ao garantir tabela:", error);
+  }
+
+  try {
+    db.query(
+      `CREATE INDEX IF NOT EXISTS idx_auth_user_cooperativas_coop
+       ON auth_user_cooperativas(cooperativa_id)`,
+    );
+  } catch (error) {
+    console.warn("[auth_user_cooperativas] falha ao criar índice:", error);
+  }
+
+  try {
+    db.query(
+      `INSERT INTO auth_user_cooperativas (user_email, cooperativa_id, is_primary, created_at, updated_at)
+       SELECT email, cooperativa_id, 1, COALESCE(data_cadastro, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP
+         FROM auth_users
+        WHERE COALESCE(TRIM(cooperativa_id), '') <> ''
+       ON CONFLICT(user_email, cooperativa_id) DO NOTHING`,
+    );
+  } catch (error) {
+    console.warn("[auth_user_cooperativas] falha ao sincronizar vínculos:", error);
+  }
+
+  try {
+    db.query(
+      `UPDATE auth_user_cooperativas
+          SET is_primary = CASE
+            WHEN cooperativa_id = (
+              SELECT cooperativa_id
+                FROM auth_users
+               WHERE auth_users.email = auth_user_cooperativas.user_email
+               LIMIT 1
+            ) THEN 1
+            ELSE 0
+          END
+        WHERE user_email IN (
+          SELECT email FROM auth_users WHERE COALESCE(TRIM(cooperativa_id), '') <> ''
+        )`,
+    );
+  } catch (error) {
+    console.warn("[auth_user_cooperativas] falha ao alinhar cooperativa principal:", error);
+  }
+};
+
 const ensureUserApprovalRequestsTable = () => {
   try {
     db.query(
@@ -442,8 +540,105 @@ const ensureUserApprovalRequestsTable = () => {
   }
 };
 
+const ensureEnderecoTipoCorrespondencia = () => {
+  try {
+    db.query(
+      `UPDATE ${TBL("cooperativa_enderecos")}
+          SET tipo = 'correspondencia'
+        WHERE lower(tipo) = 'sede'`,
+    );
+  } catch (error) {
+    // Ambientes antigos podem não ter a tabela ainda; não bloquear bootstrap.
+    console.warn("[enderecos] não foi possível normalizar tipo para correspondencia:", error);
+  }
+};
+
+const ensureEnderecoVisaoGeralSchema = () => {
+  const statements = IS_POSTGRES
+    ? [
+      `ALTER TABLE ${TBL("cooperativa_enderecos")} ADD COLUMN IF NOT EXISTS exibir_visao_geral INTEGER DEFAULT 1`,
+      `ALTER TABLE ${TBL("cooperativa_enderecos")} ADD COLUMN IF NOT EXISTS plantao_clinica_id TEXT`,
+      `ALTER TABLE ${TBL("cooperativa_plantao_clinicas")} ADD COLUMN IF NOT EXISTS endereco_id TEXT`,
+    ]
+    : [
+      `ALTER TABLE ${TBL("cooperativa_enderecos")} ADD COLUMN exibir_visao_geral INTEGER DEFAULT 1`,
+      `ALTER TABLE ${TBL("cooperativa_enderecos")} ADD COLUMN plantao_clinica_id TEXT`,
+      `ALTER TABLE ${TBL("cooperativa_plantao_clinicas")} ADD COLUMN endereco_id TEXT`,
+    ];
+
+  for (const statement of statements) {
+    try {
+      db.query(statement);
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) {
+        console.warn("[enderecos] não foi possível ajustar colunas de visão geral/sincronização:", error);
+      }
+    }
+  }
+
+  try {
+    db.query(
+      `UPDATE ${TBL("cooperativa_enderecos")}
+          SET exibir_visao_geral = COALESCE(exibir_visao_geral, 1)`,
+    );
+  } catch (_) {
+    /* ignore */
+  }
+};
+
+const ensureOperadoresTelefoneSchema = () => {
+  const statements = IS_POSTGRES
+    ? [
+      `ALTER TABLE ${TBL("operadores")} ADD COLUMN IF NOT EXISTS wpp INTEGER DEFAULT 0`,
+    ]
+    : [
+      `ALTER TABLE ${TBL("operadores")} ADD COLUMN wpp INTEGER DEFAULT 0`,
+    ];
+
+  for (const statement of statements) {
+    try {
+      db.query(statement);
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) {
+        console.warn("[operadores] não foi possível ajustar coluna wpp:", error);
+      }
+    }
+  }
+
+  try {
+    db.query(
+      `UPDATE ${TBL("operadores")}
+          SET telefone = COALESCE(NULLIF(telefone, ''), NULLIF(whatsapp, ''), telefone)`,
+    );
+  } catch (_) {
+    /* ignore */
+  }
+  try {
+    db.query(
+      `UPDATE ${TBL("operadores")}
+          SET wpp = 1
+        WHERE COALESCE(NULLIF(whatsapp, ''), '') <> ''
+           OR LENGTH(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(telefone, ''), ' ', ''), '(', ''), ')', ''), '-', '')) = 11`,
+    );
+  } catch (_) {
+    /* ignore */
+  }
+  try {
+    db.query(
+      `UPDATE ${TBL("operadores")}
+          SET whatsapp = CASE WHEN COALESCE(wpp, 0) = 1 THEN COALESCE(telefone, whatsapp, '') ELSE '' END`,
+    );
+  } catch (_) {
+    /* ignore */
+  }
+};
+
 ensureAuthUsersSchema();
+ensureAuthUserCooperativasSchema();
 ensureUserApprovalRequestsTable();
+ensureEnderecoTipoCorrespondencia();
+ensureEnderecoVisaoGeralSchema();
+ensureOperadoresTelefoneSchema();
 
 const getCooperativaRowRaw = (id?: string | null) => {
   if (!id) return null;
@@ -496,9 +691,13 @@ const findFederationIdForCoop = (coopId?: string | null) => {
   if (!coopId) return null;
   const row = getCooperativaRowRaw(coopId);
   if (!row) return null;
-  const tipo = (row.TIPO || row.tipo || "").toUpperCase();
+  const tipo = normalizeCooperativaTipo(row.TIPO || row.tipo || "");
   if (tipo === "FEDERACAO") return row.ID_SINGULAR || row.id_singular || coopId;
   if (tipo === "CONFEDERACAO") return null;
+
+  // Preferir ligação direta por ID (schema novo), com fallback para o modelo legado (nome da federação).
+  const directFed = row.federacao_id || row.FEDERACAO_ID;
+  if (directFed) return directFed;
 
   const fedName = row.FEDERACAO || row.federacao;
   if (!fedName) return null;
@@ -522,7 +721,7 @@ type ApprovalTarget =
 const findApprovalTarget = (coopId?: string | null): ApprovalTarget => {
   const chain: { id: string | null; level: "singular" | "federacao" | "confederacao" }[] = [];
   const row = getCooperativaRowRaw(coopId);
-  const tipo = (row?.TIPO || row?.tipo || "").toUpperCase();
+  const tipo = normalizeCooperativaTipo(row?.TIPO || row?.tipo || "");
 
   if (tipo === "CONFEDERACAO") {
     chain.push({ id: row?.ID_SINGULAR || row?.id_singular || coopId || getConfederacaoId(), level: "confederacao" });
@@ -569,6 +768,150 @@ const getAuthUser = (email: string) => {
   } catch (error) {
     console.error("[auth] falha ao obter usuário:", error);
     return null;
+  }
+};
+
+const normalizeCooperativaIdsInput = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return Array.from(
+      new Set(
+        value
+          .map((item) => String(item || "").trim())
+          .filter((item) => item.length > 0),
+      ),
+    );
+  }
+  if (typeof value === "string") {
+    return Array.from(
+      new Set(
+        value
+          .split(",")
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0),
+      ),
+    );
+  }
+  return [];
+};
+
+const getUserCooperativaAssociacoes = (email?: string | null): string[] => {
+  if (!email) return [];
+  try {
+    const rows = db.queryEntries<any>(
+      `SELECT cooperativa_id, COALESCE(is_primary, 0) AS is_primary
+         FROM auth_user_cooperativas
+        WHERE user_email = ?
+        ORDER BY COALESCE(is_primary, 0) DESC, cooperativa_id ASC`,
+      [email],
+    ) || [];
+    return rows
+      .map((row) => String(row.cooperativa_id || "").trim())
+      .filter((id) => id.length > 0);
+  } catch (error) {
+    console.warn("[auth_user_cooperativas] falha ao buscar vínculos:", error);
+    return [];
+  }
+};
+
+const syncUserCooperativaAssociacoes = (
+  email: string,
+  idsInput: string[],
+  primaryInput?: string | null,
+) => {
+  const ids = Array.from(
+    new Set(
+      (idsInput || [])
+        .map((item) => String(item || "").trim())
+        .filter((item) => item.length > 0),
+    ),
+  );
+  if (!email) return [] as string[];
+  if (ids.length === 0) {
+    try {
+      db.query(`DELETE FROM auth_user_cooperativas WHERE user_email = ?`, [email]);
+    } catch (_) {
+      /* ignore */
+    }
+    return [] as string[];
+  }
+
+  const primary = ids.includes(String(primaryInput || "").trim())
+    ? String(primaryInput).trim()
+    : ids[0];
+  const now = new Date().toISOString();
+
+  try {
+    const placeholders = ids.map(() => "?").join(",");
+    db.query(
+      `DELETE FROM auth_user_cooperativas
+        WHERE user_email = ?
+          AND cooperativa_id NOT IN (${placeholders})`,
+      [email, ...ids],
+    );
+  } catch (error) {
+    console.warn("[auth_user_cooperativas] falha ao remover vínculos antigos:", error);
+  }
+
+  for (const cooperativaId of ids) {
+    try {
+      db.query(
+        `INSERT INTO auth_user_cooperativas (user_email, cooperativa_id, is_primary, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(user_email, cooperativa_id)
+         DO UPDATE SET is_primary = excluded.is_primary, updated_at = excluded.updated_at`,
+        [email, cooperativaId, cooperativaId === primary ? 1 : 0, now, now],
+      );
+    } catch (error) {
+      console.warn("[auth_user_cooperativas] falha ao salvar vínculo:", error);
+    }
+  }
+
+  try {
+    db.query(
+      `UPDATE auth_users
+          SET cooperativa_id = ?
+        WHERE email = ?`,
+      [primary, email],
+    );
+  } catch (error) {
+    console.warn("[auth_user_cooperativas] falha ao sincronizar cooperativa principal:", error);
+  }
+
+  return ids;
+};
+
+const buildCooperativaAssociacoesMap = (emails: string[]): Record<string, string[]> => {
+  const normalized = Array.from(
+    new Set(
+      (emails || [])
+        .map((email) => String(email || "").trim().toLowerCase())
+        .filter((email) => email.length > 0),
+    ),
+  );
+  if (normalized.length === 0) return {};
+  try {
+    const placeholders = normalized.map(() => "?").join(",");
+    const rows = db.queryEntries<any>(
+      `SELECT user_email, cooperativa_id, COALESCE(is_primary, 0) AS is_primary
+         FROM auth_user_cooperativas
+        WHERE LOWER(user_email) IN (${placeholders})
+        ORDER BY COALESCE(is_primary, 0) DESC, cooperativa_id ASC`,
+      normalized as any,
+    ) || [];
+    const map: Record<string, string[]> = {};
+    for (const row of rows) {
+      const email = String(row.user_email || "").trim().toLowerCase();
+      const cooperativaId = String(row.cooperativa_id || "").trim();
+      if (!email || !cooperativaId) continue;
+      if (!map[email]) map[email] = [];
+      if (!map[email].includes(cooperativaId)) {
+        map[email].push(cooperativaId);
+      }
+    }
+    return map;
+  } catch (error) {
+    console.warn("[auth_user_cooperativas] falha ao montar mapa de vínculos:", error);
+    return {};
   }
 };
 
@@ -860,6 +1203,47 @@ const ensureCoberturaSchema = () => {
 
 ensureCoberturaSchema();
 
+const ensureCooperativaOverviewLogSchema = () => {
+  try {
+    db.query(`CREATE TABLE IF NOT EXISTS ${TBL("cooperativa_overview_logs")} (
+      id TEXT PRIMARY KEY,
+      cooperativa_id TEXT NOT NULL,
+      campo TEXT NOT NULL,
+      acao TEXT NOT NULL,
+      valor_anterior TEXT,
+      valor_novo TEXT,
+      usuario_email TEXT,
+      usuario_nome TEXT,
+      usuario_papel TEXT,
+      detalhes TEXT,
+      timestamp TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+    )`);
+  } catch (e) {
+    console.warn("[schema] criacao de cooperativa_overview_logs falhou:", e);
+  }
+
+  try {
+    db.query(
+      `CREATE INDEX IF NOT EXISTS idx_${
+        TBL("cooperativa_overview_logs").replace(".", "_")
+      }_coop ON ${TBL("cooperativa_overview_logs")}(cooperativa_id)`,
+    );
+  } catch (e) {
+    console.warn("[schema] indice cooperativa_overview_logs coop falhou:", e);
+  }
+  try {
+    db.query(
+      `CREATE INDEX IF NOT EXISTS idx_${
+        TBL("cooperativa_overview_logs").replace(".", "_")
+      }_ts ON ${TBL("cooperativa_overview_logs")}(timestamp)`,
+    );
+  } catch (e) {
+    console.warn("[schema] indice cooperativa_overview_logs timestamp falhou:", e);
+  }
+};
+
+ensureCooperativaOverviewLogSchema();
+
 const ensureSettingsSchema = () => {
   try {
     db.query(`CREATE TABLE IF NOT EXISTS ${TBL("settings")} (
@@ -942,6 +1326,68 @@ const ensureCooperativaSettingsSchema = () => {
 
 ensureCooperativaSettingsSchema();
 
+const ensureDiretoresPrivacidadeSchema = () => {
+  try {
+    db.query(
+      `ALTER TABLE ${TBL("cooperativa_diretores")} ADD COLUMN divulgar_celular INTEGER DEFAULT 0`,
+    );
+  } catch (error) {
+    if (!isDuplicateColumnError(error)) {
+      console.warn("[schema] falha ao incluir divulgar_celular em diretores:", error);
+    }
+  }
+
+  try {
+    db.query(
+      `UPDATE ${TBL("cooperativa_diretores")}
+          SET divulgar_celular = COALESCE(divulgar_celular, 0)`,
+    );
+  } catch (error) {
+    console.warn("[schema] falha ao normalizar divulgar_celular em diretores:", error);
+  }
+
+  try {
+    db.query(`CREATE TABLE IF NOT EXISTS ${TBL("diretor_phone_access_requests")} (
+      id TEXT PRIMARY KEY,
+      cooperativa_id TEXT NOT NULL,
+      diretor_id TEXT NOT NULL,
+      requester_email TEXT NOT NULL,
+      requester_nome TEXT,
+      requester_cooperativa_id TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      motivo TEXT,
+      created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+      decided_at TEXT,
+      decided_by TEXT,
+      decision_notes TEXT
+    )`);
+  } catch (error) {
+    console.warn("[schema] falha ao criar diretor_phone_access_requests:", error);
+  }
+
+  try {
+    db.query(
+      `CREATE INDEX IF NOT EXISTS idx_${
+        TBL("diretor_phone_access_requests").replace(".", "_")
+      }_coop_status ON ${TBL("diretor_phone_access_requests")}(cooperativa_id, status)`,
+    );
+  } catch (error) {
+    console.warn("[schema] falha ao criar índice de solicitações (coop_status):", error);
+  }
+
+  try {
+    db.query(
+      `CREATE INDEX IF NOT EXISTS idx_${
+        TBL("diretor_phone_access_requests").replace(".", "_")
+      }_requester_diretor ON ${TBL("diretor_phone_access_requests")}(requester_email, diretor_id)`,
+    );
+  } catch (error) {
+    console.warn("[schema] falha ao criar índice de solicitações (requester_diretor):", error);
+  }
+};
+
+ensureDiretoresPrivacidadeSchema();
+
 type SystemSettings = {
   theme: "light" | "dark" | "system";
   deadlines: {
@@ -952,6 +1398,14 @@ type SystemSettings = {
   autoNotifyManagers: boolean;
   enableSelfRegistration: boolean;
   pedido_motivos: string[];
+  hub_cadastros: {
+    tipos_endereco: string[];
+    tipos_conselho: string[];
+    tipos_contato: string[];
+    subtipos_contato: string[];
+    redes_sociais: string[];
+    departamentos: string[];
+  };
 };
 
 const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
@@ -964,6 +1418,37 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   autoNotifyManagers: true,
   enableSelfRegistration: true,
   pedido_motivos: [],
+  hub_cadastros: {
+    tipos_endereco: [
+      "Sede",
+      "Filial",
+      "Núcleo",
+      "Clínica",
+      "Ponto de Venda",
+      "Plantão de Urgência & Emergência",
+      "Atendimento",
+    ],
+    tipos_conselho: ["Fiscal", "Administrativo", "Técnico"],
+    tipos_contato: ["E-mail", "Telefone", "Website", "Rede social", "Outro"],
+    subtipos_contato: [
+      "LGPD",
+      "Plantão",
+      "Geral",
+      "Emergência",
+      "Divulgação",
+      "Comercial PF",
+      "Comercial PJ",
+      "Institucional",
+      "Portal do Prestador",
+      "Portal do Cliente",
+      "Portal da Empresa",
+      "Portal do Corretor",
+      "E-Commerce",
+      "Portal do Cooperado",
+    ],
+    redes_sociais: ["Instagram", "Facebook", "LinkedIn", "YouTube", "TikTok", "X"],
+    departamentos: ["INTERCÂMBIO", "COMERCIAL", "ATENDIMENTO", "FINANCEIRO"],
+  },
 };
 
 const SETTINGS_KEY_SYSTEM = "system_preferences";
@@ -984,6 +1469,56 @@ const sanitizeMotivos = (value: unknown): string[] => {
   return result;
 };
 
+const sanitizeCatalogList = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const trimmed = item.replace(/\s+/g, " ").trim();
+    if (!trimmed) continue;
+    const normalized = trimmed.slice(0, 120);
+    if (seen.has(normalized.toLowerCase())) continue;
+    seen.add(normalized.toLowerCase());
+    result.push(normalized);
+  }
+  return result;
+};
+
+const sanitizeHubCadastros = (
+  value: unknown,
+): SystemSettings["hub_cadastros"] => {
+  const source = (value && typeof value === "object") ? (value as Record<string, unknown>) : {};
+
+  const tiposEndereco = sanitizeCatalogList(source.tipos_endereco);
+  const tiposConselho = sanitizeCatalogList(source.tipos_conselho);
+  const tiposContato = sanitizeCatalogList(source.tipos_contato);
+  const subtiposContato = sanitizeCatalogList(source.subtipos_contato);
+  const redesSociais = sanitizeCatalogList(source.redes_sociais);
+  const departamentos = sanitizeCatalogList(source.departamentos);
+
+  return {
+    tipos_endereco: tiposEndereco.length
+      ? tiposEndereco
+      : [...DEFAULT_SYSTEM_SETTINGS.hub_cadastros.tipos_endereco],
+    tipos_conselho: tiposConselho.length
+      ? tiposConselho
+      : [...DEFAULT_SYSTEM_SETTINGS.hub_cadastros.tipos_conselho],
+    tipos_contato: tiposContato.length
+      ? tiposContato
+      : [...DEFAULT_SYSTEM_SETTINGS.hub_cadastros.tipos_contato],
+    subtipos_contato: subtiposContato.length
+      ? subtiposContato
+      : [...DEFAULT_SYSTEM_SETTINGS.hub_cadastros.subtipos_contato],
+    redes_sociais: redesSociais.length
+      ? redesSociais
+      : [...DEFAULT_SYSTEM_SETTINGS.hub_cadastros.redes_sociais],
+    departamentos: departamentos.length
+      ? departamentos
+      : [...DEFAULT_SYSTEM_SETTINGS.hub_cadastros.departamentos],
+  };
+};
+
 const readSystemSettings = (): SystemSettings => {
   try {
     const row = db.queryEntries<{ value: string }>(
@@ -1000,12 +1535,16 @@ const readSystemSettings = (): SystemSettings => {
           ...(parsed?.deadlines ?? {}),
         },
         pedido_motivos: sanitizeMotivos(parsed?.pedido_motivos),
+        hub_cadastros: sanitizeHubCadastros(parsed?.hub_cadastros),
       };
     }
   } catch (error) {
     console.warn("[settings] falha ao ler configurações:", error);
   }
-  return { ...DEFAULT_SYSTEM_SETTINGS };
+  return {
+    ...DEFAULT_SYSTEM_SETTINGS,
+    hub_cadastros: { ...DEFAULT_SYSTEM_SETTINGS.hub_cadastros },
+  };
 };
 
 const persistSystemSettings = (settings: SystemSettings) => {
@@ -1045,6 +1584,43 @@ const getCooperativaInfo = (id?: string | null) => {
   }
 };
 
+const isConfederacaoSystemAdmin = (userData: any) => {
+  if (!userData) return false;
+  const papel = String(userData.papel || "").toLowerCase();
+  if (papel !== "admin") return false;
+  const cooperativaId = String(userData.cooperativa_id || "").trim();
+  if (!cooperativaId) return false;
+  const info = getCooperativaInfo(cooperativaId);
+  return info?.tipo === "CONFEDERACAO";
+};
+
+const canManageCooperativa = (userData: any, cooperativaId: string) => {
+  if (!userData || !cooperativaId) return false;
+
+  const ownId = userData.cooperativa_id as string | null | undefined;
+  const ownInfo = getCooperativaInfo(ownId);
+  const ownTipo = (ownInfo?.tipo || "").toUpperCase();
+  const papel = (userData.papel || "").toLowerCase();
+
+  // Confederação: papel explícito OU admin "dentro" de uma cooperativa do tipo CONFEDERACAO.
+  if (papel === "confederacao" || (papel === "admin" && ownTipo === "CONFEDERACAO")) {
+    return true;
+  }
+
+  // Singular: admin só gerencia a própria cooperativa.
+  if (papel === "admin" && ownTipo === "SINGULAR" && ownId === cooperativaId) {
+    return true;
+  }
+
+  // Federação: papel explícito OU admin "dentro" de uma cooperativa do tipo FEDERACAO.
+  if (papel === "federacao" || (papel === "admin" && ownTipo === "FEDERACAO")) {
+    const ids = collectSingularesDaFederacao(ownId);
+    return ids.includes(cooperativaId);
+  }
+
+  return false;
+};
+
 const normalizeBaseRole = (role?: string | null) => {
   const value = (role || "").toLowerCase();
   if (value === "admin") return "admin";
@@ -1075,13 +1651,25 @@ const collectSingularesDaFederacao = (federacaoId?: string | null) => {
       ) || [];
       return todas.map((row) => row.id_singular).filter(Boolean);
     }
-    const nomeFederacao = federacaoInfo.uniodonto;
-    if (!nomeFederacao) return [federacaoId];
-    const singulares = db.queryEntries<any>(
-      `SELECT id_singular FROM ${TBL("cooperativas")} WHERE FEDERACAO = ?`,
-      [nomeFederacao],
-    ) || [];
-    const ids = singulares.map((row) => row.id_singular).filter(Boolean);
+
+    // Preferir vínculo por ID (schema novo). Se a coluna não existir, cair no legado (FEDERACAO por nome).
+    let ids: string[] = [];
+    try {
+      const singulares = db.queryEntries<any>(
+        `SELECT id_singular FROM ${TBL("cooperativas")} WHERE federacao_id = ?`,
+        [federacaoId],
+      ) || [];
+      ids = singulares.map((row) => row.id_singular).filter(Boolean);
+    } catch (_) {
+      const nomeFederacao = federacaoInfo.uniodonto;
+      if (!nomeFederacao) return [federacaoId];
+      const singulares = db.queryEntries<any>(
+        `SELECT id_singular FROM ${TBL("cooperativas")} WHERE FEDERACAO = ?`,
+        [nomeFederacao],
+      ) || [];
+      ids = singulares.map((row) => row.id_singular).filter(Boolean);
+    }
+
     ids.push(federacaoId);
     return Array.from(new Set(ids));
   } catch (e) {
@@ -1104,8 +1692,10 @@ const getVisibleCooperativas = (userData: any): Set<string> | null => {
     return new Set(ids);
   }
 
-  const id = userData.cooperativa_id ? [userData.cooperativa_id] : [];
-  return new Set(id);
+  const associados = normalizeCooperativaIdsInput(userData.cooperativas_ids);
+  const base = userData.cooperativa_id ? [userData.cooperativa_id] : [];
+  const ids = Array.from(new Set([...associados, ...base].filter(Boolean)));
+  return new Set(ids);
 };
 
 const buildCooperativaScopeClause = (
@@ -1142,6 +1732,12 @@ const isCooperativaVisible = (userData: any, cooperativaId: string) => {
   const visible = getVisibleCooperativas(userData);
   if (visible === null) return true;
   return visible.has(cooperativaId);
+};
+
+// Regra de leitura: usuários do tipo "operador" podem visualizar cadastros e cidades
+// de todas as cooperativas. Regras de edição continuam restritas por outros checks.
+const canReadAnyCooperativaData = (userData: any) => {
+  return Boolean(userData && String(userData.papel || "").toLowerCase() === "operador");
 };
 
 type CoberturaScope = {
@@ -1233,6 +1829,63 @@ const registrarLogCobertura = (
   }
 };
 
+const registrarLogCooperativaOverview = (
+  cooperativaId: string,
+  campo: string,
+  acao: "create" | "update" | "delete",
+  valorAnterior: string | null,
+  valorNovo: string | null,
+  userData: {
+    email?: string;
+    nome?: string;
+    display_name?: string;
+    papel?: string;
+  },
+  detalhes?: string,
+  dbClient: DbAdapter | null = null,
+) => {
+  try {
+    const id = safeRandomId("coopov");
+    const email = userData.email || "";
+    const nome = userData.nome || userData.display_name || email;
+    const papel = userData.papel || "";
+    const timestamp = new Date().toISOString();
+    const target = (dbClient ?? (db as unknown as DbAdapter)) as DbAdapter;
+    target.query(
+      `INSERT INTO ${
+        TBL("cooperativa_overview_logs")
+      } (id, cooperativa_id, campo, acao, valor_anterior, valor_novo, usuario_email, usuario_nome, usuario_papel, detalhes, timestamp)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        id,
+        cooperativaId,
+        campo,
+        acao,
+        valorAnterior,
+        valorNovo,
+        email,
+        nome,
+        papel,
+        detalhes ?? null,
+        timestamp,
+      ],
+    );
+  } catch (e) {
+    console.warn("[cooperativas] falha ao registrar log de visão geral:", e);
+  }
+};
+
+const resolveOverviewAction = (
+  previousValue: string | null,
+  nextValue: string | null,
+): "create" | "update" | "delete" => {
+  const prev = String(previousValue ?? "").trim();
+  const next = String(nextValue ?? "").trim();
+  if (!prev && next) return "create";
+  if (prev && !next) return "delete";
+  return "update";
+};
+
 const ensureOperatorRecord = (user: {
   id: string;
   nome: string;
@@ -1249,6 +1902,14 @@ const ensureOperatorRecord = (user: {
     return;
   }
   try {
+    syncUserCooperativaAssociacoes(
+      user.email,
+      normalizeCooperativaIdsInput((user as any).cooperativas_ids).length
+        ? normalizeCooperativaIdsInput((user as any).cooperativas_ids)
+        : [user.cooperativa_id],
+      user.cooperativa_id,
+    );
+
     const existing = db.queryEntries<any>(
       `SELECT id FROM ${TBL("operadores")} WHERE email = ? LIMIT 1`,
       [user.email],
@@ -1296,8 +1957,13 @@ const getActiveUsersByCooperativa = (cooperativaId?: string | null) => {
     const rows = db.queryEntries<any>(
       `SELECT email, COALESCE(display_name, nome, email) AS nome, cooperativa_id, COALESCE(ativo, 1) AS ativo
          FROM auth_users
-        WHERE cooperativa_id = ?`,
-      [cooperativaId],
+        WHERE cooperativa_id = ?
+       UNION
+       SELECT au.email, COALESCE(au.display_name, au.nome, au.email) AS nome, auc.cooperativa_id AS cooperativa_id, COALESCE(au.ativo, 1) AS ativo
+         FROM auth_users au
+         JOIN auth_user_cooperativas auc ON auc.user_email = au.email
+        WHERE auc.cooperativa_id = ?`,
+      [cooperativaId, cooperativaId],
     ) || [];
     return rows.filter((row) => Number(row.ativo ?? 1) !== 0);
   } catch (error) {
@@ -2136,6 +2802,7 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
       whatsapp: "",
       cargo: "",
       cooperativa_id: "",
+      cooperativas_ids: [] as string[],
       papel: "confederacao",
       ativo: true,
       data_cadastro: new Date().toISOString(),
@@ -2164,6 +2831,7 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
             approved_by: string | null;
             approved_at: string | null;
             requested_papel: string | null;
+            must_change_password: number | null;
           }>(
             `SELECT email,
                     nome,
@@ -2187,6 +2855,10 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
           )[0];
           if (row) {
             const approvalStatus = row.approval_status || "approved";
+            const cooperativasIds = getUserCooperativaAssociacoes(userEmail);
+            const resolvedCooperativas = cooperativasIds.length
+              ? cooperativasIds
+              : (row.cooperativa_id ? [row.cooperativa_id] : []);
             const user = {
               id: userEmail,
               nome: row.nome || "Usuário",
@@ -2196,6 +2868,7 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
               whatsapp: row.whatsapp || "",
               cargo: row.cargo || "",
               cooperativa_id: row.cooperativa_id || "",
+              cooperativas_ids: resolvedCooperativas,
               papel: (row.papel as any) || "operador",
               ativo: !!row.ativo,
               data_cadastro: row.data_cadastro,
@@ -2226,9 +2899,14 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
       )[0];
       if (byEmail) {
         const o = mapOperador(byEmail);
+        const cooperativasIds = getUserCooperativaAssociacoes(userEmail);
+        const resolvedCooperativas = cooperativasIds.length
+          ? cooperativasIds
+          : (o.id_singular ? [o.id_singular] : []);
         const user = {
           ...o,
           cooperativa_id: o.id_singular,
+          cooperativas_ids: resolvedCooperativas,
           papel: "operador",
           approval_status: "approved",
           email_confirmed_at: nowIso(),
@@ -2260,6 +2938,7 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
       whatsapp: "",
       cargo: "",
       cooperativa_id: "",
+      cooperativas_ids: [] as string[],
       papel: "operador",
       ativo: true,
       data_cadastro: new Date().toISOString(),
@@ -2957,14 +3636,8 @@ app.put("/configuracoes/sistema", requireAuth, async (c) => {
   );
   if (!userData) return c.json({ error: "Usuário não encontrado" }, 401);
 
-  const papel = (userData.papel || "").toLowerCase();
-  let podeGerenciar = papel === "confederacao";
-  if (!podeGerenciar && papel === "admin" && userData.cooperativa_id) {
-    const info = getCooperativaInfo(userData.cooperativa_id);
-    podeGerenciar = info?.tipo === "CONFEDERACAO";
-  }
-  if (!podeGerenciar) {
-    return c.json({ error: "Acesso negado" }, 403);
+  if (!isConfederacaoSystemAdmin(userData)) {
+    return c.json({ error: "Acesso negado. Apenas administradores da Confederação podem alterar estas configurações." }, 403);
   }
 
   let payload: any;
@@ -2996,6 +3669,9 @@ app.put("/configuracoes/sistema", requireAuth, async (c) => {
   const pedidoMotivos = payload?.pedido_motivos !== undefined
     ? sanitizeMotivos(payload?.pedido_motivos)
     : currentSettings.pedido_motivos;
+  const hubCadastros = payload?.hub_cadastros !== undefined
+    ? sanitizeHubCadastros(payload?.hub_cadastros)
+    : currentSettings.hub_cadastros;
 
   const settings: SystemSettings = {
     theme,
@@ -3014,6 +3690,7 @@ app.put("/configuracoes/sistema", requireAuth, async (c) => {
         DEFAULT_SYSTEM_SETTINGS.enableSelfRegistration,
     ),
     pedido_motivos: pedidoMotivos,
+    hub_cadastros: hubCadastros,
   };
 
   try {
@@ -3207,6 +3884,2356 @@ app.get("/cooperativas", requireAuth, async (c) => {
   }
 });
 
+// ROTAS AUXILIARES DE COOPERATIVAS (pessoas/contatos/endereços etc)
+const COOP_AUX_RESOURCES: Record<
+  string,
+  { table: string; columns: string[] }
+> = {
+  auditores: {
+    table: TBL("cooperativa_auditores"),
+    columns: ["primeiro_nome", "sobrenome", "telefone", "wpp", "email", "ativo"],
+  },
+  colaboradores: {
+    table: TBL("cooperativa_colaboradores"),
+    columns: [
+      "nome",
+      "sobrenome",
+      "email",
+      "telefone",
+      "wpp",
+      "departamento",
+      "chefia",
+      "ativo",
+    ],
+  },
+  conselhos: {
+    table: TBL("cooperativa_conselhos"),
+    columns: [
+      "tipo",
+      "primeiro_nome",
+      "sobrenome",
+      "posicao",
+      "ano_inicio_mandato",
+      "ano_fim_mandato",
+      "ativo",
+    ],
+  },
+  contatos: {
+    table: TBL("cooperativa_contatos"),
+    columns: ["tipo", "subtipo", "valor", "wpp", "principal", "ativo", "label"],
+  },
+  diretores: {
+    table: TBL("cooperativa_diretores"),
+    columns: [
+      "cargo",
+      "pasta",
+      "primeiro_nome",
+      "sobrenome",
+      "email",
+      "telefone",
+      "wpp",
+      "divulgar_celular",
+      "inicio_mandato",
+      "fim_mandato",
+      "ativo",
+    ],
+  },
+  enderecos: {
+    table: TBL("cooperativa_enderecos"),
+    columns: [
+      "tipo",
+      "nome_local",
+      "cd_municipio_7",
+      "cep",
+      "logradouro",
+      "numero",
+      "complemento",
+      "bairro",
+      "cidade",
+      "uf",
+      "telefone",
+      "wpp",
+      "exibir_visao_geral",
+      "plantao_clinica_id",
+      "ativo",
+    ],
+  },
+  lgpd: {
+    table: TBL("cooperativa_lgpd"),
+    columns: ["primeiro_nome", "sobrenome", "email", "telefone", "wpp", "ativo"],
+  },
+  ouvidores: {
+    table: TBL("cooperativa_ouvidores"),
+    columns: [
+      "primeiro_nome",
+      "sobrenome",
+      "telefone",
+      "wpp",
+      "email",
+      "ativo",
+    ],
+  },
+  plantao: {
+    table: TBL("cooperativa_plantao"),
+    columns: ["modelo_atendimento", "descricao", "ativo"],
+  },
+  plantao_clinicas: {
+    table: TBL("cooperativa_plantao_clinicas"),
+    columns: [
+      "cd_municipio_7",
+      "nome_local",
+      "cep",
+      "logradouro",
+      "numero",
+      "complemento",
+      "bairro",
+      "cidade",
+      "uf",
+      "telefone",
+      "wpp",
+      "descricao",
+      "endereco_id",
+      "ativo",
+    ],
+  },
+  plantao_contatos: {
+    table: TBL("cooperativa_plantao_contatos"),
+    columns: ["tipo", "numero_ou_url", "telefone", "wpp", "principal", "descricao", "ativo"],
+  },
+  plantao_horarios: {
+    table: TBL("cooperativa_plantao_horarios"),
+    columns: ["plantao_clinica_id", "dia_semana", "hora_inicio", "hora_fim", "observacao", "ativo"],
+  },
+  regulatorio: {
+    table: TBL("cooperativa_regulatorio"),
+    columns: [
+      "tipo_unidade",
+      "nome_unidade",
+      "reg_ans",
+      "responsavel_tecnico",
+      "email_responsavel_tecnico",
+      "cro_responsavel_tecnico",
+      "cro_unidade",
+      "ativo",
+    ],
+  },
+};
+
+const DIGITS_ONLY_COLUMNS = new Set([
+  "cpf",
+  "cnpj",
+  "cep",
+  "telefone",
+  "telefone_fixo",
+  "telefone_celular",
+  "whatsapp",
+  "celular",
+  "reg_ans",
+  "cd_municipio_7",
+  "ibge",
+  "codigo_ibge",
+]);
+
+const normalizeDigitsString = (value: unknown) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const digits = raw.replace(/\D/g, "");
+  return digits || null;
+};
+
+const isLikelyBrazilMobile = (value: unknown) => {
+  const digits = normalizeDigitsString(value) || "";
+  const local = digits.startsWith("55") && digits.length >= 12 ? digits.slice(2) : digits;
+  return local.length === 11 && local.charAt(2) === "9";
+};
+
+const normalizeAuxValue = (column: string, value: unknown) => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value === "boolean") return value ? 1 : 0;
+  if (DIGITS_ONLY_COLUMNS.has(column)) return normalizeDigitsString(value);
+  if (column === "dia_semana") {
+    const n = Number(String(value ?? "").trim());
+    return Number.isFinite(n) ? Math.trunc(n) : null;
+  }
+  return value;
+};
+
+const pickAuxPayload = (resource: string, body: any) => {
+  const def = COOP_AUX_RESOURCES[resource];
+  if (!def) return null;
+  const data: Record<string, unknown> = {};
+  for (const col of def.columns) {
+    if (Object.prototype.hasOwnProperty.call(body ?? {}, col)) {
+      data[col] = normalizeAuxValue(col, body[col]);
+    }
+  }
+  if (resource === "enderecos" && Object.prototype.hasOwnProperty.call(data, "cd_municipio_7")) {
+    data.cd_municipio_7 = normalizeCdMunicipio7(data.cd_municipio_7);
+  }
+  if (resource === "plantao_clinicas" && Object.prototype.hasOwnProperty.call(data, "cd_municipio_7")) {
+    data.cd_municipio_7 = normalizeCdMunicipio7(data.cd_municipio_7);
+  }
+  if (resource === "enderecos" && Object.prototype.hasOwnProperty.call(data, "tipo")) {
+    data.tipo = normalizeEnderecoTipo(data.tipo);
+  }
+  if (resource === "contatos" && Object.prototype.hasOwnProperty.call(data, "valor")) {
+    const tipo = normalizeEnumText(data.tipo);
+    // Para contatos telefônicos, forçar armazenamento sem máscara.
+    if (tipo === "telefone" || tipo === "whatsapp" || tipo === "celular") {
+      data.valor = normalizeDigitsString(data.valor);
+    }
+  }
+  if (resource === "colaboradores") {
+    if (Object.prototype.hasOwnProperty.call(data, "departamento")) {
+      data.departamento = normalizeColaboradorDepartamentos(data.departamento);
+    }
+    if (Object.prototype.hasOwnProperty.call(data, "chefia")) {
+      data.chefia = normalizeBoolInt(data.chefia);
+    }
+  }
+  return { def, data };
+};
+
+const normalizeEnumText = (value: unknown) => {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+};
+
+const normalizeIdSingular = (value: unknown): string | null => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return null;
+  if (digits.length > 3) return null;
+  return digits.padStart(3, "0");
+};
+
+const normalizeCdMunicipio7 = (value: unknown): string | null => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length !== 7) return null;
+  return digits;
+};
+
+const getCidadeByCdMunicipio7 = (codigo: unknown) => {
+  const cd = normalizeCdMunicipio7(codigo);
+  if (!cd) return null;
+  try {
+    const row = db.queryEntries<any>(
+      `SELECT CD_MUNICIPIO_7, NM_CIDADE, UF_MUNICIPIO
+         FROM ${TBL("cidades")}
+        WHERE CD_MUNICIPIO_7 = ?
+        LIMIT 1`,
+      [cd],
+    )[0];
+    if (!row) return null;
+    return {
+      cd_municipio_7: row.CD_MUNICIPIO_7 ?? row.cd_municipio_7 ?? cd,
+      cidade: row.NM_CIDADE ?? row.nm_cidade ?? null,
+      uf: row.UF_MUNICIPIO ?? row.uf_municipio ?? null,
+    };
+  } catch (e) {
+    console.warn("[enderecos] falha ao buscar cidade por cd_municipio_7:", e);
+    return null;
+  }
+};
+
+const applyEnderecoByCdMunicipio7 = (data: Record<string, unknown>) => {
+  if (!Object.prototype.hasOwnProperty.call(data, "cd_municipio_7")) {
+    return { ok: true as const };
+  }
+
+  const cd = normalizeCdMunicipio7(data.cd_municipio_7);
+  if (!cd) {
+    return {
+      ok: false as const,
+      error: "cd_municipio_7 inválido. Informe o código IBGE com 7 dígitos.",
+    };
+  }
+
+  const cidade = getCidadeByCdMunicipio7(cd);
+  if (!cidade) {
+    return {
+      ok: false as const,
+      error: `cd_municipio_7 não encontrado em cidades: ${cd}`,
+    };
+  }
+
+  // Regra de negócio: código IBGE é a referência principal; cidade/UF são derivados dele.
+  data.cd_municipio_7 = cidade.cd_municipio_7;
+  data.cidade = cidade.cidade;
+  data.uf = cidade.uf;
+  return { ok: true as const };
+};
+
+const getExistingCooperativaIds = (ids: string[]) => {
+  const normalized = Array.from(new Set(ids.map((v) => normalizeIdSingular(v)).filter(Boolean) as string[]));
+  if (!normalized.length) return new Set<string>();
+  const placeholders = normalized.map(() => "?").join(",");
+  const rows = db.queryEntries<{ id_singular: string }>(
+    `SELECT id_singular FROM ${TBL("cooperativas")} WHERE id_singular IN (${placeholders})`,
+    normalized as any,
+  ) || [];
+  return new Set(rows.map((r) => normalizeIdSingular(r.id_singular)).filter(Boolean) as string[]);
+};
+
+const normalizeConselhoTipo = (value: unknown) => {
+  const s = normalizeEnumText(value);
+  if (!s) return s;
+  if (s === "fiscal" || s === "administrativo" || s === "tecnico") return s;
+  if (s.includes("fiscal")) return "fiscal";
+  if (s.includes("administr")) return "administrativo";
+  if (s.includes("tecn")) return "tecnico";
+  return s;
+};
+
+const normalizeConselhoPosicao = (value: unknown) => {
+  const s = normalizeEnumText(value);
+  if (!s) return s;
+  if (s === "titular" || s === "suplente") return s;
+  if (s.includes("titular")) return "titular";
+  if (s.includes("suplente")) return "suplente";
+  return s;
+};
+
+const ENDERECO_TIPO_PLANTAO = "plantao_urgencia_emergencia";
+
+const normalizeEnderecoTipo = (value: unknown) => {
+  const s = normalizeEnumText(value);
+  if (!s) return s;
+  if (s === ENDERECO_TIPO_PLANTAO) return ENDERECO_TIPO_PLANTAO;
+  if (s.includes("plantao") && (s.includes("urgencia") || s.includes("emergenc"))) return ENDERECO_TIPO_PLANTAO;
+
+  if (s === "nucleo" || s.includes("nucleo")) return "nucleo";
+  if (s === "clinica" || s.includes("clinica")) return "clinica";
+  if (s === "pontodevenda" || s === "ponto_venda" || s === "ponto de venda" || (s.includes("ponto") && s.includes("venda"))) return "ponto_venda";
+
+  // Regra de negócio: "sede" foi substituído por "correspondencia".
+  if (s === "sede") return "correspondencia";
+  if (s === "correspondencia" || s === "filial" || s === "atendimento") return s;
+  return s;
+};
+
+const isEnderecoTipoPlantao = (value: unknown) => normalizeEnderecoTipo(value) === ENDERECO_TIPO_PLANTAO;
+
+const normalizeRegulatorioTipoUnidade = (value: unknown) => {
+  const s = normalizeEnumText(value);
+  if (!s) return s;
+  if (s === "matriz" || s === "martiz") return "matriz";
+  if (s === "filial") return "filial";
+  return s;
+};
+
+const normalizeColaboradorDepartamentos = (value: unknown) => {
+  if (Array.isArray(value)) {
+    const tags = value
+      .map((v) => String(v ?? "").trim())
+      .filter(Boolean);
+    return Array.from(new Set(tags)).join("; ");
+  }
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const parts = raw
+    .split(/[;,|]/g)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (!parts.length) return "";
+  return Array.from(new Set(parts)).join("; ");
+};
+
+const normalizeBoolInt = (value: unknown) => {
+  if (typeof value === "boolean") return value ? 1 : 0;
+  if (typeof value === "number") return value !== 0 ? 1 : 0;
+  const s = String(value ?? "").trim().toLowerCase();
+  if (!s) return 0;
+  return (s === "1" || s === "true" || s === "sim" || s === "s" || s === "yes" || s === "y" || s === "x")
+    ? 1
+    : 0;
+};
+
+const normalizeAuxImportRow = (resource: string, raw: any) => {
+  if (!raw || typeof raw !== "object") return raw;
+  const row: Record<string, unknown> = { ...raw };
+
+  if (resource === "conselhos") {
+    if (row.tipo !== undefined) row.tipo = normalizeConselhoTipo(row.tipo);
+    if (row.posicao !== undefined) row.posicao = normalizeConselhoPosicao(row.posicao);
+  }
+
+  if (resource === "enderecos") {
+    if ((row.telefone === undefined || row.telefone === null || String(row.telefone).trim() === "")) {
+      row.telefone = row.telefone_celular ?? row.telefone_fixo ?? row.telefone;
+    }
+    if (row.wpp === undefined && row.telefone_celular !== undefined) {
+      row.wpp = String(row.telefone_celular ?? "").trim() ? 1 : 0;
+    }
+    if (row.exibir_visao_geral === undefined) {
+      row.exibir_visao_geral = 1;
+    } else {
+      row.exibir_visao_geral = normalizeBoolInt(row.exibir_visao_geral);
+    }
+    if (row.tipo !== undefined) row.tipo = normalizeEnderecoTipo(row.tipo);
+    if (row.cd_municipio_7 !== undefined) {
+      row.cd_municipio_7 = normalizeCdMunicipio7(row.cd_municipio_7);
+    }
+  }
+
+  if (resource === "plantao_clinicas") {
+    if ((row.telefone === undefined || row.telefone === null || String(row.telefone).trim() === "")) {
+      row.telefone = row.telefone_celular ?? row.telefone_fixo ?? row.telefone;
+    }
+    if (row.wpp === undefined && row.telefone_celular !== undefined) {
+      row.wpp = String(row.telefone_celular ?? "").trim() ? 1 : 0;
+    }
+    if (row.cd_municipio_7 !== undefined) {
+      row.cd_municipio_7 = normalizeCdMunicipio7(row.cd_municipio_7);
+    }
+  }
+
+  if (resource === "auditores") {
+    if ((row.telefone === undefined || row.telefone === null || String(row.telefone).trim() === "")) {
+      row.telefone = row.telefone_celular ?? row.telefone;
+    }
+    if (row.wpp === undefined && row.telefone_celular !== undefined) {
+      row.wpp = String(row.telefone_celular ?? "").trim() ? 1 : 0;
+    }
+  }
+
+  if (resource === "diretores") {
+    if ((row.telefone === undefined || row.telefone === null || String(row.telefone).trim() === "")) {
+      row.telefone = row.telefone_celular ?? row.telefone;
+    }
+    if (row.wpp === undefined && row.telefone_celular !== undefined) {
+      row.wpp = String(row.telefone_celular ?? "").trim() ? 1 : 0;
+    }
+  }
+
+  if (resource === "ouvidores") {
+    if ((row.telefone === undefined || row.telefone === null || String(row.telefone).trim() === "")) {
+      row.telefone = row.telefone_celular ?? row.telefone_fixo ?? row.telefone;
+    }
+    if (row.wpp === undefined && row.telefone_celular !== undefined) {
+      row.wpp = String(row.telefone_celular ?? "").trim() ? 1 : 0;
+    }
+  }
+
+  if (resource === "lgpd" || resource === "colaboradores") {
+    if (row.wpp !== undefined) row.wpp = normalizeBoolInt(row.wpp);
+  }
+
+  if (resource === "plantao_contatos") {
+    const tipoRaw = row.tipo !== undefined ? normalizeEnumText(row.tipo) : undefined;
+    if (tipoRaw !== undefined) {
+      const t = tipoRaw;
+      if (t.includes("whats")) row.tipo = "telefone";
+      else if (t === "website" || t === "site" || t === "web" || t === "url") row.tipo = "website";
+      else row.tipo = "telefone";
+    }
+    if (row.wpp === undefined) {
+      row.wpp = String(tipoRaw ?? "").includes("whats") ? 1 : 0;
+    } else {
+      row.wpp = normalizeBoolInt(row.wpp);
+    }
+    if ((row.telefone === undefined || row.telefone === null || String(row.telefone).trim() === "")) {
+      row.telefone = row.numero_ou_url ?? row.telefone;
+    }
+    if (row.principal !== undefined) {
+      const p = String(row.principal ?? "").trim().toLowerCase();
+      row.principal = (p === "1" || p === "true" || p === "sim" || p === "s" || p === "yes" || p === "x") ? 1 : 0;
+    }
+  }
+
+  if (resource === "plantao_horarios") {
+    if (row.dia_semana !== undefined) {
+      const n = Number(String(row.dia_semana ?? "").trim());
+      row.dia_semana = Number.isFinite(n) ? Math.trunc(n) : null;
+    }
+    if (row.hora_inicio !== undefined) row.hora_inicio = String(row.hora_inicio ?? "").trim();
+    if (row.hora_fim !== undefined) row.hora_fim = String(row.hora_fim ?? "").trim();
+    if (row.plantao_clinica_id !== undefined && !String(row.plantao_clinica_id ?? "").trim()) {
+      row.plantao_clinica_id = null;
+    }
+  }
+
+  if (resource === "contatos") {
+    const tipoRaw = row.tipo !== undefined ? normalizeEnumText(row.tipo) : undefined;
+    if (tipoRaw !== undefined) {
+      const t = tipoRaw;
+      if (t === "e-mail" || t === "email" || t === "mail") row.tipo = "email";
+      else if (t.includes("whats")) row.tipo = "telefone";
+      else if (t.includes("telefone") || t === "tel") row.tipo = "telefone";
+      else if (t === "website" || t === "site" || t === "web") row.tipo = "website";
+      else if (t === "outro" || t === "outros") row.tipo = "outro";
+      else row.tipo = t;
+    }
+    if (row.wpp === undefined) {
+      row.wpp = String(tipoRaw ?? "").includes("whats") ? 1 : 0;
+    } else {
+      row.wpp = normalizeBoolInt(row.wpp);
+    }
+
+    const subtipoRaw = row.subtipo !== undefined ? normalizeEnumText(row.subtipo) : undefined;
+    if (subtipoRaw !== undefined) {
+      const s = subtipoRaw;
+      if (s === "plantao" || s === "plantao24h" || s === "plantao_24h") row.subtipo = "plantao";
+      else if (s === "emergencia") row.subtipo = "emergencia";
+      else if (s === "divulgacao") row.subtipo = "divulgacao";
+      else if (s === "lgpd") row.subtipo = "lgpd";
+      else if (s.replace(/\s+/g, " ") === "comercial pf") row.subtipo = "comercial pf";
+      else if (s.replace(/\s+/g, " ") === "comercial pj") row.subtipo = "comercial pj";
+      else if (s === "institucional") row.subtipo = "institucional";
+      else if (s === "portal do prestador") row.subtipo = "portal do prestador";
+      else if (s === "portal do cliente") row.subtipo = "portal do cliente";
+      else if (s === "portal da empresa") row.subtipo = "portal da empresa";
+      else if (s === "portal do corretor") row.subtipo = "portal do corretor";
+      else if (s === "e-commerce" || s === "ecommerce") row.subtipo = "e-commerce";
+      else if (s === "portal do cooperado") row.subtipo = "portal do cooperado";
+      else row.subtipo = s;
+    }
+
+    // Normalizar principal para 0/1 (CSV costuma vir com 0/1 ou SIM/NAO).
+    if (row.principal !== undefined) {
+      const p = String(row.principal ?? "").trim().toLowerCase();
+      if (!p) row.principal = 0;
+      else if (p === "1" || p === "true" || p === "sim" || p === "s" || p === "y" || p === "yes" || p === "x") {
+        row.principal = 1;
+      } else {
+        row.principal = 0;
+      }
+    }
+  }
+
+  if (resource === "colaboradores") {
+    if (row.nome === undefined && row.primeiro_nome !== undefined) row.nome = row.primeiro_nome;
+    if (row.departamento === undefined && row.departamentos !== undefined) row.departamento = row.departamentos;
+    if (row.departamento !== undefined) row.departamento = normalizeColaboradorDepartamentos(row.departamento);
+    if (row.chefia !== undefined) row.chefia = normalizeBoolInt(row.chefia);
+  }
+
+  if (resource === "regulatorio") {
+    if (row.tipo_unidade === undefined && row.tipo !== undefined) row.tipo_unidade = row.tipo;
+    if (row.responsavel_tecnico === undefined && row.nome_responsavel_tecnico !== undefined) {
+      row.responsavel_tecnico = row.nome_responsavel_tecnico;
+    }
+    if (row.responsavel_tecnico === undefined && row.responsavel !== undefined) {
+      row.responsavel_tecnico = row.responsavel;
+    }
+    if (row.email_responsavel_tecnico === undefined && row.email !== undefined) {
+      row.email_responsavel_tecnico = row.email;
+    }
+    if (row.cro_responsavel_tecnico === undefined && row.cro_resp_tecnico !== undefined) {
+      row.cro_responsavel_tecnico = row.cro_resp_tecnico;
+    }
+    if (row.cro_unidade === undefined && row.cro_operadora !== undefined) {
+      row.cro_unidade = row.cro_operadora;
+    }
+    if (row.email_responsavel_tecnico === undefined || !String(row.email_responsavel_tecnico ?? "").trim()) {
+      const id = normalizeIdSingular(row.id_singular) ?? "000";
+      row.email_responsavel_tecnico = `nao-informado+${id}@pendente.local`;
+    }
+    if (row.tipo_unidade !== undefined) {
+      row.tipo_unidade = normalizeRegulatorioTipoUnidade(row.tipo_unidade);
+    }
+  }
+
+  return row;
+};
+
+const validateRegulatorio = (data: Record<string, unknown>) => {
+  const tipoUnidade = normalizeRegulatorioTipoUnidade(data.tipo_unidade);
+  if (tipoUnidade !== "matriz" && tipoUnidade !== "filial") {
+    return { ok: false as const, error: "tipo_unidade é obrigatório e deve ser matriz ou filial." };
+  }
+  data.tipo_unidade = tipoUnidade;
+
+  const responsavel = String(data.responsavel_tecnico ?? "").trim();
+  if (!responsavel) {
+    return { ok: false as const, error: "responsavel_tecnico é obrigatório." };
+  }
+  data.responsavel_tecnico = responsavel;
+
+  const email = String(data.email_responsavel_tecnico ?? "").trim();
+  if (!email) {
+    return { ok: false as const, error: "email_responsavel_tecnico é obrigatório." };
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { ok: false as const, error: "email_responsavel_tecnico inválido." };
+  }
+  data.email_responsavel_tecnico = email.toLowerCase();
+
+  const croResp = String(data.cro_responsavel_tecnico ?? "").trim();
+  if (!croResp) {
+    return { ok: false as const, error: "cro_responsavel_tecnico é obrigatório." };
+  }
+  data.cro_responsavel_tecnico = croResp;
+
+  const croUnidade = String(data.cro_unidade ?? "").trim();
+  if (!croUnidade) {
+    return { ok: false as const, error: "cro_unidade é obrigatório." };
+  }
+  data.cro_unidade = croUnidade;
+
+  if (Object.prototype.hasOwnProperty.call(data, "reg_ans")) {
+    const regAns = String(data.reg_ans ?? "").trim();
+    data.reg_ans = regAns || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(data, "nome_unidade")) {
+    const nomeUnidade = String(data.nome_unidade ?? "").trim();
+    data.nome_unidade = nomeUnidade || null;
+  }
+
+  return { ok: true as const };
+};
+
+const validateColaborador = (data: Record<string, unknown>) => {
+  const nome = String(data.nome ?? "").trim();
+  if (!nome) {
+    return { ok: false as const, error: "nome é obrigatório." };
+  }
+  data.nome = nome;
+
+  const sobrenome = String(data.sobrenome ?? "").trim();
+  data.sobrenome = sobrenome || null;
+
+  const email = String(data.email ?? "").trim();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { ok: false as const, error: "email inválido." };
+  }
+  data.email = email ? email.toLowerCase() : null;
+
+  if (Object.prototype.hasOwnProperty.call(data, "telefone")) {
+    const tel = normalizeDigitsString(data.telefone);
+    data.telefone = tel || null;
+    if (Object.prototype.hasOwnProperty.call(data, "wpp")) {
+      data.wpp = normalizeBoolInt(data.wpp) || isLikelyBrazilMobile(tel) ? 1 : 0;
+    } else {
+      data.wpp = isLikelyBrazilMobile(tel) ? 1 : 0;
+    }
+  }
+
+  const departamentos = normalizeColaboradorDepartamentos(data.departamento);
+  if (!departamentos) {
+    return { ok: false as const, error: "departamento é obrigatório." };
+  }
+  data.departamento = departamentos;
+
+  data.chefia = normalizeBoolInt(data.chefia);
+
+  return { ok: true as const };
+};
+
+const normalizeTelefoneAndWpp = (data: Record<string, unknown>) => {
+  if (!Object.prototype.hasOwnProperty.call(data, "telefone")) return { ok: true as const };
+  const tel = normalizeDigitsString(data.telefone);
+  data.telefone = tel || null;
+  data.wpp = normalizeBoolInt(data.wpp) || isLikelyBrazilMobile(tel) ? 1 : 0;
+  return { ok: true as const };
+};
+
+const isValidHourHHMM = (value: unknown) => {
+  const s = String(value ?? "").trim();
+  if (!/^\d{2}:\d{2}$/.test(s)) return false;
+  const h = Number(s.slice(0, 2));
+  const m = Number(s.slice(3, 5));
+  return Number.isInteger(h) && Number.isInteger(m) && h >= 0 && h <= 23 && m >= 0 && m <= 59;
+};
+
+const validatePlantaoContato = (data: Record<string, unknown>) => {
+  const tipo = normalizeEnumText(data.tipo);
+  const raw = String(data.numero_ou_url ?? data.telefone ?? "").trim();
+  if (!raw) return { ok: false as const, error: "numero_ou_url é obrigatório." };
+  if (tipo === "website") {
+    const u = normalizeWebsiteValue(raw);
+    if (!u) return { ok: false as const, error: "URL inválida em numero_ou_url (use http/https)." };
+    data.numero_ou_url = u;
+    data.telefone = null;
+    data.wpp = 0;
+    data.tipo = "website";
+    return { ok: true as const };
+  }
+  // telefone: somente números; WhatsApp fica no booleano wpp.
+  const digits = normalizeDigitsString(raw);
+  if (!digits) return { ok: false as const, error: "Número inválido em numero_ou_url." };
+  data.numero_ou_url = digits;
+  data.telefone = digits;
+  data.wpp = normalizeBoolInt(data.wpp) || isLikelyBrazilMobile(digits) ? 1 : 0;
+  data.tipo = "telefone";
+  return { ok: true as const };
+};
+
+const validatePlantaoHorario = (data: Record<string, unknown>, idSingular: string) => {
+  const dia = Number(data.dia_semana);
+  if (!Number.isFinite(dia) || dia < 0 || dia > 6) {
+    return { ok: false as const, error: "dia_semana inválido. Use 0 (domingo) a 6 (sábado)." };
+  }
+  if (!isValidHourHHMM(data.hora_inicio) || !isValidHourHHMM(data.hora_fim)) {
+    return { ok: false as const, error: "hora_inicio/hora_fim inválidos. Use HH:MM (24h)." };
+  }
+  const clinicaId = String(data.plantao_clinica_id ?? "").trim();
+  if (clinicaId) {
+    const exists = db.queryEntries<any>(
+      `SELECT id FROM ${TBL("cooperativa_plantao_clinicas")} WHERE id = ? AND id_singular = ? LIMIT 1`,
+      [clinicaId, idSingular],
+    )?.[0];
+    if (!exists?.id) {
+      return { ok: false as const, error: "plantao_clinica_id não pertence à cooperativa informada." };
+    }
+    data.plantao_clinica_id = clinicaId;
+  } else {
+    data.plantao_clinica_id = null;
+  }
+  data.dia_semana = Math.trunc(dia);
+  return { ok: true as const };
+};
+
+const syncPlantaoClinicaFromEndereco = (cooperativaId: string, enderecoId: string) => {
+  const endereco = db.queryEntries<any>(
+    `SELECT * FROM ${TBL("cooperativa_enderecos")} WHERE id = ? AND id_singular = ? LIMIT 1`,
+    [enderecoId, cooperativaId],
+  )?.[0];
+  if (!endereco?.id) return null;
+
+  const tipo = normalizeEnderecoTipo(endereco.tipo);
+  const linkedClinicId = String(endereco.plantao_clinica_id ?? "").trim();
+
+  if (!isEnderecoTipoPlantao(tipo)) {
+    if (linkedClinicId) {
+      try {
+        db.query(
+          `UPDATE ${TBL("cooperativa_plantao_clinicas")}
+              SET endereco_id = NULL
+            WHERE id = ? AND id_singular = ?`,
+          [linkedClinicId, cooperativaId],
+        );
+      } catch (_) {
+        /* ignore */
+      }
+      try {
+        db.query(
+          `UPDATE ${TBL("cooperativa_enderecos")}
+              SET plantao_clinica_id = NULL
+            WHERE id = ? AND id_singular = ?`,
+          [enderecoId, cooperativaId],
+        );
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    return null;
+  }
+
+  const cdMunicipio = normalizeCdMunicipio7(endereco.cd_municipio_7);
+  if (!cdMunicipio) return null;
+
+  let clinica = linkedClinicId
+    ? db.queryEntries<any>(
+      `SELECT * FROM ${TBL("cooperativa_plantao_clinicas")} WHERE id = ? AND id_singular = ? LIMIT 1`,
+      [linkedClinicId, cooperativaId],
+    )?.[0]
+    : null;
+
+  if (!clinica) {
+    clinica = db.queryEntries<any>(
+      `SELECT * FROM ${TBL("cooperativa_plantao_clinicas")} WHERE endereco_id = ? AND id_singular = ? LIMIT 1`,
+      [enderecoId, cooperativaId],
+    )?.[0] ?? null;
+  }
+
+  const clinicaId = String(clinica?.id ?? "").trim() || safeRandomId("pcl");
+  const nomeLocal = String(endereco.nome_local ?? "").trim();
+  const descricao = String(clinica?.descricao ?? "").trim() || (nomeLocal ? `Vinculado: ${nomeLocal}` : "Endereço de plantão");
+  const ativo = normalizeBoolInt(endereco.ativo ?? 1);
+  const telefone = normalizeDigitsString(endereco.telefone ?? null);
+  const wpp = normalizeBoolInt(endereco.wpp);
+
+  if (clinica?.id) {
+    db.query(
+      `UPDATE ${TBL("cooperativa_plantao_clinicas")}
+          SET cd_municipio_7 = ?, nome_local = ?, cep = ?, logradouro = ?, numero = ?, complemento = ?, bairro = ?, cidade = ?, uf = ?, telefone = ?, wpp = ?, descricao = ?, ativo = ?, endereco_id = ?
+        WHERE id = ? AND id_singular = ?`,
+      [
+        cdMunicipio,
+        nomeLocal || null,
+        endereco.cep ?? null,
+        endereco.logradouro ?? null,
+        endereco.numero ?? null,
+        endereco.complemento ?? null,
+        endereco.bairro ?? null,
+        endereco.cidade ?? null,
+        endereco.uf ?? null,
+        telefone,
+        wpp,
+        descricao,
+        ativo,
+        enderecoId,
+        clinicaId,
+        cooperativaId,
+      ] as any,
+    );
+  } else {
+    db.query(
+      `INSERT INTO ${
+        TBL("cooperativa_plantao_clinicas")
+      } (id, id_singular, cd_municipio_7, nome_local, cep, logradouro, numero, complemento, bairro, cidade, uf, telefone, wpp, descricao, endereco_id, ativo)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        clinicaId,
+        cooperativaId,
+        cdMunicipio,
+        nomeLocal || null,
+        endereco.cep ?? null,
+        endereco.logradouro ?? null,
+        endereco.numero ?? null,
+        endereco.complemento ?? null,
+        endereco.bairro ?? null,
+        endereco.cidade ?? null,
+        endereco.uf ?? null,
+        telefone,
+        wpp,
+        descricao,
+        enderecoId,
+        ativo,
+      ] as any,
+    );
+  }
+
+  db.query(
+    `UPDATE ${TBL("cooperativa_enderecos")}
+        SET plantao_clinica_id = ?
+      WHERE id = ? AND id_singular = ?`,
+    [clinicaId, enderecoId, cooperativaId],
+  );
+
+  return clinicaId;
+};
+
+const syncEnderecoFromPlantaoClinica = (cooperativaId: string, plantaoClinicaId: string) => {
+  const clinica = db.queryEntries<any>(
+    `SELECT * FROM ${TBL("cooperativa_plantao_clinicas")} WHERE id = ? AND id_singular = ? LIMIT 1`,
+    [plantaoClinicaId, cooperativaId],
+  )?.[0];
+  if (!clinica?.id) return null;
+
+  const cdMunicipio = normalizeCdMunicipio7(clinica.cd_municipio_7);
+  if (!cdMunicipio) return null;
+
+  let endereco = String(clinica.endereco_id ?? "").trim()
+    ? db.queryEntries<any>(
+      `SELECT * FROM ${TBL("cooperativa_enderecos")} WHERE id = ? AND id_singular = ? LIMIT 1`,
+      [String(clinica.endereco_id).trim(), cooperativaId],
+    )?.[0]
+    : null;
+
+  if (!endereco) {
+    endereco = db.queryEntries<any>(
+      `SELECT * FROM ${TBL("cooperativa_enderecos")} WHERE plantao_clinica_id = ? AND id_singular = ? LIMIT 1`,
+      [plantaoClinicaId, cooperativaId],
+    )?.[0] ?? null;
+  }
+
+  const enderecoId = String(endereco?.id ?? "").trim() || safeRandomId("end");
+  const ativo = normalizeBoolInt(clinica.ativo ?? 1);
+  const wpp = normalizeBoolInt(clinica.wpp);
+  const telefone = normalizeDigitsString(clinica.telefone ?? null);
+  const exibirVisaoGeral = normalizeBoolInt(endereco?.exibir_visao_geral ?? 1);
+
+  if (endereco?.id) {
+    db.query(
+      `UPDATE ${TBL("cooperativa_enderecos")}
+          SET tipo = ?, nome_local = ?, cd_municipio_7 = ?, cep = ?, logradouro = ?, numero = ?, complemento = ?, bairro = ?, cidade = ?, uf = ?, telefone = ?, wpp = ?, exibir_visao_geral = ?, plantao_clinica_id = ?, ativo = ?
+        WHERE id = ? AND id_singular = ?`,
+      [
+        ENDERECO_TIPO_PLANTAO,
+        clinica.nome_local ?? null,
+        cdMunicipio,
+        clinica.cep ?? null,
+        clinica.logradouro ?? null,
+        clinica.numero ?? null,
+        clinica.complemento ?? null,
+        clinica.bairro ?? null,
+        clinica.cidade ?? null,
+        clinica.uf ?? null,
+        telefone,
+        wpp,
+        exibirVisaoGeral,
+        plantaoClinicaId,
+        ativo,
+        enderecoId,
+        cooperativaId,
+      ] as any,
+    );
+  } else {
+    db.query(
+      `INSERT INTO ${
+        TBL("cooperativa_enderecos")
+      } (id, id_singular, tipo, nome_local, cd_municipio_7, cep, logradouro, numero, complemento, bairro, cidade, uf, telefone, wpp, exibir_visao_geral, plantao_clinica_id, ativo)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        enderecoId,
+        cooperativaId,
+        ENDERECO_TIPO_PLANTAO,
+        clinica.nome_local ?? null,
+        cdMunicipio,
+        clinica.cep ?? null,
+        clinica.logradouro ?? null,
+        clinica.numero ?? null,
+        clinica.complemento ?? null,
+        clinica.bairro ?? null,
+        clinica.cidade ?? null,
+        clinica.uf ?? null,
+        telefone,
+        wpp,
+        1,
+        plantaoClinicaId,
+        ativo,
+      ] as any,
+    );
+  }
+
+  db.query(
+    `UPDATE ${TBL("cooperativa_plantao_clinicas")}
+        SET endereco_id = ?
+      WHERE id = ? AND id_singular = ?`,
+    [enderecoId, plantaoClinicaId, cooperativaId],
+  );
+
+  return enderecoId;
+};
+
+const isValidEmailValue = (value: unknown) => {
+  const v = String(value ?? "").trim();
+  if (!v) return false;
+  if (v.length > 254) return false;
+  // Validação simples e pragmática (evita bloquear emails válidos por regras RFC complexas).
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+};
+
+const normalizeEmailValue = (value: unknown) => {
+  const v = String(value ?? "").trim();
+  if (!v) return null;
+  return v.toLowerCase();
+};
+
+const normalizeWebsiteValue = (value: unknown) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  let u: URL;
+  try {
+    u = new URL(withScheme);
+  } catch {
+    return null;
+  }
+  const proto = (u.protocol || "").toLowerCase();
+  if (proto !== "http:" && proto !== "https:") return null;
+  // Comparação/armazenamento: remover fragmento e padronizar host; manter query.
+  u.hash = "";
+  u.protocol = proto;
+  u.hostname = u.hostname.toLowerCase();
+  // Remover "/" final, exceto root.
+  if (u.pathname.length > 1 && u.pathname.endsWith("/")) {
+    u.pathname = u.pathname.slice(0, -1);
+  }
+  return u.toString();
+};
+
+const validateAndNormalizeContato = (data: Record<string, unknown>) => {
+  const tipo = normalizeEnumText(data.tipo);
+  const valor = data.valor;
+  if (tipo === "email") {
+    const normalized = normalizeEmailValue(valor);
+    if (!normalized || !isValidEmailValue(normalized)) {
+      return { ok: false as const, error: "Email inválido em valor.", normalizedValor: null };
+    }
+    return { ok: true as const, normalizedValor: normalized };
+  }
+  if (tipo === "website") {
+    const normalized = normalizeWebsiteValue(valor);
+    if (!normalized) {
+      return { ok: false as const, error: "URL inválida em valor (use http/https).", normalizedValor: null };
+    }
+    return { ok: true as const, normalizedValor: normalized };
+  }
+  if (tipo === "telefone" || tipo === "whatsapp" || tipo === "celular") {
+    const digits = normalizeDigitsString(valor);
+    if (!digits) {
+      return { ok: false as const, error: "Telefone inválido em valor.", normalizedValor: null };
+    }
+    data.tipo = "telefone";
+    data.wpp = normalizeBoolInt(data.wpp) || tipo === "whatsapp" || isLikelyBrazilMobile(digits) ? 1 : 0;
+    return { ok: true as const, normalizedValor: digits };
+  }
+  return { ok: true as const, normalizedValor: valor ?? null };
+};
+
+const isWebsiteContato = (row: any) => {
+  const tipo = normalizeEnumText(row?.tipo);
+  if (tipo === "website") return true;
+  if (tipo === "outro") {
+    const label = normalizeEnumText(row?.label);
+    if (
+      label.includes("site") || label.includes("web") ||
+      label.includes("url")
+    ) {
+      return true;
+    }
+  }
+  if (!tipo || tipo === "website" || tipo === "outro") {
+    return Boolean(normalizeWebsiteValue(row?.valor));
+  }
+  return false;
+};
+
+const getCooperativaWebsiteContato = (
+  cooperativaId: string,
+  dbClient: DbAdapter | null = null,
+) => {
+  const target = (dbClient ?? (db as unknown as DbAdapter)) as DbAdapter;
+  const rows = target.queryEntries<any>(
+    `SELECT id, id_singular, tipo, subtipo, valor, wpp, principal, ativo, label
+       FROM ${TBL("cooperativa_contatos")}
+      WHERE id_singular = ?
+      ORDER BY COALESCE(ativo, 1) DESC, COALESCE(principal, 0) DESC, id DESC`,
+    [cooperativaId],
+  ) || [];
+  return rows.find((row) => isWebsiteContato(row)) ?? null;
+};
+
+const getCooperativaWebsiteValue = (
+  cooperativaId: string,
+  dbClient: DbAdapter | null = null,
+) => {
+  const contato = getCooperativaWebsiteContato(cooperativaId, dbClient);
+  if (!contato) return null;
+  const normalized = normalizeWebsiteValue(contato.valor);
+  if (normalized) return normalized;
+  const raw = String(contato.valor ?? "").trim();
+  return raw || null;
+};
+
+const dedupeCooperativaContatosByTargets = (targets: string[]) => {
+  if (!targets.length) return { deleted: 0 };
+  let deleted = 0;
+  for (const idSingular of targets) {
+    const rows = db.queryEntries<any>(
+      `SELECT id, tipo, valor, principal, criado_em
+         FROM ${TBL("cooperativa_contatos")}
+        WHERE id_singular = ?`,
+      [idSingular],
+    ) || [];
+    const groups = new Map<string, any[]>();
+    for (const r of rows) {
+      const tipo = normalizeAuxImportRow("contatos", { tipo: r.tipo, subtipo: null, valor: r.valor, principal: r.principal })?.tipo;
+      const normalizedTipo = normalizeEnumText(tipo);
+      let normalizedValor: string | null = String(r.valor ?? "").trim();
+      if (normalizedTipo === "email") {
+        normalizedValor = normalizeEmailValue(normalizedValor);
+      } else if (normalizedTipo === "website") {
+        normalizedValor = normalizeWebsiteValue(normalizedValor);
+      }
+      if (!normalizedTipo || !normalizedValor) continue;
+      const key = `${idSingular}|${normalizedTipo}|${normalizedValor}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(r);
+    }
+    for (const list of groups.values()) {
+      if (list.length <= 1) continue;
+      list.sort((a, b) => {
+        const pa = Number(a.principal || 0);
+        const pb = Number(b.principal || 0);
+        if (pa !== pb) return pb - pa;
+        const ca = String(a.criado_em || "");
+        const cb = String(b.criado_em || "");
+        if (ca !== cb) return cb.localeCompare(ca);
+        return String(a.id || "").localeCompare(String(b.id || ""));
+      });
+      const keep = list[0];
+      const toDelete = list.slice(1).map((x) => String(x.id || "")).filter(Boolean);
+      if (!toDelete.length) continue;
+      const placeholders = toDelete.map(() => "?").join(",");
+      db.query(
+        `DELETE FROM ${TBL("cooperativa_contatos")} WHERE id IN (${placeholders})`,
+        toDelete as any,
+      );
+      deleted += toDelete.length;
+      // Garantir que o "keep" permaneça principal se existia algum principal no grupo.
+      if (list.some((x) => Number(x.principal || 0) === 1) && Number(keep.principal || 0) !== 1) {
+        db.query(
+          `UPDATE ${TBL("cooperativa_contatos")} SET principal = 1 WHERE id = ?`,
+          [keep.id],
+        );
+      }
+    }
+  }
+  return { deleted };
+};
+
+const canViewDiretorCelularByRole = (userData: any, cooperativaId: string) => {
+  if (!userData) return false;
+  const papel = (userData.papel || "").toLowerCase();
+  if (papel === "confederacao" || papel === "federacao") return true;
+
+  if (papel === "admin" && userData.cooperativa_id === cooperativaId) return true;
+
+  // Admin em cooperativas do tipo FEDERACAO/CONFEDERACAO também é considerado admin de sistema.
+  if (papel === "admin") {
+    const ownInfo = getCooperativaInfo(userData.cooperativa_id);
+    const ownTipo = (ownInfo?.tipo || "").toUpperCase();
+    if (ownTipo === "FEDERACAO" || ownTipo === "CONFEDERACAO") return true;
+  }
+
+  return false;
+};
+
+const getDiretorPhoneRequestStatusMapForUser = (
+  cooperativaId: string,
+  requesterEmail: string,
+) => {
+  try {
+    const rows = db.queryEntries<any>(
+      `SELECT diretor_id, status
+         FROM ${TBL("diretor_phone_access_requests")}
+        WHERE cooperativa_id = ?
+          AND LOWER(requester_email) = LOWER(?)
+        ORDER BY created_at DESC`,
+      [cooperativaId, requesterEmail],
+    ) || [];
+
+    const map = new Map<string, string>();
+    for (const row of rows) {
+      const diretorId = String(row.diretor_id || "");
+      if (!diretorId || map.has(diretorId)) continue;
+      map.set(diretorId, String(row.status || "pending"));
+    }
+    return map;
+  } catch (error) {
+    console.warn("[diretores] falha ao buscar status de solicitação por usuário:", error);
+    return new Map<string, string>();
+  }
+};
+
+const notifyDiretorPhoneRequestAdmins = async (params: {
+  cooperativaId: string;
+  requestId: string;
+  diretorNome: string;
+  requesterEmail: string;
+  requesterNome: string;
+  motivo?: string | null;
+}) => {
+  try {
+    const admins = getApprovedAdminsForCoop(params.cooperativaId);
+    if (!admins.length) return;
+    const now = nowIso();
+    const mensagemBase =
+      `Solicitação LGPD: ${params.requesterNome} pediu acesso ao celular de ${params.diretorNome}.`;
+    const detalhes = params.motivo
+      ? `Motivo: ${params.motivo}`
+      : "Sem motivo informado.";
+
+    for (const admin of admins) {
+      if (admin.email.toLowerCase() === params.requesterEmail.toLowerCase()) continue;
+      db.query(
+        `INSERT INTO ${TBL("alertas")} (
+          id, pedido_id, pedido_titulo, destinatario_email, destinatario_nome, destinatario_cooperativa_id,
+          tipo, mensagem, detalhes, lido, criado_em, disparado_por_email, disparado_por_nome
+        ) VALUES (?,?,?,?,?,?,?,?,?,0,?,?,?)`,
+        [
+          safeRandomId("alert"),
+          `LGPD-DIR-${params.requestId}`,
+          "Solicitação de contato de diretor",
+          admin.email,
+          admin.nome || admin.email,
+          params.cooperativaId,
+          "atualizacao",
+          mensagemBase,
+          detalhes,
+          now,
+          params.requesterEmail,
+          params.requesterNome,
+        ],
+      );
+    }
+  } catch (error) {
+    console.warn("[diretores] falha ao notificar admins sobre solicitação:", error);
+  }
+};
+
+const notifyDiretorPhoneRequesterDecision = (params: {
+  requestId: string;
+  cooperativaId: string;
+  requesterEmail: string;
+  requesterNome: string;
+  diretorNome: string;
+  status: "approved" | "rejected";
+  decidedBy: string;
+  decisionNotes?: string | null;
+}) => {
+  try {
+    const now = nowIso();
+    const aprovado = params.status === "approved";
+    const mensagem = aprovado
+      ? `Sua solicitação de acesso ao celular de ${params.diretorNome} foi aprovada.`
+      : `Sua solicitação de acesso ao celular de ${params.diretorNome} foi rejeitada.`;
+    const detalhes = params.decisionNotes?.trim()
+      ? `Observação: ${params.decisionNotes.trim()}`
+      : null;
+
+    db.query(
+      `INSERT INTO ${TBL("alertas")} (
+        id, pedido_id, pedido_titulo, destinatario_email, destinatario_nome, destinatario_cooperativa_id,
+        tipo, mensagem, detalhes, lido, criado_em, disparado_por_email, disparado_por_nome
+      ) VALUES (?,?,?,?,?,?,?,?,?,0,?,?,?)`,
+      [
+        safeRandomId("alert"),
+        `LGPD-DIR-${params.requestId}`,
+        "Solicitação de contato de diretor",
+        params.requesterEmail,
+        params.requesterNome || params.requesterEmail,
+        params.cooperativaId,
+        "atualizacao",
+        mensagem,
+        detalhes,
+        now,
+        params.decidedBy,
+        params.decidedBy,
+      ],
+    );
+  } catch (error) {
+    console.warn("[diretores] falha ao notificar solicitante sobre decisão:", error);
+  }
+};
+
+app.post("/cooperativas/:id/diretores/:diretorId/solicitar-celular", requireAuth, async (c) => {
+  try {
+    const cooperativaId = normalizeIdSingular(c.req.param("id"));
+    const diretorId = c.req.param("diretorId");
+    if (!cooperativaId || !diretorId) {
+      return c.json({ error: "Parâmetros inválidos" }, 400);
+    }
+
+    const authUser = c.get("user");
+    const userData = await getUserData(authUser.id, authUser.email);
+    if (!userData) return c.json({ error: "Usuário não autenticado" }, 401);
+    if (!isCooperativaVisible(userData, cooperativaId)) {
+      return c.json({ error: "Acesso negado" }, 403);
+    }
+
+    const diretor = db.queryEntries<any>(
+      `SELECT * FROM ${TBL("cooperativa_diretores")} WHERE id = ? AND id_singular = ? LIMIT 1`,
+      [diretorId, cooperativaId],
+    )[0];
+    if (!diretor) return c.json({ error: "Diretor não encontrado" }, 404);
+
+    const telefone = normalizeDigitsString(diretor.telefone || diretor.telefone_celular || "");
+    if (!telefone) return c.json({ error: "Diretor sem celular cadastrado" }, 400);
+
+    const canViewByRole = canViewDiretorCelularByRole(userData, cooperativaId);
+    const divulgarCelular = toBoolean(diretor.divulgar_celular);
+    if (canViewByRole || divulgarCelular) {
+      return c.json({ error: "Celular já disponível para seu perfil" }, 400);
+    }
+
+    const requesterEmail = String(userData.email || "").toLowerCase();
+    const requesterNome = userData.display_name || userData.nome || userData.email || "Usuário";
+
+    const existing = db.queryEntries<any>(
+      `SELECT id, status
+         FROM ${TBL("diretor_phone_access_requests")}
+        WHERE cooperativa_id = ?
+          AND diretor_id = ?
+          AND LOWER(requester_email) = LOWER(?)
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [cooperativaId, diretorId, requesterEmail],
+    )[0];
+
+    if (existing?.status === "pending") {
+      return c.json({ message: "Solicitação já pendente de aprovação.", status: "pending", id: existing.id });
+    }
+    if (existing?.status === "approved") {
+      return c.json({ message: "Solicitação já aprovada anteriormente.", status: "approved", id: existing.id });
+    }
+
+    let motivo = "";
+    try {
+      const body = await c.req.json();
+      motivo = String(body?.motivo || "").trim();
+    } catch {
+      /* vazio */
+    }
+
+    const requestId = safeRandomId("dirphone");
+    db.query(
+      `INSERT INTO ${TBL("diretor_phone_access_requests")} (
+        id, cooperativa_id, diretor_id, requester_email, requester_nome, requester_cooperativa_id, status, motivo, created_at
+      ) VALUES (?,?,?,?,?,?,?,?,?)`,
+      [
+        requestId,
+        cooperativaId,
+        diretorId,
+        requesterEmail,
+        requesterNome,
+        userData.cooperativa_id || null,
+        "pending",
+        motivo || null,
+        nowIso(),
+      ],
+    );
+
+    const diretorNome = [diretor.primeiro_nome, diretor.sobrenome].filter(Boolean).join(" ").trim() || "Diretor";
+    await notifyDiretorPhoneRequestAdmins({
+      cooperativaId,
+      requestId,
+      diretorNome,
+      requesterEmail,
+      requesterNome,
+      motivo: motivo || null,
+    });
+
+    return c.json({ ok: true, id: requestId, status: "pending" });
+  } catch (error) {
+    console.error("[diretores] erro ao solicitar celular:", error);
+    return c.json({ error: "Erro ao solicitar acesso ao celular" }, 500);
+  }
+});
+
+app.get("/cooperativas/:id/diretores/celular-requests", requireAuth, async (c) => {
+  try {
+    const cooperativaId = normalizeIdSingular(c.req.param("id"));
+    if (!cooperativaId) return c.json({ error: "id_singular inválido" }, 400);
+
+    const authUser = c.get("user");
+    const userData = await getUserData(authUser.id, authUser.email);
+    if (!userData) return c.json({ error: "Usuário não autenticado" }, 401);
+    if (userData.papel !== "admin" || userData.cooperativa_id !== cooperativaId) {
+      return c.json({ error: "Acesso negado" }, 403);
+    }
+
+    const statusFilter = String(c.req.query("status") || "pending").toLowerCase();
+    const rows = db.queryEntries<any>(
+      `SELECT r.*,
+              d.primeiro_nome,
+              d.sobrenome,
+              d.cargo
+         FROM ${TBL("diretor_phone_access_requests")} r
+         LEFT JOIN ${TBL("cooperativa_diretores")} d ON d.id = r.diretor_id
+        WHERE r.cooperativa_id = ?
+          AND (? = 'all' OR r.status = ?)
+        ORDER BY r.created_at DESC`,
+      [cooperativaId, statusFilter, statusFilter],
+    ) || [];
+
+    const payload = rows.map((row) => ({
+      id: row.id,
+      cooperativa_id: row.cooperativa_id,
+      diretor_id: row.diretor_id,
+      diretor_nome: [row.primeiro_nome, row.sobrenome].filter(Boolean).join(" ").trim() || "Diretor",
+      diretor_cargo: row.cargo || null,
+      requester_email: row.requester_email,
+      requester_nome: row.requester_nome || row.requester_email,
+      requester_cooperativa_id: row.requester_cooperativa_id || null,
+      status: row.status,
+      motivo: row.motivo || null,
+      created_at: row.created_at,
+      decided_at: row.decided_at || null,
+      decided_by: row.decided_by || null,
+      decision_notes: row.decision_notes || null,
+    }));
+
+    return c.json(payload);
+  } catch (error) {
+    console.error("[diretores] erro ao listar solicitações de celular:", error);
+    return c.json({ error: "Erro ao carregar solicitações" }, 500);
+  }
+});
+
+app.post("/cooperativas/:id/diretores/celular-requests/:requestId/approve", requireAuth, async (c) => {
+  try {
+    const cooperativaId = normalizeIdSingular(c.req.param("id"));
+    const requestId = c.req.param("requestId");
+    if (!cooperativaId || !requestId) return c.json({ error: "Parâmetros inválidos" }, 400);
+
+    const authUser = c.get("user");
+    const userData = await getUserData(authUser.id, authUser.email);
+    if (!userData) return c.json({ error: "Usuário não autenticado" }, 401);
+    if (userData.papel !== "admin" || userData.cooperativa_id !== cooperativaId) {
+      return c.json({ error: "Acesso negado" }, 403);
+    }
+
+    const reqRow = db.queryEntries<any>(
+      `SELECT r.*, d.primeiro_nome, d.sobrenome
+         FROM ${TBL("diretor_phone_access_requests")} r
+         LEFT JOIN ${TBL("cooperativa_diretores")} d ON d.id = r.diretor_id
+        WHERE r.id = ? AND r.cooperativa_id = ? LIMIT 1`,
+      [requestId, cooperativaId],
+    )[0];
+    if (!reqRow) return c.json({ error: "Solicitação não encontrada" }, 404);
+    if (reqRow.status !== "pending") return c.json({ error: "Solicitação já processada" }, 400);
+
+    let notes = "";
+    try {
+      const body = await c.req.json();
+      notes = String(body?.notes || "").trim();
+    } catch {
+      /* ignore */
+    }
+
+    const now = nowIso();
+    db.query(
+      `UPDATE ${TBL("diretor_phone_access_requests")}
+          SET status = 'approved',
+              decided_at = ?,
+              decided_by = ?,
+              decision_notes = ?
+        WHERE id = ?`,
+      [now, userData.email, notes || null, requestId],
+    );
+
+    const diretorNome = [reqRow.primeiro_nome, reqRow.sobrenome].filter(Boolean).join(" ").trim() || "Diretor";
+    notifyDiretorPhoneRequesterDecision({
+      requestId,
+      cooperativaId,
+      requesterEmail: reqRow.requester_email,
+      requesterNome: reqRow.requester_nome || reqRow.requester_email,
+      diretorNome,
+      status: "approved",
+      decidedBy: userData.email || "admin",
+      decisionNotes: notes || null,
+    });
+
+    return c.json({ ok: true });
+  } catch (error) {
+    console.error("[diretores] erro ao aprovar solicitação de celular:", error);
+    return c.json({ error: "Erro ao aprovar solicitação" }, 500);
+  }
+});
+
+app.post("/cooperativas/:id/diretores/celular-requests/:requestId/reject", requireAuth, async (c) => {
+  try {
+    const cooperativaId = normalizeIdSingular(c.req.param("id"));
+    const requestId = c.req.param("requestId");
+    if (!cooperativaId || !requestId) return c.json({ error: "Parâmetros inválidos" }, 400);
+
+    const authUser = c.get("user");
+    const userData = await getUserData(authUser.id, authUser.email);
+    if (!userData) return c.json({ error: "Usuário não autenticado" }, 401);
+    if (userData.papel !== "admin" || userData.cooperativa_id !== cooperativaId) {
+      return c.json({ error: "Acesso negado" }, 403);
+    }
+
+    const reqRow = db.queryEntries<any>(
+      `SELECT r.*, d.primeiro_nome, d.sobrenome
+         FROM ${TBL("diretor_phone_access_requests")} r
+         LEFT JOIN ${TBL("cooperativa_diretores")} d ON d.id = r.diretor_id
+        WHERE r.id = ? AND r.cooperativa_id = ? LIMIT 1`,
+      [requestId, cooperativaId],
+    )[0];
+    if (!reqRow) return c.json({ error: "Solicitação não encontrada" }, 404);
+    if (reqRow.status !== "pending") return c.json({ error: "Solicitação já processada" }, 400);
+
+    let notes = "";
+    try {
+      const body = await c.req.json();
+      notes = String(body?.notes || "").trim();
+    } catch {
+      /* ignore */
+    }
+
+    const now = nowIso();
+    db.query(
+      `UPDATE ${TBL("diretor_phone_access_requests")}
+          SET status = 'rejected',
+              decided_at = ?,
+              decided_by = ?,
+              decision_notes = ?
+        WHERE id = ?`,
+      [now, userData.email, notes || null, requestId],
+    );
+
+    const diretorNome = [reqRow.primeiro_nome, reqRow.sobrenome].filter(Boolean).join(" ").trim() || "Diretor";
+    notifyDiretorPhoneRequesterDecision({
+      requestId,
+      cooperativaId,
+      requesterEmail: reqRow.requester_email,
+      requesterNome: reqRow.requester_nome || reqRow.requester_email,
+      diretorNome,
+      status: "rejected",
+      decidedBy: userData.email || "admin",
+      decisionNotes: notes || null,
+    });
+
+    return c.json({ ok: true });
+  } catch (error) {
+    console.error("[diretores] erro ao rejeitar solicitação de celular:", error);
+    return c.json({ error: "Erro ao rejeitar solicitação" }, 500);
+  }
+});
+
+app.get("/cooperativas/:id/aux/:resource", requireAuth, async (c) => {
+  try {
+    const cooperativaId = normalizeIdSingular(c.req.param("id"));
+    if (!cooperativaId) return c.json({ error: "id_singular inválido" }, 400);
+    const resource = (c.req.param("resource") || "").toLowerCase();
+    const def = COOP_AUX_RESOURCES[resource];
+    if (!def) return c.json({ error: "Recurso inválido" }, 400);
+
+    const authUser = c.get("user");
+    const userData = await getUserData(authUser.id, authUser.email);
+    if (!userData) return c.json({ error: "Usuário não autenticado" }, 401);
+
+    const visible = getVisibleCooperativas(userData);
+    if (!canReadAnyCooperativaData(userData) && visible && !visible.has(cooperativaId) && userData.papel !== "confederacao") {
+      return c.json({ error: "Acesso negado" }, 403);
+    }
+
+    let rows: any[] = [];
+    try {
+      rows = db.queryEntries<any>(
+        `SELECT * FROM ${def.table} WHERE id_singular = ? ORDER BY ativo DESC`,
+        [cooperativaId],
+      ) || [];
+    } catch (queryError) {
+      const msg = String((queryError as any)?.message || "").toLowerCase();
+      // Tolerância para ambiente sem migração aplicada ainda: evita quebrar a tela.
+      if (
+        (resource === "regulatorio" || resource === "colaboradores") &&
+        msg.includes("no such table")
+      ) {
+        return c.json([]);
+      }
+      throw queryError;
+    }
+    if (resource !== "diretores") {
+      return c.json(rows);
+    }
+
+    const canViewByRole = canViewDiretorCelularByRole(userData, cooperativaId);
+    const requesterEmail = String(userData.email || "").toLowerCase();
+    const requestStatusMap = requesterEmail
+      ? getDiretorPhoneRequestStatusMapForUser(cooperativaId, requesterEmail)
+      : new Map<string, string>();
+
+    const masked = rows.map((row) => {
+      const divulgar = toBoolean(row.divulgar_celular);
+      const requestStatus = requestStatusMap.get(String(row.id || "")) || null;
+      const approvedForRequester = requestStatus === "approved";
+      const hidePhone = !canViewByRole && !divulgar && !approvedForRequester;
+
+      return {
+        ...row,
+        divulgar_celular: divulgar ? 1 : 0,
+        telefone_celular_restrito: hidePhone,
+        pode_solicitar_celular: hidePhone && Boolean(normalizeDigitsString(row.telefone || row.telefone_celular || "")),
+        celular_request_status: requestStatus,
+        telefone: hidePhone ? null : (row.telefone || row.telefone_celular || null),
+        telefone_celular: hidePhone ? null : (row.telefone || row.telefone_celular || null),
+      };
+    });
+
+    return c.json(masked);
+  } catch (error) {
+    console.error("[coop-aux] erro ao listar:", error);
+    return c.json({ error: "Erro ao carregar dados auxiliares" }, 500);
+  }
+});
+
+app.post("/cooperativas/:id/aux/:resource", requireAuth, async (c) => {
+  try {
+    const cooperativaId = normalizeIdSingular(c.req.param("id"));
+    if (!cooperativaId) return c.json({ error: "id_singular inválido" }, 400);
+    const resource = (c.req.param("resource") || "").toLowerCase();
+    const body = await c.req.json().catch(() => ({}));
+    const picked = pickAuxPayload(resource, body);
+    if (!picked) return c.json({ error: "Recurso inválido" }, 400);
+    if (resource === "plantao") {
+      const already = db.queryEntries<any>(
+        `SELECT id FROM ${TBL("cooperativa_plantao")} WHERE id_singular = ? LIMIT 1`,
+        [cooperativaId],
+      )?.[0];
+      if (already?.id) {
+        return c.json({ error: "Já existe um registro de plantão para esta singular. Edite o registro existente." }, 400);
+      }
+    }
+    if (resource === "plantao_clinicas") {
+      const cd = normalizeCdMunicipio7((picked.data as any).cd_municipio_7);
+      if (!cd) {
+        return c.json({ error: "cd_municipio_7 obrigatório e deve ter 7 dígitos (IBGE)." }, 400);
+      }
+      (picked.data as any).cd_municipio_7 = cd;
+    }
+    if (resource === "enderecos" || resource === "plantao_clinicas") {
+      const normalized = applyEnderecoByCdMunicipio7(picked.data as Record<string, unknown>);
+      if (!normalized.ok) return c.json({ error: normalized.error }, 400);
+    }
+    if (["auditores", "diretores", "enderecos", "ouvidores", "lgpd", "colaboradores", "plantao_clinicas"].includes(resource)) {
+      const normalized = normalizeTelefoneAndWpp(picked.data as Record<string, unknown>);
+      if (!normalized.ok) return c.json({ error: "Telefone inválido." }, 400);
+    }
+    if (resource === "plantao_contatos") {
+      const ok = validatePlantaoContato(picked.data as Record<string, unknown>);
+      if (!ok.ok) return c.json({ error: ok.error }, 400);
+    }
+    if (resource === "contatos") {
+      const ok = validateAndNormalizeContato(picked.data as Record<string, unknown>);
+      if (!ok.ok) return c.json({ error: ok.error }, 400);
+      (picked.data as any).valor = ok.normalizedValor;
+    }
+    if (resource === "plantao_horarios") {
+      const ok = validatePlantaoHorario(picked.data as Record<string, unknown>, cooperativaId);
+      if (!ok.ok) return c.json({ error: ok.error }, 400);
+    }
+    if (resource === "regulatorio") {
+      const ok = validateRegulatorio(picked.data as Record<string, unknown>);
+      if (!ok.ok) return c.json({ error: ok.error }, 400);
+    }
+    if (resource === "colaboradores") {
+      const ok = validateColaborador(picked.data as Record<string, unknown>);
+      if (!ok.ok) return c.json({ error: ok.error }, 400);
+    }
+    if (resource === "enderecos") {
+      if (!Object.prototype.hasOwnProperty.call(picked.data, "exibir_visao_geral")) {
+        (picked.data as any).exibir_visao_geral = 1;
+      } else {
+        (picked.data as any).exibir_visao_geral = normalizeBoolInt((picked.data as any).exibir_visao_geral);
+      }
+    }
+
+    const authUser = c.get("user");
+    const userData = await getUserData(authUser.id, authUser.email);
+    if (!userData) return c.json({ error: "Usuário não autenticado" }, 401);
+    if (!canManageCooperativa(userData, cooperativaId)) {
+      return c.json({ error: "Acesso negado" }, 403);
+    }
+
+    const id = generateToken();
+    const cols = ["id", "id_singular", ...Object.keys(picked.data)];
+    const placeholders = cols.map(() => "?").join(",");
+    const values = [
+      id,
+      cooperativaId,
+      ...Object.keys(picked.data).map((k) => (picked.data as any)[k]),
+    ];
+    db.query(
+      `INSERT INTO ${picked.def.table} (${cols.join(",")}) VALUES (${placeholders})`,
+      values as any,
+    );
+
+    let row = db.queryEntries<any>(
+      `SELECT * FROM ${picked.def.table} WHERE id = ? AND id_singular = ? LIMIT 1`,
+      [id, cooperativaId],
+    )[0];
+    if (resource === "enderecos") {
+      syncPlantaoClinicaFromEndereco(cooperativaId, id);
+      row = db.queryEntries<any>(
+        `SELECT * FROM ${picked.def.table} WHERE id = ? AND id_singular = ? LIMIT 1`,
+        [id, cooperativaId],
+      )[0] ?? row;
+    }
+    if (resource === "plantao_clinicas") {
+      syncEnderecoFromPlantaoClinica(cooperativaId, id);
+      row = db.queryEntries<any>(
+        `SELECT * FROM ${picked.def.table} WHERE id = ? AND id_singular = ? LIMIT 1`,
+        [id, cooperativaId],
+      )[0] ?? row;
+    }
+    return c.json(row ?? { id, id_singular: cooperativaId, ...picked.data });
+  } catch (error) {
+    console.error("[coop-aux] erro ao criar:", error);
+    const msg = String((error as any)?.message || "");
+    if (msg.includes("UNIQUE constraint failed") && msg.includes(`${TBL("cooperativa_plantao")}.id_singular`)) {
+      return c.json({ error: "Já existe um registro de plantão para esta singular. Edite o existente." }, 400);
+    }
+    return c.json({ error: "Erro ao salvar registro" }, 500);
+  }
+});
+
+app.put("/cooperativas/:id/aux/:resource/:itemId", requireAuth, async (c) => {
+  try {
+    const cooperativaId = normalizeIdSingular(c.req.param("id"));
+    if (!cooperativaId) return c.json({ error: "id_singular inválido" }, 400);
+    const resource = (c.req.param("resource") || "").toLowerCase();
+    const itemId = c.req.param("itemId");
+    const body = await c.req.json().catch(() => ({}));
+    const picked = pickAuxPayload(resource, body);
+    if (!picked) return c.json({ error: "Recurso inválido" }, 400);
+    if (resource === "plantao_clinicas") {
+      const cd = normalizeCdMunicipio7((picked.data as any).cd_municipio_7);
+      if (!cd) {
+        return c.json({ error: "cd_municipio_7 obrigatório e deve ter 7 dígitos (IBGE)." }, 400);
+      }
+      (picked.data as any).cd_municipio_7 = cd;
+    }
+    if (resource === "enderecos" || resource === "plantao_clinicas") {
+      const normalized = applyEnderecoByCdMunicipio7(picked.data as Record<string, unknown>);
+      if (!normalized.ok) return c.json({ error: normalized.error }, 400);
+    }
+    if (["auditores", "diretores", "enderecos", "ouvidores", "lgpd", "colaboradores", "plantao_clinicas"].includes(resource)) {
+      const normalized = normalizeTelefoneAndWpp(picked.data as Record<string, unknown>);
+      if (!normalized.ok) return c.json({ error: "Telefone inválido." }, 400);
+    }
+    if (resource === "plantao_contatos") {
+      const ok = validatePlantaoContato(picked.data as Record<string, unknown>);
+      if (!ok.ok) return c.json({ error: ok.error }, 400);
+    }
+    if (resource === "contatos") {
+      const ok = validateAndNormalizeContato(picked.data as Record<string, unknown>);
+      if (!ok.ok) return c.json({ error: ok.error }, 400);
+      (picked.data as any).valor = ok.normalizedValor;
+    }
+    if (resource === "plantao_horarios") {
+      const ok = validatePlantaoHorario(picked.data as Record<string, unknown>, cooperativaId);
+      if (!ok.ok) return c.json({ error: ok.error }, 400);
+    }
+    if (resource === "regulatorio") {
+      const ok = validateRegulatorio(picked.data as Record<string, unknown>);
+      if (!ok.ok) return c.json({ error: ok.error }, 400);
+    }
+    if (resource === "colaboradores") {
+      const ok = validateColaborador(picked.data as Record<string, unknown>);
+      if (!ok.ok) return c.json({ error: ok.error }, 400);
+    }
+    if (resource === "enderecos" && Object.prototype.hasOwnProperty.call(picked.data, "exibir_visao_geral")) {
+      (picked.data as any).exibir_visao_geral = normalizeBoolInt((picked.data as any).exibir_visao_geral);
+    }
+
+    const authUser = c.get("user");
+    const userData = await getUserData(authUser.id, authUser.email);
+    if (!userData) return c.json({ error: "Usuário não autenticado" }, 401);
+    if (!canManageCooperativa(userData, cooperativaId)) {
+      return c.json({ error: "Acesso negado" }, 403);
+    }
+
+    const keys = Object.keys(picked.data);
+    if (!keys.length) return c.json({ error: "Nenhum campo para atualizar" }, 400);
+
+    const sets = keys.map((k) => `${k} = ?`).join(", ");
+    const values = keys.map((k) => (picked.data as any)[k]);
+    db.query(
+      `UPDATE ${picked.def.table} SET ${sets} WHERE id = ? AND id_singular = ?`,
+      [...values, itemId, cooperativaId] as any,
+    );
+
+    let row = db.queryEntries<any>(
+      `SELECT * FROM ${picked.def.table} WHERE id = ? AND id_singular = ? LIMIT 1`,
+      [itemId, cooperativaId],
+    )[0];
+    if (resource === "enderecos") {
+      syncPlantaoClinicaFromEndereco(cooperativaId, itemId);
+      row = db.queryEntries<any>(
+        `SELECT * FROM ${picked.def.table} WHERE id = ? AND id_singular = ? LIMIT 1`,
+        [itemId, cooperativaId],
+      )[0] ?? row;
+    }
+    if (resource === "plantao_clinicas") {
+      syncEnderecoFromPlantaoClinica(cooperativaId, itemId);
+      row = db.queryEntries<any>(
+        `SELECT * FROM ${picked.def.table} WHERE id = ? AND id_singular = ? LIMIT 1`,
+        [itemId, cooperativaId],
+      )[0] ?? row;
+    }
+    return c.json(row ?? { id: itemId, id_singular: cooperativaId, ...picked.data });
+  } catch (error) {
+    console.error("[coop-aux] erro ao atualizar:", error);
+    return c.json({ error: "Erro ao atualizar registro" }, 500);
+  }
+});
+
+app.delete("/cooperativas/:id/aux/:resource/:itemId", requireAuth, async (c) => {
+  try {
+    const cooperativaId = normalizeIdSingular(c.req.param("id"));
+    if (!cooperativaId) return c.json({ error: "id_singular inválido" }, 400);
+    const resource = (c.req.param("resource") || "").toLowerCase();
+    const itemId = c.req.param("itemId");
+    const def = COOP_AUX_RESOURCES[resource];
+    if (!def) return c.json({ error: "Recurso inválido" }, 400);
+
+    const authUser = c.get("user");
+    const userData = await getUserData(authUser.id, authUser.email);
+    if (!userData) return c.json({ error: "Usuário não autenticado" }, 401);
+    if (!canManageCooperativa(userData, cooperativaId)) {
+      return c.json({ error: "Acesso negado" }, 403);
+    }
+
+    const existing = db.queryEntries<any>(
+      `SELECT * FROM ${def.table} WHERE id = ? AND id_singular = ? LIMIT 1`,
+      [itemId, cooperativaId],
+    )?.[0] ?? null;
+
+    db.query(
+      `DELETE FROM ${def.table} WHERE id = ? AND id_singular = ?`,
+      [itemId, cooperativaId],
+    );
+
+    if (resource === "enderecos") {
+      const linkedClinicId = String(existing?.plantao_clinica_id ?? "").trim();
+      if (linkedClinicId) {
+        try {
+          db.query(
+            `DELETE FROM ${TBL("cooperativa_plantao_horarios")} WHERE plantao_clinica_id = ? AND id_singular = ?`,
+            [linkedClinicId, cooperativaId],
+          );
+        } catch (_) {
+          /* ignore */
+        }
+        try {
+          db.query(
+            `DELETE FROM ${TBL("cooperativa_plantao_clinicas")} WHERE id = ? AND id_singular = ?`,
+            [linkedClinicId, cooperativaId],
+          );
+        } catch (_) {
+          /* ignore */
+        }
+      }
+    }
+
+    if (resource === "plantao_clinicas") {
+      const linkedEnderecoId = String(existing?.endereco_id ?? "").trim();
+      if (linkedEnderecoId) {
+        try {
+          db.query(
+            `DELETE FROM ${TBL("cooperativa_enderecos")} WHERE id = ? AND id_singular = ?`,
+            [linkedEnderecoId, cooperativaId],
+          );
+        } catch (_) {
+          /* ignore */
+        }
+      }
+    }
+    return c.json({ ok: true });
+  } catch (error) {
+    console.error("[coop-aux] erro ao deletar:", error);
+    return c.json({ error: "Erro ao remover registro" }, 500);
+  }
+});
+
+app.post("/cooperativas/:id/aux/:resource/import", requireAuth, async (c) => {
+  try {
+    const cooperativaId = normalizeIdSingular(c.req.param("id"));
+    if (!cooperativaId) return c.json({ error: "id_singular inválido" }, 400);
+    const resource = (c.req.param("resource") || "").toLowerCase();
+    const def = COOP_AUX_RESOURCES[resource];
+    if (!def) return c.json({ error: "Recurso inválido" }, 400);
+
+    const authUser = c.get("user");
+    const userData = await getUserData(authUser.id, authUser.email);
+    if (!userData) return c.json({ error: "Usuário não autenticado" }, 401);
+    if (!canManageCooperativa(userData, cooperativaId)) {
+      return c.json({ error: "Acesso negado" }, 403);
+    }
+    const existingTarget = getExistingCooperativaIds([cooperativaId]);
+    if (!existingTarget.has(cooperativaId)) {
+      return c.json({ error: `id_singular destino não existe: ${cooperativaId}` }, 400);
+    }
+
+    const body = await c.req.json().catch(() => ({}));
+    const items = Array.isArray(body?.items) ? body.items : [];
+    const mode = (c.req.query("mode") || "replace").toLowerCase();
+    if (!items.length) return c.json({ ok: true, inserted: 0 });
+
+    if (!IS_POSTGRES) {
+      db.execute("BEGIN");
+    }
+    try {
+      if (mode === "replace") {
+        db.query(`DELETE FROM ${def.table} WHERE id_singular = ?`, [cooperativaId]);
+      }
+
+      let inserted = 0;
+      const seenKeys = new Set<string>();
+
+      // Limpar duplicidades anteriores para evitar acumular lixo por importações repetidas.
+      if (resource === "contatos" && mode !== "replace") {
+        dedupeCooperativaContatosByTargets([cooperativaId]);
+      }
+      let skippedOtherSingular = 0;
+      for (const raw of items) {
+        // Import por singular: se vier arquivo com múltiplos id_singular, processa apenas o destino atual.
+        if (
+          raw &&
+          typeof raw === "object" &&
+          "id_singular" in raw &&
+          raw.id_singular
+        ) {
+          const rowIdSingular = normalizeIdSingular(raw.id_singular);
+          if (rowIdSingular && rowIdSingular !== String(cooperativaId)) {
+            skippedOtherSingular++;
+            continue;
+          }
+        }
+
+        const sanitized = normalizeAuxImportRow(
+          resource,
+          (raw && typeof raw === "object") ? { ...raw } : raw,
+        );
+        // "ativo" é controlado pelo sistema no import: sempre entra ativo.
+        if (sanitized && typeof sanitized === "object") {
+          delete (sanitized as any).ativo;
+        }
+
+        const picked = pickAuxPayload(resource, sanitized);
+        if (!picked) continue;
+        if (resource === "plantao_clinicas") {
+          const cd = normalizeCdMunicipio7((picked.data as any).cd_municipio_7);
+          if (!cd) {
+            if (!IS_POSTGRES) {
+              try {
+                db.execute("ROLLBACK");
+              } catch {}
+            }
+            return c.json({ error: "cd_municipio_7 obrigatório e deve ter 7 dígitos (IBGE)." }, 400);
+          }
+          (picked.data as any).cd_municipio_7 = cd;
+        }
+        if (resource === "enderecos" || resource === "plantao_clinicas") {
+          const normalized = applyEnderecoByCdMunicipio7(picked.data as Record<string, unknown>);
+          if (!normalized.ok) {
+            if (!IS_POSTGRES) {
+              try {
+                db.execute("ROLLBACK");
+              } catch {}
+            }
+            return c.json({ error: normalized.error }, 400);
+          }
+        }
+        if (["auditores", "diretores", "enderecos", "ouvidores", "lgpd", "colaboradores", "plantao_clinicas"].includes(resource)) {
+          normalizeTelefoneAndWpp(picked.data as Record<string, unknown>);
+        }
+        if (resource === "plantao_contatos") {
+          const ok = validatePlantaoContato(picked.data as Record<string, unknown>);
+          if (!ok.ok) {
+            if (!IS_POSTGRES) {
+              try {
+                db.execute("ROLLBACK");
+              } catch {}
+            }
+            return c.json({ error: ok.error }, 400);
+          }
+        }
+        if (resource === "plantao_horarios") {
+          const ok = validatePlantaoHorario(picked.data as Record<string, unknown>, cooperativaId);
+          if (!ok.ok) {
+            if (!IS_POSTGRES) {
+              try {
+                db.execute("ROLLBACK");
+              } catch {}
+            }
+            return c.json({ error: ok.error }, 400);
+          }
+        }
+        if (resource === "regulatorio") {
+          const ok = validateRegulatorio(picked.data as Record<string, unknown>);
+          if (!ok.ok) {
+            if (!IS_POSTGRES) {
+              try {
+                db.execute("ROLLBACK");
+              } catch {}
+            }
+            return c.json({ error: ok.error }, 400);
+          }
+        }
+        if (resource === "colaboradores") {
+          const ok = validateColaborador(picked.data as Record<string, unknown>);
+          if (!ok.ok) {
+            if (!IS_POSTGRES) {
+              try {
+                db.execute("ROLLBACK");
+              } catch {}
+            }
+            return c.json({ error: ok.error }, 400);
+          }
+        }
+        if (resource === "contatos") {
+          const res = validateAndNormalizeContato(picked.data as Record<string, unknown>);
+          if (!res.ok) {
+            if (!IS_POSTGRES) {
+              try {
+                db.execute("ROLLBACK");
+              } catch {}
+            }
+            return c.json(
+              {
+                error: "Arquivo contém linhas inválidas para contatos.",
+                invalid_rows: [
+                  {
+                    reason: res.error,
+                    id_singular: cooperativaId,
+                    row: sanitized,
+                  },
+                ],
+              },
+              400,
+            );
+          }
+          (picked.data as any).valor = res.normalizedValor;
+
+          const tipo = normalizeEnumText((picked.data as any).tipo);
+          const valorKey = String((picked.data as any).valor ?? "").trim();
+          const key = `${cooperativaId}|${tipo}|${valorKey}`;
+          if (tipo && valorKey) {
+            if (seenKeys.has(key)) continue;
+            seenKeys.add(key);
+          }
+
+          // Evitar duplicar se já existe no banco.
+          if (tipo && valorKey) {
+            const exists = db.queryEntries<any>(
+              `SELECT id FROM ${def.table} WHERE id_singular = ? AND tipo = ? AND valor = ? LIMIT 1`,
+              [cooperativaId, tipo, valorKey],
+            )?.[0];
+            if (exists?.id) continue;
+          }
+        }
+        if (picked.def.columns.includes("ativo")) {
+          (picked.data as any).ativo = 1;
+        }
+        const id = (raw?.id ?? raw?.ID ?? null) || generateToken();
+        const cols = ["id", "id_singular", ...Object.keys(picked.data)];
+        const placeholders = cols.map(() => "?").join(",");
+        const values = [
+          id,
+          cooperativaId,
+          ...Object.keys(picked.data).map((k) => (picked.data as any)[k]),
+        ];
+        db.query(
+          `INSERT INTO ${def.table} (${cols.join(",")}) VALUES (${placeholders})`,
+          values as any,
+        );
+        inserted++;
+      }
+
+      if (!IS_POSTGRES) {
+        db.execute("COMMIT");
+      }
+      return c.json({ ok: true, inserted, skipped_other_singular: skippedOtherSingular });
+    } catch (e) {
+      if (!IS_POSTGRES) {
+        try {
+          db.execute("ROLLBACK");
+        } catch {}
+      }
+      console.error("[coop-aux] import falhou:", e);
+      const msg = String((e as any)?.message || "");
+      if (msg.includes("CHECK constraint failed")) {
+        return c.json(
+          {
+            error:
+              "Erro de validação no arquivo importado. Revise os campos de enumeração (ex.: tipo/posicao).",
+            details: msg,
+          },
+          400,
+        );
+      }
+      if (msg.includes("FOREIGN KEY constraint failed")) {
+        return c.json(
+          {
+            error:
+              "Erro de relacionamento no arquivo importado. Verifique se o id_singular existe em cooperativas.",
+            details: msg,
+          },
+          400,
+        );
+      }
+      if (msg.includes("UNIQUE constraint failed") && msg.includes(`${TBL("cooperativa_plantao")}.id_singular`)) {
+        return c.json(
+          {
+            error: "Já existe um registro de plantão para esta singular. Use edição ou importação em modo replace.",
+            details: msg,
+          },
+          400,
+        );
+      }
+      return c.json({ error: "Erro ao importar dados" }, 500);
+    }
+  } catch (error) {
+    console.error("[coop-aux] erro no import:", error);
+    return c.json({ error: "Erro ao importar dados" }, 500);
+  }
+});
+
+// Gestão de dados (admin): importação em massa de cadastros auxiliares para múltiplas singulares.
+// Regras:
+// - Admin de SINGULAR: só pode importar para sua própria id_singular.
+// - Admin de FEDERACAO: pode importar para a federação e suas singulares.
+// - Admin de CONFEDERACAO: pode importar para qualquer cooperativa.
+app.post("/admin/gestao-dados/aux/:resource/import", requireAuth, async (c) => {
+  try {
+    const resource = (c.req.param("resource") || "").toLowerCase();
+    const def = COOP_AUX_RESOURCES[resource];
+    if (!def) return c.json({ error: "Recurso inválido" }, 400);
+
+    const authUser = c.get("user");
+    const userData = await getUserData(authUser.id, authUser.email);
+    if (!userData) return c.json({ error: "Usuário não autenticado" }, 401);
+
+    const body = await c.req.json().catch(() => ({}));
+    const items = Array.isArray(body?.items) ? body.items : [];
+    const mode = (c.req.query("mode") || "replace").toLowerCase();
+    if (!items.length) return c.json({ ok: true, inserted: 0, targets: {} });
+
+    // Agrupar por id_singular (obrigatório nesta rota)
+    const groups = new Map<string, any[]>();
+    for (const raw of items) {
+      const idSingular = normalizeIdSingular(raw?.id_singular);
+      if (!idSingular) {
+        return c.json(
+          { error: "Importação em massa requer id_singular com 3 dígitos em todas as linhas (ex.: 001)." },
+          400,
+        );
+      }
+      if (!groups.has(idSingular)) groups.set(idSingular, []);
+      groups.get(idSingular)!.push(raw);
+    }
+
+    // Validar permissões para TODOS os alvos antes de começar a alterar o banco.
+    const denied: string[] = [];
+    for (const targetId of groups.keys()) {
+      if (!canManageCooperativa(userData, targetId)) denied.push(targetId);
+    }
+    if (denied.length) {
+      return c.json(
+        { error: "Acesso negado para importar em algumas cooperativas.", denied },
+        403,
+      );
+    }
+
+    // Validar alvos existentes para evitar FK error durante o insert.
+    const existingTargets = getExistingCooperativaIds(Array.from(groups.keys()));
+    const missingTargets = Array.from(groups.keys()).filter((id) => !existingTargets.has(id));
+    if (missingTargets.length) {
+      return c.json(
+        {
+          error:
+            "Existem id_singular no arquivo que não existem em cooperativas.",
+          missing_id_singular: missingTargets,
+        },
+        400,
+      );
+    }
+
+    if (!IS_POSTGRES) db.execute("BEGIN");
+    try {
+      const perTarget: Record<string, { inserted: number }> = {};
+      let insertedTotal = 0;
+
+      if (mode === "replace") {
+        for (const targetId of groups.keys()) {
+          db.query(`DELETE FROM ${def.table} WHERE id_singular = ?`, [targetId]);
+        }
+      }
+      if (resource === "contatos" && mode !== "replace") {
+        dedupeCooperativaContatosByTargets(Array.from(groups.keys()));
+      }
+
+      for (const [targetId, rows] of groups.entries()) {
+        let inserted = 0;
+        const seenKeys = new Set<string>();
+        for (const raw of rows) {
+          const sanitized = normalizeAuxImportRow(
+            resource,
+            (raw && typeof raw === "object") ? { ...raw } : raw,
+          );
+          // "ativo" é controlado pelo sistema no import: sempre entra ativo.
+          if (sanitized && typeof sanitized === "object") {
+            delete (sanitized as any).ativo;
+          }
+
+          const picked = pickAuxPayload(resource, sanitized);
+          if (!picked) continue;
+          if (resource === "plantao_clinicas") {
+            const cd = normalizeCdMunicipio7((picked.data as any).cd_municipio_7);
+            if (!cd) {
+              if (!IS_POSTGRES) {
+                try {
+                  db.execute("ROLLBACK");
+                } catch {}
+              }
+              return c.json({ error: "cd_municipio_7 obrigatório e deve ter 7 dígitos (IBGE)." }, 400);
+            }
+            (picked.data as any).cd_municipio_7 = cd;
+          }
+          if (resource === "enderecos" || resource === "plantao_clinicas") {
+            const normalized = applyEnderecoByCdMunicipio7(picked.data as Record<string, unknown>);
+            if (!normalized.ok) {
+              if (!IS_POSTGRES) {
+                try {
+                  db.execute("ROLLBACK");
+                } catch {}
+              }
+              return c.json({ error: normalized.error }, 400);
+            }
+          }
+          if (["auditores", "diretores", "enderecos", "ouvidores", "lgpd", "colaboradores", "plantao_clinicas"].includes(resource)) {
+            normalizeTelefoneAndWpp(picked.data as Record<string, unknown>);
+          }
+          if (resource === "plantao_contatos") {
+            const ok = validatePlantaoContato(picked.data as Record<string, unknown>);
+            if (!ok.ok) {
+              if (!IS_POSTGRES) {
+                try {
+                  db.execute("ROLLBACK");
+                } catch {}
+              }
+              return c.json(
+                { error: "Arquivo contém linhas inválidas para contatos de plantão.", invalid_rows: [{ reason: ok.error, id_singular: targetId, row: sanitized }] },
+                400,
+              );
+            }
+          }
+          if (resource === "plantao_horarios") {
+            const ok = validatePlantaoHorario(picked.data as Record<string, unknown>, targetId);
+            if (!ok.ok) {
+              if (!IS_POSTGRES) {
+                try {
+                  db.execute("ROLLBACK");
+                } catch {}
+              }
+              return c.json(
+                { error: "Arquivo contém linhas inválidas para horários de plantão.", invalid_rows: [{ reason: ok.error, id_singular: targetId, row: sanitized }] },
+                400,
+              );
+            }
+          }
+          if (resource === "regulatorio") {
+            const ok = validateRegulatorio(picked.data as Record<string, unknown>);
+            if (!ok.ok) {
+              if (!IS_POSTGRES) {
+                try {
+                  db.execute("ROLLBACK");
+                } catch {}
+              }
+              return c.json(
+                { error: "Arquivo contém linhas inválidas para dados regulatórios.", invalid_rows: [{ reason: ok.error, id_singular: targetId, row: sanitized }] },
+                400,
+              );
+            }
+          }
+          if (resource === "colaboradores") {
+            const ok = validateColaborador(picked.data as Record<string, unknown>);
+            if (!ok.ok) {
+              if (!IS_POSTGRES) {
+                try {
+                  db.execute("ROLLBACK");
+                } catch {}
+              }
+              return c.json(
+                { error: "Arquivo contém linhas inválidas para colaboradores.", invalid_rows: [{ reason: ok.error, id_singular: targetId, row: sanitized }] },
+                400,
+              );
+            }
+          }
+          if (resource === "contatos") {
+            const res = validateAndNormalizeContato(picked.data as Record<string, unknown>);
+            if (!res.ok) {
+              if (!IS_POSTGRES) {
+                try {
+                  db.execute("ROLLBACK");
+                } catch {}
+              }
+              return c.json(
+                {
+                  error: "Arquivo contém linhas inválidas para contatos.",
+                  invalid_rows: [
+                    {
+                      reason: res.error,
+                      id_singular: targetId,
+                      row: sanitized,
+                    },
+                  ],
+                },
+                400,
+              );
+            }
+            (picked.data as any).valor = res.normalizedValor;
+
+            const tipo = normalizeEnumText((picked.data as any).tipo);
+            const valorKey = String((picked.data as any).valor ?? "").trim();
+            const key = `${targetId}|${tipo}|${valorKey}`;
+            if (tipo && valorKey) {
+              if (seenKeys.has(key)) continue;
+              seenKeys.add(key);
+            }
+
+            if (tipo && valorKey) {
+              const exists = db.queryEntries<any>(
+                `SELECT id FROM ${def.table} WHERE id_singular = ? AND tipo = ? AND valor = ? LIMIT 1`,
+                [targetId, tipo, valorKey],
+              )?.[0];
+              if (exists?.id) continue;
+            }
+          }
+          if (picked.def.columns.includes("ativo")) {
+            (picked.data as any).ativo = 1;
+          }
+          const id = (raw?.id ?? raw?.ID ?? null) || generateToken();
+          const cols = ["id", "id_singular", ...Object.keys(picked.data)];
+          const placeholders = cols.map(() => "?").join(",");
+          const values = [
+            id,
+            targetId,
+            ...Object.keys(picked.data).map((k) => (picked.data as any)[k]),
+          ];
+          db.query(
+            `INSERT INTO ${def.table} (${cols.join(",")}) VALUES (${placeholders})`,
+            values as any,
+          );
+          inserted++;
+          insertedTotal++;
+        }
+        perTarget[targetId] = { inserted };
+      }
+
+      if (!IS_POSTGRES) db.execute("COMMIT");
+      return c.json({ ok: true, inserted: insertedTotal, targets: perTarget });
+    } catch (e) {
+      if (!IS_POSTGRES) {
+        try {
+          db.execute("ROLLBACK");
+        } catch {}
+      }
+      console.error("[gestao-dados] import aux falhou:", e);
+      const msg = String((e as any)?.message || "");
+      if (msg.includes("CHECK constraint failed")) {
+        return c.json(
+          {
+            error:
+              "Erro de validação no arquivo importado. Revise os campos de enumeração (ex.: tipo/posicao).",
+            details: msg,
+          },
+          400,
+        );
+      }
+      if (msg.includes("FOREIGN KEY constraint failed")) {
+        return c.json(
+          {
+            error:
+              "Erro de relacionamento no arquivo importado. Verifique se o id_singular existe em cooperativas.",
+            details: msg,
+          },
+          400,
+        );
+      }
+      if (msg.includes("UNIQUE constraint failed") && msg.includes(`${TBL("cooperativa_plantao")}.id_singular`)) {
+        return c.json(
+          {
+            error: "Importação inválida: só é permitido 1 registro de plantão por id_singular.",
+            details: msg,
+          },
+          400,
+        );
+      }
+      return c.json({ error: "Erro ao importar dados" }, 500);
+    }
+  } catch (error) {
+    console.error("[gestao-dados] erro no import:", error);
+    return c.json({ error: "Erro ao importar dados" }, 500);
+  }
+});
+
 app.get("/cooperativas/:id/config", requireAuth, async (c) => {
   try {
     const cooperativaId = c.req.param("id");
@@ -3317,9 +6344,308 @@ app.put("/cooperativas/:id/config", requireAuth, async (c) => {
   }
 });
 
+app.get("/cooperativas/:id/overview/historico", requireAuth, async (c) => {
+  try {
+    const cooperativaId = normalizeIdSingular(c.req.param("id"));
+    if (!cooperativaId) {
+      return c.json({ error: "Cooperativa inválida" }, 400);
+    }
+
+    const authUser = c.get("user");
+    const userData = await getUserData(authUser.id, authUser.email);
+    if (!userData) {
+      return c.json({ error: "Usuário não autenticado" }, 401);
+    }
+
+    if (
+      !canReadAnyCooperativaData(userData) &&
+      !isCooperativaVisible(userData, cooperativaId) &&
+      !canManageCooperativa(userData, cooperativaId)
+    ) {
+      return c.json({ error: "Acesso negado" }, 403);
+    }
+
+    const limitParam = Number(c.req.query("limit") || "200");
+    const limit = Number.isFinite(limitParam) && limitParam > 0
+      ? Math.min(limitParam, 500)
+      : 200;
+
+    const rows = db.queryEntries<any>(
+      `SELECT l.*, co.UNIODONTO AS cooperativa_nome
+         FROM ${TBL("cooperativa_overview_logs")} l
+    LEFT JOIN ${TBL("cooperativas")} co ON co.id_singular = l.cooperativa_id
+        WHERE l.cooperativa_id = ?
+        ORDER BY CASE
+          WHEN l.timestamp IS NULL OR l.timestamp = '' THEN ''
+          ELSE l.timestamp
+        END DESC
+        LIMIT ?`,
+      [cooperativaId, limit] as any,
+    ) || [];
+
+    return c.json({ logs: rows.map(mapCooperativaOverviewLog) });
+  } catch (error) {
+    console.error("Erro ao buscar histórico da visão geral:", error);
+    return c.json({ error: "Erro ao buscar histórico da visão geral" }, 500);
+  }
+});
+
+app.put("/cooperativas/:id/overview", requireAuth, async (c) => {
+  try {
+    const cooperativaId = normalizeIdSingular(c.req.param("id"));
+    if (!cooperativaId) {
+      return c.json({ error: "Cooperativa inválida" }, 400);
+    }
+
+    const authUser = c.get("user");
+    const userData = await getUserData(authUser.id, authUser.email);
+    if (!userData) {
+      return c.json({ error: "Usuário não autenticado" }, 401);
+    }
+    if (!canManageCooperativa(userData, cooperativaId)) {
+      return c.json({ error: "Acesso negado" }, 403);
+    }
+
+    let body: any = {};
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "JSON inválido" }, 400);
+    }
+
+    const currentRow = db.queryEntries<any>(
+      `SELECT * FROM ${TBL("cooperativas")} WHERE id_singular = ? LIMIT 1`,
+      [cooperativaId],
+    )[0];
+    if (!currentRow) {
+      return c.json({ error: "Cooperativa não encontrada" }, 404);
+    }
+
+    const editableFields: Array<{
+      field:
+        | "cnpj"
+        | "codigo_ans"
+        | "data_fundacao"
+        | "federacao"
+        | "software"
+        | "raz_social";
+      column: string;
+    }> = [
+      { field: "cnpj", column: "CNPJ" },
+      { field: "codigo_ans", column: "CODIGO_ANS" },
+      { field: "data_fundacao", column: "DATA_FUNDACAO" },
+      { field: "federacao", column: "FEDERACAO" },
+      { field: "software", column: "SOFTWARE" },
+      { field: "raz_social", column: "RAZ_SOCIAL" },
+    ];
+
+    const normalizeOverviewFieldValue = (
+      field: string,
+      value: unknown,
+    ): string => {
+      let normalized = String(value ?? "").trim();
+      if (field === "cnpj") {
+        normalized = normalizeDigitsString(normalized).slice(0, 14);
+      }
+      return normalized;
+    };
+
+    const cooperativaChanges = editableFields
+      .filter(({ field }) => Object.prototype.hasOwnProperty.call(body, field))
+      .map(({ field, column }) => {
+        const prev = String(
+          currentRow[column] ?? currentRow[column.toLowerCase()] ?? "",
+        ).trim();
+        const next = normalizeOverviewFieldValue(field, body[field]);
+        return { field, column, prev, next };
+      })
+      .filter((item) => item.prev !== item.next);
+
+    const hasWebsiteInput = Object.prototype.hasOwnProperty.call(body, "website");
+    const websiteRaw = hasWebsiteInput ? String(body.website ?? "").trim() : "";
+    const websiteTarget = hasWebsiteInput && websiteRaw
+      ? normalizeWebsiteValue(websiteRaw)
+      : websiteRaw
+      ? null
+      : null;
+    if (hasWebsiteInput && websiteRaw && !websiteTarget) {
+      return c.json({ error: "Website inválido. Use um endereço http/https válido." }, 400);
+    }
+
+    let finalWebsite: string | null = null;
+
+    const applyChanges = (target: DbAdapter) => {
+      if (cooperativaChanges.length) {
+        const sets = cooperativaChanges.map((item) => `${item.column} = ?`).join(", ");
+        const values = cooperativaChanges.map((item) => item.next);
+        target.query(
+          `UPDATE ${TBL("cooperativas")} SET ${sets} WHERE id_singular = ?`,
+          [...values, cooperativaId] as any,
+        );
+        for (const change of cooperativaChanges) {
+          const oldValue = change.prev || null;
+          const newValue = change.next || null;
+          registrarLogCooperativaOverview(
+            cooperativaId,
+            change.field,
+            resolveOverviewAction(oldValue, newValue),
+            oldValue,
+            newValue,
+            userData,
+            null,
+            target,
+          );
+        }
+      }
+
+      if (hasWebsiteInput) {
+        const contatoAtual = getCooperativaWebsiteContato(cooperativaId, target);
+        const websiteAtual = contatoAtual
+          ? (normalizeWebsiteValue(contatoAtual.valor) ||
+            String(contatoAtual.valor ?? "").trim() || null)
+          : null;
+
+        if (!websiteTarget) {
+          if (contatoAtual?.id) {
+            target.query(
+              `DELETE FROM ${TBL("cooperativa_contatos")} WHERE id = ? AND id_singular = ?`,
+              [String(contatoAtual.id), cooperativaId],
+            );
+            registrarLogCooperativaOverview(
+              cooperativaId,
+              "website",
+              resolveOverviewAction(websiteAtual, null),
+              websiteAtual,
+              null,
+              userData,
+              null,
+              target,
+            );
+          }
+          finalWebsite = null;
+        } else if (contatoAtual?.id) {
+          const currentTipo = normalizeEnumText(contatoAtual.tipo);
+          const currentSubtipo = normalizeEnumText(contatoAtual.subtipo);
+          const currentAtivo = normalizeBoolInt(contatoAtual.ativo ?? 1);
+          const nextLabel = String(contatoAtual.label ?? "").trim() || "Site oficial";
+          const principal = normalizeBoolInt(contatoAtual.principal ?? 1);
+          const requiresUpdate = websiteAtual !== websiteTarget ||
+            currentTipo !== "website" ||
+            currentSubtipo !== "institucional" ||
+            currentAtivo !== 1;
+
+          if (requiresUpdate) {
+            target.query(
+              `UPDATE ${TBL("cooperativa_contatos")}
+                  SET tipo = ?, subtipo = ?, valor = ?, wpp = ?, principal = ?, ativo = ?, label = ?
+                WHERE id = ? AND id_singular = ?`,
+              [
+                "website",
+                "institucional",
+                websiteTarget,
+                0,
+                principal || 1,
+                1,
+                nextLabel,
+                String(contatoAtual.id),
+                cooperativaId,
+              ],
+            );
+            registrarLogCooperativaOverview(
+              cooperativaId,
+              "website",
+              resolveOverviewAction(websiteAtual, websiteTarget),
+              websiteAtual,
+              websiteTarget,
+              userData,
+              null,
+              target,
+            );
+          }
+          finalWebsite = websiteTarget;
+        } else {
+          const contatoId = safeRandomId("ctt");
+          target.query(
+            `INSERT INTO ${
+              TBL("cooperativa_contatos")
+            } (id, id_singular, tipo, subtipo, valor, wpp, principal, ativo, label)
+             VALUES (?,?,?,?,?,?,?,?,?)`,
+            [
+              contatoId,
+              cooperativaId,
+              "website",
+              "institucional",
+              websiteTarget,
+              0,
+              1,
+              1,
+              "Site oficial",
+            ],
+          );
+          registrarLogCooperativaOverview(
+            cooperativaId,
+            "website",
+            "create",
+            null,
+            websiteTarget,
+            userData,
+            null,
+            target,
+          );
+          finalWebsite = websiteTarget;
+        }
+      }
+    };
+
+    try {
+      if (IS_POSTGRES && typeof pgDb.transaction === "function") {
+        pgDb.transaction((tx) => {
+          applyChanges(tx);
+        });
+      } else {
+        db.execute("BEGIN");
+        try {
+          applyChanges(db as unknown as DbAdapter);
+          db.execute("COMMIT");
+        } catch (txError) {
+          try {
+            db.execute("ROLLBACK");
+          } catch {}
+          throw txError;
+        }
+      }
+    } catch (error) {
+      console.error("Erro ao atualizar visão geral da cooperativa:", error);
+      return c.json({ error: "Erro ao atualizar visão geral da cooperativa" }, 500);
+    }
+
+    const updatedRow = db.queryEntries<any>(
+      `SELECT * FROM ${TBL("cooperativas")} WHERE id_singular = ? LIMIT 1`,
+      [cooperativaId],
+    )[0];
+    if (!updatedRow) {
+      return c.json({ error: "Cooperativa não encontrada após atualização" }, 404);
+    }
+
+    if (finalWebsite === null && hasWebsiteInput) {
+      finalWebsite = getCooperativaWebsiteValue(cooperativaId);
+    } else if (!hasWebsiteInput) {
+      finalWebsite = getCooperativaWebsiteValue(cooperativaId);
+    }
+
+    return c.json({
+      cooperativa: mapCooperativa(updatedRow),
+      website: finalWebsite,
+    });
+  } catch (error) {
+    console.error("Erro ao atualizar visão geral da cooperativa:", error);
+    return c.json({ error: "Erro ao atualizar visão geral da cooperativa" }, 500);
+  }
+});
+
 app.get("/cooperativas/:id/cobertura/historico", requireAuth, async (c) => {
   try {
-    const cooperativaId = c.req.param("id");
+    const cooperativaId = normalizeIdSingular(c.req.param("id"));
     const authUser = c.get("user");
     const userData = await getUserData(authUser.id, authUser.email);
 
@@ -3328,6 +6654,7 @@ app.get("/cooperativas/:id/cobertura/historico", requireAuth, async (c) => {
     }
 
     if (
+      !canReadAnyCooperativaData(userData) &&
       !isCooperativaVisible(userData, cooperativaId) &&
       resolveCoberturaScope(userData).level === "none"
     ) {
@@ -3652,7 +6979,21 @@ app.get("/operadores", requireAuth, async (c) => {
     }
 
     const mapped = (rows || []).map(mapOperador);
-    return c.json(mapped);
+    const associacoesMap = buildCooperativaAssociacoesMap(
+      mapped.map((item) => item.email || ""),
+    );
+    const enriched = mapped.map((item) => {
+      const key = String(item.email || "").trim().toLowerCase();
+      const cooperativasIds = associacoesMap[key]?.length
+        ? associacoesMap[key]
+        : (item.id_singular ? [item.id_singular] : []);
+      return {
+        ...item,
+        cooperativas_ids: cooperativasIds,
+        cooperativa_principal_id: item.id_singular || cooperativasIds[0] || "",
+      };
+    });
+    return c.json(enriched);
   } catch (error) {
     console.error("Erro ao buscar operadores:", error);
     return c.json({ error: "Erro ao buscar operadores" }, 500);
@@ -3685,11 +7026,37 @@ app.post("/operadores", requireAuth, async (c) => {
     const emailRaw = (body.email || "").trim();
     const email = emailRaw.toLowerCase();
     const cargo = (body.cargo || "").trim();
-    const telefone = (body.telefone || "").trim();
-    const whatsapp = (body.whatsapp || "").trim();
-    let idSingular =
-      (body.id_singular || body.cooperativa_id || userData.cooperativa_id || "")
-        .trim();
+    const telefone = normalizeDigitsString(body.telefone || "");
+    const whatsappInput = normalizeDigitsString(body.whatsapp || "");
+    const wpp = normalizeBoolInt(body.wpp) === 1 || Boolean(whatsappInput) ||
+      isLikelyBrazilMobile(telefone);
+    const whatsapp = wpp ? (whatsappInput || telefone) : "";
+    const payloadCooperativas = normalizeCooperativaIdsInput(
+      body.cooperativas_ids,
+    );
+    const explicitPrincipal = String(
+      body.cooperativa_principal_id || body.id_singular || body.cooperativa_id ||
+        "",
+    ).trim();
+    const ownCooperativaId = String(userData.cooperativa_id || "").trim();
+    let cooperativasIds = Array.from(
+      new Set(
+        [
+          ...payloadCooperativas,
+          explicitPrincipal,
+        ].filter((item) => String(item || "").trim().length > 0),
+      ),
+    );
+    if (!cooperativasIds.length && ownCooperativaId) {
+      cooperativasIds = [ownCooperativaId];
+    }
+    let idSingular = explicitPrincipal || cooperativasIds[0] || "";
+    if (idSingular && !cooperativasIds.includes(idSingular)) {
+      cooperativasIds.unshift(idSingular);
+    }
+    if (!idSingular && cooperativasIds.length > 0) {
+      idSingular = cooperativasIds[0];
+    }
     const senhaTemporaria = typeof body.senha_temporaria === "string"
       ? body.senha_temporaria.trim()
       : "";
@@ -3699,15 +7066,17 @@ app.post("/operadores", requireAuth, async (c) => {
       return c.json({ error: "Nome e email são obrigatórios" }, 400);
     }
 
-    if (!idSingular) {
-      return c.json({ error: "Cooperativa não informada" }, 400);
+    if (!idSingular || cooperativasIds.length === 0) {
+      return c.json({ error: "Defina ao menos uma singular para o usuário" }, 400);
     }
 
-    if (!isCooperativaVisible(userData, idSingular)) {
-      return c.json(
-        { error: "Acesso negado para cadastrar nesta cooperativa" },
-        403,
-      );
+    for (const cooperativaId of cooperativasIds) {
+      if (!isCooperativaVisible(userData, cooperativaId)) {
+        return c.json(
+          { error: "Acesso negado para cadastrar em uma ou mais singulares selecionadas" },
+          403,
+        );
+      }
     }
 
     const existing = db.queryEntries<any>(
@@ -3729,9 +7098,9 @@ app.post("/operadores", requireAuth, async (c) => {
       db.query(
         `INSERT INTO ${
           TBL("operadores")
-        } (nome, id_singular, email, telefone, whatsapp, cargo, status, created_at)
-         VALUES (?,?,?,?,?,?,?,?)`,
-        [nome, idSingular, email, telefone, whatsapp, cargo, 1, now],
+        } (nome, id_singular, email, telefone, whatsapp, wpp, cargo, status, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+        [nome, idSingular, email, telefone, whatsapp, wpp ? 1 : 0, cargo, 1, now],
       );
     } catch (e) {
       console.error("Erro ao inserir operador:", e);
@@ -3823,13 +7192,20 @@ app.post("/operadores", requireAuth, async (c) => {
       }
     }
 
+    syncUserCooperativaAssociacoes(email, cooperativasIds, idSingular);
+
     const inserted = db.queryEntries<any>(
       `SELECT op.*, au.papel AS auth_papel FROM ${
         TBL("operadores")
       } op LEFT JOIN auth_users au ON au.email = op.email WHERE op.email = ? LIMIT 1`,
       [email],
     )[0];
-    return c.json(mapOperador(inserted));
+    const mapped = mapOperador(inserted);
+    return c.json({
+      ...mapped,
+      cooperativas_ids: cooperativasIds,
+      cooperativa_principal_id: idSingular,
+    });
   } catch (error) {
     console.error("Erro ao criar operador:", error);
     return c.json({ error: "Erro ao criar operador" }, 500);
@@ -3906,8 +7282,13 @@ app.put("/operadores/:id", requireAuth, async (c) => {
       ? body.senha_temporaria.trim()
       : "";
     const forcarTrocaSenha = body.forcar_troca_senha === false ? false : true;
+    const hasCooperativasPayload = (
+      "cooperativas_ids" in body || "cooperativa_principal_id" in body ||
+      "id_singular" in body || "cooperativa_id" in body
+    );
     const allowed: Record<string, any> = {};
     const whitelist = ["nome", "telefone", "whatsapp", "cargo", "ativo"];
+    whitelist.push("wpp");
     const canEditRole = isConfAdmin || userData.papel === "admin";
     if (canEditRole) {
       whitelist.push("papel");
@@ -3917,6 +7298,64 @@ app.put("/operadores/:id", requireAuth, async (c) => {
       (isConfAdmin ||
         (isFederacaoAdmin && visible) ||
         (isSingularAdmin && operador.id_singular === userData.cooperativa_id));
+    const canEditCooperativas = isConfAdmin ||
+      (isFederacaoAdmin && visible) ||
+      (isSingularAdmin && operador.id_singular === userData.cooperativa_id);
+
+    const associacoesAtuais = getUserCooperativaAssociacoes(operador.email);
+    let cooperativasIds = associacoesAtuais.length
+      ? associacoesAtuais
+      : (operador.id_singular ? [operador.id_singular] : []);
+    let cooperativaPrincipalId = operador.id_singular || cooperativasIds[0] || "";
+
+    if (hasCooperativasPayload) {
+      if (!canEditCooperativas) {
+        return c.json(
+          { error: "Acesso negado para alterar singulares deste usuário" },
+          403,
+        );
+      }
+      const payloadCooperativas = normalizeCooperativaIdsInput(
+        body.cooperativas_ids,
+      );
+      const principalSolicitada = String(
+        body.cooperativa_principal_id || body.id_singular || body.cooperativa_id ||
+          "",
+      ).trim();
+
+      cooperativasIds = Array.from(
+        new Set(
+          [
+            ...(payloadCooperativas.length ? payloadCooperativas : cooperativasIds),
+            principalSolicitada,
+          ].filter((item) => String(item || "").trim().length > 0),
+        ),
+      );
+      cooperativaPrincipalId = principalSolicitada || cooperativasIds[0] || "";
+      if (!cooperativaPrincipalId && cooperativasIds.length > 0) {
+        cooperativaPrincipalId = cooperativasIds[0];
+      }
+      if (cooperativaPrincipalId && !cooperativasIds.includes(cooperativaPrincipalId)) {
+        cooperativasIds.unshift(cooperativaPrincipalId);
+      }
+      if (!cooperativasIds.length || !cooperativaPrincipalId) {
+        return c.json(
+          { error: "Defina ao menos uma singular para este usuário" },
+          400,
+        );
+      }
+      for (const cooperativaId of cooperativasIds) {
+        if (!isCooperativaVisible(userData, cooperativaId)) {
+          return c.json(
+            { error: "Acesso negado para vincular uma ou mais singulares selecionadas" },
+            403,
+          );
+        }
+      }
+      if (cooperativaPrincipalId !== operador.id_singular) {
+        allowed.id_singular = cooperativaPrincipalId;
+      }
+    }
 
     if (senhaTemporaria) {
       if (!canManageCredentials) {
@@ -3951,28 +7390,54 @@ app.put("/operadores/:id", requireAuth, async (c) => {
       allowed.cargo = allowed.cargo.trim();
     }
     if ("telefone" in allowed && typeof allowed.telefone === "string") {
-      allowed.telefone = allowed.telefone.trim();
+      allowed.telefone = normalizeDigitsString(allowed.telefone);
     }
     if ("whatsapp" in allowed && typeof allowed.whatsapp === "string") {
-      allowed.whatsapp = allowed.whatsapp.trim();
+      allowed.whatsapp = normalizeDigitsString(allowed.whatsapp);
+    }
+    if ("wpp" in allowed) {
+      allowed.wpp = normalizeBoolInt(allowed.wpp);
+    }
+    if ("telefone" in allowed || "wpp" in allowed || "whatsapp" in allowed) {
+      const resolvedTel = "telefone" in allowed
+        ? String(allowed.telefone || "")
+        : String(operador.telefone || "");
+      const resolvedLegacyWhatsapp = "whatsapp" in allowed
+        ? String(allowed.whatsapp || "")
+        : String(operador.whatsapp || "");
+      const resolvedWpp = "wpp" in allowed
+        ? normalizeBoolInt(allowed.wpp) === 1
+        : normalizeBoolInt((operador as any).wpp) === 1 ||
+          Boolean(resolvedLegacyWhatsapp) ||
+          isLikelyBrazilMobile(resolvedTel);
+      allowed.telefone = resolvedTel;
+      allowed.wpp = resolvedWpp ? 1 : 0;
+      allowed.whatsapp = resolvedWpp ? (resolvedLegacyWhatsapp || resolvedTel) : "";
     }
     if ("papel" in allowed && !canEditRole) {
       delete allowed.papel;
     } else if ("papel" in allowed) {
       allowed.papel = deriveRoleForCooperativa(
         allowed.papel,
-        operador.id_singular,
+        cooperativaPrincipalId || operador.id_singular,
       );
     }
 
-    if (Object.keys(allowed).length === 0) {
+    if (!hasCooperativasPayload && Object.keys(allowed).length === 0) {
       const refreshed = mapOperador(
         db.queryEntries<any>(
           `SELECT * FROM ${TBL("operadores")} WHERE id = ? LIMIT 1`,
           [operadorId],
         )[0],
       );
-      return c.json(refreshed);
+      const refreshedAssociacoes = getUserCooperativaAssociacoes(refreshed.email);
+      return c.json({
+        ...refreshed,
+        cooperativas_ids: refreshedAssociacoes.length
+          ? refreshedAssociacoes
+          : (refreshed.id_singular ? [refreshed.id_singular] : []),
+        cooperativa_principal_id: refreshed.id_singular || "",
+      });
     }
 
     try {
@@ -3990,15 +7455,27 @@ app.put("/operadores/:id", requireAuth, async (c) => {
       return c.json({ error: "Erro ao atualizar operador" }, 500);
     }
 
-    if (allowed.papel) {
+    if (allowed.papel || allowed.id_singular) {
       try {
-        db.query(`UPDATE auth_users SET papel = ? WHERE email = ?`, [
-          allowed.papel,
-          operador.email,
-        ]);
+        const updates: string[] = [];
+        const values: any[] = [];
+        if (allowed.papel) {
+          updates.push("papel = ?");
+          values.push(allowed.papel);
+        }
+        if (allowed.id_singular) {
+          updates.push("cooperativa_id = ?");
+          values.push(allowed.id_singular);
+        }
+        if (updates.length > 0) {
+          db.query(
+            `UPDATE auth_users SET ${updates.join(", ")} WHERE email = ?`,
+            [...values, operador.email],
+          );
+        }
       } catch (e) {
         console.warn(
-          "[operadores] não foi possível atualizar papel em auth_users:",
+          "[operadores] não foi possível atualizar papel/cooperativa em auth_users:",
           e,
         );
       }
@@ -4012,7 +7489,10 @@ app.put("/operadores/:id", requireAuth, async (c) => {
         const authUser = getAuthUser(operador.email);
         const resolvedRole = allowed.papel ||
           authUser?.papel ||
-          deriveRoleForCooperativa("operador", operador.id_singular);
+          deriveRoleForCooperativa(
+            "operador",
+            cooperativaPrincipalId || operador.id_singular,
+          );
         const resolvedNome = "nome" in allowed
           ? allowed.nome
           : operador.nome;
@@ -4022,6 +7502,11 @@ app.put("/operadores/:id", requireAuth, async (c) => {
         const resolvedWhatsapp = "whatsapp" in allowed
           ? allowed.whatsapp
           : operador.whatsapp;
+        const resolvedWpp = "wpp" in allowed
+          ? normalizeBoolInt(allowed.wpp) === 1
+          : normalizeBoolInt((operador as any).wpp) === 1 ||
+            Boolean(resolvedWhatsapp) ||
+            isLikelyBrazilMobile(normalizeDigitsString(resolvedTelefone || ""));
         const resolvedCargo = "cargo" in allowed
           ? allowed.cargo
           : operador.cargo;
@@ -4042,7 +7527,7 @@ app.put("/operadores/:id", requireAuth, async (c) => {
             [
               passwordHash,
               mustChange,
-              operador.id_singular,
+              cooperativaPrincipalId || operador.id_singular,
               resolvedRole,
               resolvedRole,
               now,
@@ -4075,9 +7560,9 @@ app.put("/operadores/:id", requireAuth, async (c) => {
               resolvedNome,
               resolvedNome || operador.email,
               resolvedTelefone || "",
-              resolvedWhatsapp || "",
+              resolvedWpp ? (resolvedWhatsapp || resolvedTelefone || "") : "",
               resolvedCargo || "",
-              operador.id_singular,
+              cooperativaPrincipalId || operador.id_singular,
               resolvedRole,
               resolvedRole,
               1,
@@ -4096,12 +7581,27 @@ app.put("/operadores/:id", requireAuth, async (c) => {
       }
     }
 
+    if (hasCooperativasPayload) {
+      syncUserCooperativaAssociacoes(
+        operador.email,
+        cooperativasIds,
+        cooperativaPrincipalId || operador.id_singular,
+      );
+    }
+
     const updatedRow = db.queryEntries<any>(
       `SELECT * FROM ${TBL("operadores")} WHERE id = ? LIMIT 1`,
       [operadorId],
     )[0];
     const updatedOperador = mapOperador(updatedRow);
-    return c.json(updatedOperador);
+    const updatedAssociacoes = getUserCooperativaAssociacoes(updatedOperador.email);
+    return c.json({
+      ...updatedOperador,
+      cooperativas_ids: updatedAssociacoes.length
+        ? updatedAssociacoes
+        : (updatedOperador.id_singular ? [updatedOperador.id_singular] : []),
+      cooperativa_principal_id: updatedOperador.id_singular || "",
+    });
   } catch (error) {
     console.error("Erro ao atualizar operador:", error);
     return c.json({ error: "Erro ao atualizar operador" }, 500);
@@ -6043,7 +9543,7 @@ if (import.meta.main) {
         console.log(
           `[server] Iniciando servidor HTTP local na porta ${port}...`,
         );
-        Deno.serve({ port }, app.fetch);
+        Deno.serve({ hostname: "0.0.0.0", port }, app.fetch);
         return;
       } catch (error) {
         if (error instanceof Deno.errors.AddrInUse) {

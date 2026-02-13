@@ -13,6 +13,14 @@ export function CidadesView() {
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
+  const openSingular = (idSingular: string) => {
+    const id = (idSingular || '').trim();
+    if (!id) return;
+    window.history.pushState({ from: 'cidades', coopId: id }, '', `/cooperativas/${id}`);
+    // pushState não dispara popstate; usamos isso para o App trocar a aba.
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+
   useEffect(() => {
     const fetchCidades = async () => {
       try {
@@ -43,12 +51,12 @@ export function CidadesView() {
       const tokens = [
         cidade.nm_cidade,
         cidade.cd_municipio_7,
-        cidade.cd_municipio,
         cidade.uf_municipio,
         cidade.nm_regiao,
         cidade.regional_saude,
         cidade.id_singular,
         cidade.nm_singular,
+        cidade.reg_ans,
       ]
         .filter(Boolean)
         .map((value) => normalize(String(value)));
@@ -90,19 +98,18 @@ export function CidadesView() {
             <div className="py-12 text-center text-red-600">{error}</div>
           ) : (
             <ScrollArea className="max-h-[65vh]">
-              <div className="min-w-[720px]">
+              <div className="min-w-[980px]">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Município</TableHead>
+                      <TableHead>IBGE</TableHead>
+                      <TableHead>Cidade</TableHead>
                       <TableHead>UF</TableHead>
-                      <TableHead>Código IBGE (7)</TableHead>
-                      <TableHead>Código IBGE</TableHead>
-                      <TableHead>Regional de Saúde</TableHead>
                       <TableHead>Região</TableHead>
-                      <TableHead>Habitantes</TableHead>
-                      <TableHead>Singular</TableHead>
-                      <TableHead>Cooperativa (ID)</TableHead>
+                      <TableHead className="text-right">Habitantes</TableHead>
+                      <TableHead>Singular responsável</TableHead>
+                      <TableHead>Reg. ANS</TableHead>
+                      <TableHead>Regional de Saúde</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -115,17 +122,31 @@ export function CidadesView() {
                     ) : (
                       filtered.map((cidade) => (
                         <TableRow key={cidade.cd_municipio_7}>
+                          <TableCell>{cidade.cd_municipio_7}</TableCell>
                           <TableCell className="font-medium text-gray-900 dark:text-slate-100">
                             {cidade.nm_cidade}
                           </TableCell>
                           <TableCell>{cidade.uf_municipio}</TableCell>
-                          <TableCell>{cidade.cd_municipio_7}</TableCell>
-                          <TableCell>{cidade.cd_municipio || '—'}</TableCell>
-                          <TableCell>{cidade.regional_saude || '—'}</TableCell>
                           <TableCell>{cidade.nm_regiao || '—'}</TableCell>
-                          <TableCell>{cidade.cidades_habitantes?.toLocaleString('pt-BR') ?? '—'}</TableCell>
-                          <TableCell>{cidade.nm_singular || '—'}</TableCell>
-                          <TableCell>{cidade.id_singular || '—'}</TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {cidade.cidades_habitantes?.toLocaleString('pt-BR') ?? '—'}
+                          </TableCell>
+                          <TableCell>
+                            {cidade.id_singular ? (
+                              <button
+                                type="button"
+                                onClick={() => openSingular(cidade.id_singular)}
+                                className="inline-flex items-center rounded-full border border-[#D9DEFF] bg-[#EEF1FF] px-3 py-1 text-xs font-semibold text-[#3145C4] hover:bg-[#E0E6FF]"
+                                title="Abrir cooperativa"
+                              >
+                                {cidade.id_singular} • {cidade.nm_singular || cidade.id_singular}
+                              </button>
+                            ) : (
+                              '—'
+                            )}
+                          </TableCell>
+                          <TableCell>{cidade.reg_ans || '—'}</TableCell>
+                          <TableCell>{cidade.regional_saude || '—'}</TableCell>
                         </TableRow>
                       ))
                     )}

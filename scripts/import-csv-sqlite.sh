@@ -29,11 +29,69 @@ DELETE FROM urede_cidades;
 DELETE FROM urede_cooperativas;
 DELETE FROM urede_operadores;
 
--- Import cooperativas diretamente (ordem de colunas já compatível)
-.import --skip 1 "$COOPS_CSV" urede_cooperativas
+-- Import cooperativas via staging (permite colunas extras no schema sem quebrar o CSV)
+DROP TABLE IF EXISTS tmp_cooperativas;
+CREATE TABLE tmp_cooperativas (
+  id_singular   TEXT,
+  UNIODONTO     TEXT,
+  CNPJ          TEXT,
+  CRO_OPERAORA  TEXT,
+  DATA_FUNDACAO TEXT,
+  RAZ_SOCIAL    TEXT,
+  CODIGO_ANS    TEXT,
+  FEDERACAO     TEXT,
+  SOFTWARE      TEXT,
+  TIPO          TEXT,
+  OP_PR         TEXT
+);
+.import --skip 1 "$COOPS_CSV" tmp_cooperativas
+
+INSERT INTO urede_cooperativas (
+  id_singular,
+  UNIODONTO,
+  CNPJ,
+  CRO_OPERAORA,
+  DATA_FUNDACAO,
+  RAZ_SOCIAL,
+  CODIGO_ANS,
+  FEDERACAO,
+  SOFTWARE,
+  TIPO,
+  OP_PR
+)
+SELECT
+  id_singular,
+  UNIODONTO,
+  CNPJ,
+  CRO_OPERAORA,
+  DATA_FUNDACAO,
+  RAZ_SOCIAL,
+  CODIGO_ANS,
+  FEDERACAO,
+  SOFTWARE,
+  TIPO,
+  OP_PR
+FROM tmp_cooperativas;
+
+DROP TABLE tmp_cooperativas;
 
 -- Import cidades diretamente (ordem compatível)
 .import --skip 1 "$CIDADES_CSV" urede_cidades
+
+-- Normalizar FK: CSV pode trazer ID_SINGULAR vazio. Em SQLite, FK não é validada para NULL, mas é para ''.
+UPDATE urede_cidades
+SET ID_SINGULAR = NULL
+WHERE ID_SINGULAR IS NOT NULL
+  AND TRIM(ID_SINGULAR) = '';
+
+-- Se houver referências inválidas (ID_SINGULAR sem cooperativa correspondente), normaliza para NULL
+UPDATE urede_cidades
+SET ID_SINGULAR = NULL
+WHERE ID_SINGULAR IS NOT NULL
+  AND TRIM(ID_SINGULAR) <> ''
+  AND NOT EXISTS (
+    SELECT 1 FROM urede_cooperativas c WHERE c.id_singular = urede_cidades.ID_SINGULAR
+  );
 
 -- Import operadores via staging para contornar CHECK e normalizar status
 DROP TABLE IF EXISTS tmp_operadores;
@@ -67,6 +125,82 @@ DROP TABLE tmp_operadores;
 
 PRAGMA foreign_keys=ON;
 SQL
+
+has_links=$(sqlite3 "$DB_PATH" -batch -noheader "SELECT 1 FROM pragma_table_info('urede_cooperativas') WHERE name IN ('federacao_id','confederacao_id','operadora_id') LIMIT 1;")
+if [[ "$has_links" == "1" ]]; then
+  echo "[import-csv] Preenchendo federacao_id/confederacao_id/operadora_id (backfill)"
+  sqlite3 "$DB_PATH" <<'SQL'
+.timeout 2000
+PRAGMA foreign_keys=ON;
+
+-- federacao_id para singulares (via nome em FEDERACAO)
+UPDATE urede_cooperativas AS c
+SET federacao_id = (
+  SELECT f.id_singular
+  FROM urede_cooperativas AS f
+  WHERE UPPER(TRIM(f.UNIODONTO)) = UPPER(TRIM(c.FEDERACAO))
+    AND UPPER(TRIM(f.TIPO)) LIKE 'FEDER%'
+  LIMIT 1
+)
+WHERE (c.federacao_id IS NULL OR TRIM(c.federacao_id) = '')
+  AND c.FEDERACAO IS NOT NULL AND TRIM(c.FEDERACAO) <> ''
+  AND UPPER(TRIM(c.TIPO)) NOT LIKE 'FEDER%'
+  AND UPPER(TRIM(c.TIPO)) NOT LIKE 'CONFED%';
+
+-- confederacao_id para federações (via nome em FEDERACAO)
+UPDATE urede_cooperativas AS f
+SET confederacao_id = (
+  SELECT c.id_singular
+  FROM urede_cooperativas AS c
+  WHERE UPPER(TRIM(c.UNIODONTO)) = UPPER(TRIM(f.FEDERACAO))
+    AND UPPER(TRIM(c.TIPO)) LIKE 'CONFED%'
+  LIMIT 1
+)
+WHERE (f.confederacao_id IS NULL OR TRIM(f.confederacao_id) = '')
+  AND f.FEDERACAO IS NOT NULL AND TRIM(f.FEDERACAO) <> ''
+  AND UPPER(TRIM(f.TIPO)) LIKE 'FEDER%';
+
+-- confederacao_id para singulares (propaga via federacao_id)
+UPDATE urede_cooperativas AS s
+SET confederacao_id = (
+  SELECT f.confederacao_id
+  FROM urede_cooperativas AS f
+  WHERE f.id_singular = s.federacao_id
+  LIMIT 1
+)
+WHERE (s.confederacao_id IS NULL OR TRIM(s.confederacao_id) = '')
+  AND s.federacao_id IS NOT NULL AND TRIM(s.federacao_id) <> '';
+
+-- confederação aponta para si mesma (opcional)
+UPDATE urede_cooperativas
+SET confederacao_id = id_singular
+WHERE UPPER(TRIM(TIPO)) LIKE 'CONFED%'
+  AND (confederacao_id IS NULL OR TRIM(confederacao_id) = '');
+
+-- operadora_id (heurística): Prestadora -> tenta federação Operadora; senão confederação Operadora
+UPDATE urede_cooperativas AS s
+SET operadora_id = (
+  SELECT f.id_singular
+  FROM urede_cooperativas AS f
+  WHERE f.id_singular = s.federacao_id
+    AND TRIM(f.OP_PR) = 'Operadora'
+  LIMIT 1
+)
+WHERE TRIM(s.OP_PR) = 'Prestadora'
+  AND (s.operadora_id IS NULL OR TRIM(s.operadora_id) = '');
+
+UPDATE urede_cooperativas AS s
+SET operadora_id = (
+  SELECT c.id_singular
+  FROM urede_cooperativas AS c
+  WHERE c.id_singular = s.confederacao_id
+    AND TRIM(c.OP_PR) = 'Operadora'
+  LIMIT 1
+)
+WHERE TRIM(s.OP_PR) = 'Prestadora'
+  AND (s.operadora_id IS NULL OR TRIM(s.operadora_id) = '');
+SQL
+fi
 
 echo "[import-csv] Normalizando boolean em urede_operadores.status"
 # Já normalizado durante o INSERT da staging

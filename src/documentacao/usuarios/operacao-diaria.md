@@ -1,6 +1,6 @@
 # Operação Diária
 
-Esta seção apresenta as ações recorrentes realizadas por operadores e equipes de apoio no portal uRede.
+Esta seção apresenta as ações recorrentes realizadas por operadores e equipes de apoio no portal URede.
 
 ## Acesso ao Dashboard
 

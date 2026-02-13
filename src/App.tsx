@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AuthScreen } from './components/AuthScreen';
 import { Layout } from './components/Layout';
@@ -17,17 +17,140 @@ import { Button } from './components/ui/button';
 import { apiService } from './services/apiService';
 import { DocumentacaoUsuariosApp } from './documentacao/usuarios';
 import { ReportsView } from './components/ReportsView';
+import { GestaoDadosPage } from './components/GestaoDadosPage';
+import { HubHomePage } from './components/HubHomePage';
+
+type AppModule = 'hub' | 'urede';
+type AppTab =
+  | 'hub_home'
+  | 'cooperativas'
+  | 'cidades'
+  | 'configuracoes'
+  | 'configuracoes_hub'
+  | 'configuracoes_urede'
+  | 'operadores'
+  | 'gestao_dados'
+  | 'dashboard'
+  | 'pedidos'
+  | 'importacao'
+  | 'relatorios';
 
 // Componente interno que usa o AuthContext
 function AppContent() {
   const { isAuthenticated, isLoading, user, refreshUser } = useAuth();
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const tabPathMap: Record<AppTab, string> = {
+    hub_home: '/hub',
+    cooperativas: '/hub/cooperativas',
+    cidades: '/hub/cidades',
+    configuracoes: '/hub/configuracoes',
+    configuracoes_hub: '/hub/configuracoes',
+    configuracoes_urede: '/urede/configuracoes',
+    operadores: '/hub/usuarios',
+    gestao_dados: '/hub/gestao-dados',
+    dashboard: '/urede/dashboard',
+    pedidos: '/urede/pedidos',
+    importacao: '/urede/importacao',
+    relatorios: '/urede/relatorios',
+  };
+
+  const hubTabs = useMemo(() => new Set<AppTab>([
+    'hub_home',
+    'cooperativas',
+    'cidades',
+    'configuracoes',
+    'configuracoes_hub',
+    'operadores',
+    'gestao_dados',
+  ]), []);
+
+  const deriveModuleFromTab = useMemo(() => {
+    return (tab: AppTab): AppModule => (hubTabs.has(tab) ? 'hub' : 'urede');
+  }, [hubTabs]);
+
+  const deriveTabFromPath = useMemo(() => {
+    return (pathname: string): AppTab => {
+      const normalizedPath = pathname.replace(/\/+$/, '') || '/';
+
+      if (normalizedPath === '/' || normalizedPath === '/hub') return 'hub_home';
+      if (normalizedPath.startsWith('/hub/cooperativas') || normalizedPath.startsWith('/cooperativas')) return 'cooperativas';
+      if (normalizedPath.startsWith('/hub/cidades') || normalizedPath.startsWith('/cidades')) return 'cidades';
+      if (normalizedPath.startsWith('/hub/usuarios') || normalizedPath.startsWith('/operadores')) return 'operadores';
+      if (normalizedPath.startsWith('/hub/configuracoes') || normalizedPath.startsWith('/configuracoes')) return 'configuracoes_hub';
+      if (normalizedPath.startsWith('/urede/configuracoes')) return 'configuracoes_urede';
+      if (normalizedPath.startsWith('/hub/gestao-dados') || normalizedPath.startsWith('/gestao_dados')) return 'gestao_dados';
+      if (normalizedPath.startsWith('/urede/relatorios') || normalizedPath.startsWith('/relatorios')) return 'relatorios';
+      if (normalizedPath.startsWith('/urede/importacao') || normalizedPath.startsWith('/importacao')) return 'importacao';
+      if (normalizedPath.startsWith('/urede/pedidos') || normalizedPath.startsWith('/pedidos')) return 'pedidos';
+      if (normalizedPath.startsWith('/urede/dashboard') || normalizedPath.startsWith('/dashboard') || normalizedPath === '/urede') {
+        return 'dashboard';
+      }
+
+      return 'hub_home';
+    };
+  }, []);
+
+  const getInitialTab = () => {
+    const pathname = typeof window !== 'undefined' ? window.location.pathname : '/';
+    return deriveTabFromPath(pathname);
+  };
+
+  const [activeTab, setActiveTab] = useState<AppTab>(() => getInitialTab());
+  const [activeModule, setActiveModule] = useState<AppModule>(() => deriveModuleFromTab(getInitialTab()));
   const [showNovoPedido, setShowNovoPedido] = useState(false);
   const [selectedPedido, setSelectedPedido] = useState<Pedido | null>(null);
   const [pedidosPresetFilter, setPedidosPresetFilter] = useState<PedidosFilterPreset | null>(null);
-  const openNovoPedido = () => setShowNovoPedido(true);
+
+  const navigateByTab = (tab: AppTab) => {
+    const path = tabPathMap[tab];
+    if (typeof window !== 'undefined' && window.location.pathname !== path) {
+      window.history.pushState({ tab }, '', path);
+    }
+  };
+
+  const setCurrentTab = (tab: AppTab) => {
+    setActiveTab(tab);
+    setActiveModule(deriveModuleFromTab(tab));
+  };
+
+  const navigateToUredeModule = () => {
+    navigateByTab('dashboard');
+    setCurrentTab('dashboard');
+    setShowNovoPedido(false);
+    setSelectedPedido(null);
+    setPedidosPresetFilter(null);
+  };
+
+  const navigateToHubModule = () => {
+    navigateByTab('hub_home');
+    setCurrentTab('hub_home');
+    setShowNovoPedido(false);
+    setSelectedPedido(null);
+    setPedidosPresetFilter(null);
+  };
+
+  const openNovoPedido = () => {
+    if (activeModule !== 'urede') {
+      navigateToUredeModule();
+    }
+    setShowNovoPedido(true);
+  };
 
   const pathname = typeof window !== 'undefined' ? window.location.pathname : '/';
+
+  // Mini-router: permite deep links e navegação por pushState.
+  useEffect(() => {
+    const handle = () => {
+      const nextTab = deriveTabFromPath(window.location.pathname);
+      setCurrentTab(nextTab);
+      setSelectedPedido(null);
+      if (nextTab !== 'pedidos') {
+        setPedidosPresetFilter(null);
+      }
+    };
+    window.addEventListener('popstate', handle);
+    return () => window.removeEventListener('popstate', handle);
+  }, [deriveTabFromPath, deriveModuleFromTab]);
+
   if (pathname.startsWith('/documentacao/usuarios')) {
     return <DocumentacaoUsuariosApp />;
   }
@@ -36,7 +159,7 @@ function AppContent() {
       <ConfirmEmailScreen
         onGoToLogin={() => {
           if (typeof window !== 'undefined') {
-            window.location.assign('/');
+            window.location.assign('/hub');
           }
         }}
       />
@@ -98,25 +221,49 @@ function AppContent() {
   }
 
   const handleUpdatePedido = (pedidoId: string, updates: Partial<Pedido>) => {
-    setSelectedPedido(prev => {
+    setSelectedPedido((prev) => {
       if (!prev || prev.id !== pedidoId) return prev;
       return { ...prev, ...updates };
     });
   };
 
   const handlePedidoCreated = (_pedido: Pedido) => {
-    setActiveTab('pedidos');
+    navigateByTab('pedidos');
+    setCurrentTab('pedidos');
     setSelectedPedido(null);
+    setShowNovoPedido(false);
+  };
+
+  const handleSidebarTabChange = (tab: string) => {
+    if (!(tab in tabPathMap)) return;
+    const nextTab = tab as AppTab;
+    navigateByTab(nextTab);
+    setShowNovoPedido(false);
+    setSelectedPedido(null);
+    if (nextTab !== 'pedidos') {
+      setPedidosPresetFilter(null);
+    }
+    setCurrentTab(nextTab);
+  };
+
+  const handleModuleChange = (module: AppModule) => {
+    if (module === 'hub') {
+      navigateToHubModule();
+      return;
+    }
+    navigateToUredeModule();
   };
 
   const navigateToPedidosWithFilter = (filter: PedidosFilterPreset) => {
-    setActiveTab('pedidos');
+    navigateByTab('pedidos');
+    setCurrentTab('pedidos');
     setSelectedPedido(null);
     setPedidosPresetFilter({ ...filter, token: Date.now() });
   };
 
   const handleOpenImportacao = () => {
-    setActiveTab('importacao');
+    navigateByTab('importacao');
+    setCurrentTab('importacao');
     setSelectedPedido(null);
     setPedidosPresetFilter(null);
   };
@@ -124,7 +271,8 @@ function AppContent() {
   const handleOpenPedidoFromAlert = async (pedidoId: string) => {
     try {
       const pedidoDetalhado = await apiService.getPedidoById(pedidoId);
-      setActiveTab('pedidos');
+      navigateByTab('pedidos');
+      setCurrentTab('pedidos');
       setSelectedPedido(pedidoDetalhado);
     } catch (error) {
       console.error('Erro ao abrir pedido via alerta:', error);
@@ -132,11 +280,41 @@ function AppContent() {
     }
   };
 
+  const renderHubHome = (isAdmin: boolean) => (
+    <HubHomePage
+      isAdmin={isAdmin}
+      userName={user?.nome || 'Usuário'}
+      onOpenUredeModule={navigateToUredeModule}
+      onOpenHubTab={(tab) => handleSidebarTabChange(tab)}
+    />
+  );
+
   const renderContent = () => {
     switch (activeTab) {
+      case 'hub_home':
+        return renderHubHome(user?.papel === 'admin');
       case 'dashboard':
-        return <Dashboard onNavigateToPedidos={navigateToPedidosWithFilter} />;
+        return (
+          <Dashboard
+            onNavigateToPedidos={navigateToPedidosWithFilter}
+            onViewPedido={(pedido) => {
+              navigateByTab('pedidos');
+              setCurrentTab('pedidos');
+              setSelectedPedido(pedido);
+            }}
+          />
+        );
       case 'pedidos':
+        if (selectedPedido) {
+          return (
+            <PedidoDetalhes
+              pedido={selectedPedido}
+              inline
+              onClose={() => setSelectedPedido(null)}
+              onUpdatePedido={handleUpdatePedido}
+            />
+          );
+        }
         return (
           <PedidosLista
             onViewPedido={(pedido) => setSelectedPedido(pedido)}
@@ -144,19 +322,24 @@ function AppContent() {
           />
         );
       case 'importacao':
-        return <PedidosImportPage onBack={() => setActiveTab('pedidos')} />;
+        return <PedidosImportPage onBack={() => handleSidebarTabChange('pedidos')} />;
+      case 'gestao_dados':
+        return user?.papel === 'admin' ? <GestaoDadosPage /> : renderHubHome(false);
       case 'cooperativas':
         return <CooperativasView />;
       case 'operadores':
-        return <OperadoresLista />;
+        return user?.papel === 'admin' ? <OperadoresLista /> : renderHubHome(false);
       case 'cidades':
         return <CidadesView />;
       case 'configuracoes':
-        return <ConfiguracoesView />;
+      case 'configuracoes_hub':
+        return <ConfiguracoesView module="hub" />;
+      case 'configuracoes_urede':
+        return <ConfiguracoesView module="urede" />;
       case 'relatorios':
         return <ReportsView />;
       default:
-        return <Dashboard onNavigateToPedidos={navigateToPedidosWithFilter} />;
+        return renderHubHome(user?.papel === 'admin');
     }
   };
 
@@ -165,10 +348,12 @@ function AppContent() {
     <div className="h-screen bg-gray-50 dark:bg-slate-950">
       <Layout
         activeTab={activeTab}
-        onTabChange={setActiveTab}
-        onCreatePedido={openNovoPedido}
+        activeModule={activeModule}
+        onModuleChange={handleModuleChange}
+        onTabChange={handleSidebarTabChange}
+        onCreatePedido={activeModule === 'urede' ? openNovoPedido : undefined}
         onOpenPedido={handleOpenPedidoFromAlert}
-        onOpenImportacao={handleOpenImportacao}
+        onOpenImportacao={activeModule === 'urede' ? handleOpenImportacao : undefined}
       >
         {renderContent()}
       </Layout>
@@ -178,14 +363,6 @@ function AppContent() {
         <NovoPedidoForm
           onClose={() => setShowNovoPedido(false)}
           onSubmit={handlePedidoCreated}
-        />
-      )}
-
-      {selectedPedido && (
-        <PedidoDetalhes
-          pedido={selectedPedido}
-          onClose={() => setSelectedPedido(null)}
-          onUpdatePedido={handleUpdatePedido}
         />
       )}
     </div>

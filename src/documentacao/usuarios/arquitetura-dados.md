@@ -1,6 +1,6 @@
 # Arquitetura de Dados
 
-Esta visão fornece um panorama de como as informações são armazenadas e interagem dentro do portal uRede. O objetivo é apoiar equipes de gestão e auditoria na interpretação dos dados exportados ou integrados com outros sistemas corporativos.
+Esta visão fornece um panorama de como as informações são armazenadas e interagem dentro do portal URede. O objetivo é apoiar equipes de gestão e auditoria na interpretação dos dados exportados ou integrados com outros sistemas corporativos.
 
 ## Entidades Principais
 

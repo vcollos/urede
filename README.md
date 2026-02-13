@@ -67,3 +67,73 @@ Notas:
 
 - O projeto não depende mais de serviços externos. Todo acesso é local (SQLite).
 - Para agendamentos, use um scheduler externo que faça POST `/` com header `x-cron: true` e body `{ "task": "escalar" }`.
+
+## Navegação Modular (UHub / URede)
+
+Escopo vigente da separação modular:
+- **UHub (compartilhado/global)**: Homepage do hub, `Cooperativas`, `Cidades`.
+- **UHub (admin)**: `Usuários` (`operadores`) e `Gestão de dados` (`gestao_dados`) como subitens de `Configurações`.
+- **Módulo URede (específico)**: `Dashboard`, `Relatórios`, `Pedidos` e `Pedidos em lote` (`importacao`), incluindo ações de `Novo pedido`.
+- `Configurações` é contextual por módulo:
+  - Hub: `/hub/configuracoes` (cadastros globais de dados cadastrais).
+  - URede: `/urede/configuracoes` (fluxo de aprovação e categorias de pedidos).
+- Apenas **Administrador da Confederação** pode alterar as configurações de módulo.
+- Para perfil `admin`, os subitens `Usuários` e `Gestão de dados` em `Configurações` aparecem no contexto Hub.
+
+Rotas canônicas desta fase:
+- Hub: `/hub`, `/hub/cooperativas`, `/hub/cidades`, `/hub/configuracoes`, `/hub/usuarios`, `/hub/gestao-dados`
+- URede: `/urede/dashboard`, `/urede/relatorios`, `/urede/pedidos`, `/urede/importacao`, `/urede/configuracoes`
+- Compatibilidade: rotas legadas continuam sendo aceitas e mapeadas para o módulo correspondente.
+- Branding da autenticação: a tela de login usa identidade visual UHub.
+
+## Gestão de Usuários (Singulares)
+
+- Cadastro e edição de usuários (`Operadores`) permitem vincular **uma ou mais singulares**.
+- O campo `id_singular` representa a **singular principal** do usuário.
+- Os vínculos adicionais são persistidos em `auth_user_cooperativas` (`user_email`, `cooperativa_id`, `is_primary`).
+- Na listagem de usuários, a coluna de cooperativa exibe resumo de múltiplos vínculos.
+- Na edição de usuário, a ação de redefinir credencial é explícita via botão **Definir senha provisória**.
+
+## Backup Automático do Banco
+
+- O repositório inclui hook de `pre-push` em `.githooks/pre-push`.
+- O hook executa `scripts/backup-db.sh` e gera snapshot em `backups/db/` antes de cada push.
+- Ative no clone local com:
+  - `git config core.hooksPath .githooks`
+
+## Padrão de Telefone (Regra de Dados)
+
+Regra vigente do sistema (cadastros e importações):
+- Usar um único campo `telefone` (string com somente dígitos).
+- Usar `wpp` (boolean/integer 0/1) para indicar se o telefone também atende por WhatsApp.
+- Colunas legadas (`telefone_fixo`, `telefone_celular`, `whatsapp` texto) permanecem apenas para compatibilidade.
+
+Formatação no frontend (Brasil):
+- Celular: `(DD) 9 0000-0000` (11 dígitos, 3º dígito = 9).
+- Fixo: `(DD) 0000-0000` (10 dígitos).
+- 0800: `0800 0000 0000` (quando vier com 12 dígitos).
+
+Migração aplicada:
+- `db/migrations/sqlite/20260213_015_telefone_unificado_wpp.sql`
+- `db/migrations/sqlite/20260213_016_operadores_telefone_wpp.sql`
+
+## Endereços (Visão Geral e Plantão)
+
+- A aba `Endereços` em cooperativas é o ponto principal de CRUD cadastral.
+- O campo `exibir_visao_geral` (0/1) controla se cada endereço aparece na aba `Visão Geral`.
+- Endereços de tipo `plantao_urgencia_emergencia` são sincronizados com `cooperativa_plantao_clinicas` para apoiar cadastro único entre `Endereços` e `Urgência & Emergência`.
+
+## Configurações do Hub (cadastros globais)
+
+- As configurações do Hub incluem catálogos globais usados em dados cadastrais:
+  - `tipos_endereco`
+  - `tipos_conselho`
+  - `tipos_contato`
+  - `subtipos_contato`
+  - `redes_sociais`
+  - `departamentos`
+- Esses catálogos são persistidos em `settings` (`system_preferences`) e consumidos em cadastros auxiliares de cooperativas.
+
+Administração:
+- O menu `Usuários` (antes `Responsáveis`) e `Gestão de dados` ficam dentro de `Configurações`.
+- Ambos são visíveis apenas para perfis `admin`.

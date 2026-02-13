@@ -1,6 +1,6 @@
-# Visão Geral do Portal uRede
+# Visão Geral do Portal URede
 
-O portal uRede centraliza os fluxos de credenciamento, suprimentos e relacionamento com cooperativas da Uniodonto. Esta documentação descreve as funcionalidades disponíveis para diferentes perfis de uso — operadores, gestores, diretoria e equipes de auditoria — com o objetivo de orientar a navegação e apoiar decisões operacionais.
+O portal URede centraliza os fluxos de credenciamento, suprimentos e relacionamento com cooperativas da Uniodonto. Esta documentação descreve as funcionalidades disponíveis para diferentes perfis de uso — operadores, gestores, diretoria e equipes de auditoria — com o objetivo de orientar a navegação e apoiar decisões operacionais.
 
 ## Objetivos da Plataforma
 

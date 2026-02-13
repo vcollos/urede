@@ -249,7 +249,7 @@ export function DocumentacaoLayout({
               </div>
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-[0.4em] text-primary/70">
-                  Documentação uRede
+                  Documentação URede
                 </p>
                 <Breadcrumb>
                   <BreadcrumbList className="flex flex-wrap items-center gap-1 text-muted-foreground">
@@ -341,7 +341,7 @@ export function DocumentacaoLayout({
           <div className="flex flex-wrap items-center gap-3">
             <Badge variant="secondary" className="rounded-full border border-primary/20 bg-primary/10 text-primary">
               <Sparkles className="mr-2 h-3.5 w-3.5" />
-              Área de conhecimento uRede
+              Área de conhecimento URede
             </Badge>
             {activeSection.keywords?.slice(0, 3).map((keyword) => (
               <Badge key={keyword} variant="outline" className="rounded-full border-muted-foreground/20">

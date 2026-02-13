@@ -23,6 +23,10 @@ const deriveDefaultBase = () => {
         return `${proto}//apiurede.collos.com.br`;
       }
 
+      if (host === 'uhub.collos.com.br') {
+        return `${proto}//apiuhub.collos.com.br`;
+      }
+
       if (host.endsWith('.collos.com.br')) {
         return `${proto}//api.${host}`;
       }
@@ -38,11 +42,51 @@ const deriveDefaultBase = () => {
   return '';
 };
 
-const DEFAULT_API_BASE = (envApiBaseUrl && envApiBaseUrl.trim())
-  ? envApiBaseUrl.replace(/\/$/, '')
-  : deriveDefaultBase();
+const isLoopbackHostname = (host: string) =>
+  host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0';
+
+const isLoopbackUrl = (value: string) => {
+  try {
+    const parsed = new URL(value);
+    return isLoopbackHostname(parsed.hostname);
+  } catch {
+    return false;
+  }
+};
+
+const deriveApiBase = () => {
+  const trimmed = envApiBaseUrl?.trim();
+  const derived = deriveDefaultBase();
+
+  if (!trimmed) return derived;
+
+  // Se o frontend estiver aberto por IP/rede e o env apontar para loopback,
+  // priorizamos a URL derivada para evitar chamadas locais inválidas no celular.
+  if (typeof window !== 'undefined' && window.location) {
+    const currentHost = window.location.hostname || '';
+    if (!isLoopbackHostname(currentHost) && isLoopbackUrl(trimmed)) {
+      return derived || trimmed.replace(/\/$/, '');
+    }
+  }
+
+  return trimmed.replace(/\/$/, '');
+};
+
+const DEFAULT_API_BASE = deriveApiBase();
 
 export const serverUrl = DEFAULT_API_BASE || '';
+
+export class ApiError extends Error {
+  status: number;
+  data: any;
+
+  constructor(message: string, status: number, data?: any) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.data = data;
+  }
+}
 
 // Armazenamento do token JWT local
 const TOKEN_KEY = 'auth_token';
@@ -86,7 +130,7 @@ export const apiRequest = async (endpoint: string, options: RequestInit = {}) =>
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
-    throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
+    throw new ApiError(errorData.error || `Erro HTTP: ${response.status}`, response.status, errorData);
   }
 
   // Se a resposta não tiver corpo (204) ou não for JSON, evitar chamara response.json() que lança erro.
