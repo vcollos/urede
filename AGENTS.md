@@ -32,6 +32,14 @@
 - O menu `Usuários` (id `operadores`) e `Gestão de dados` (id `gestao_dados`) é tratado como subitem de `Configurações`.
 - Esses dois itens devem ficar disponíveis somente para usuários com papel `admin`.
 
+## Regra canônica de pessoas (obrigatória)
+
+1. O cadastro de pessoas deve ser centralizado em `urede_pessoas`.
+2. O vínculo por cooperativa/tela deve ser feito em `urede_pessoa_vinculos` usando `id_singular`.
+3. Tabelas legadas (`urede_cooperativa_diretores`, `..._conselhos`, `..._colaboradores`, `..._ouvidores`, `..._lgpd`, `..._auditores`, `..._regulatorio`) permanecem para retrocompatibilidade e migração.
+4. Novos fluxos de CRUD devem priorizar `urede_pessoas` + `urede_pessoa_vinculos`.
+5. `Contatos` (`urede_cooperativa_contatos`) não fazem parte dessa unificação.
+
 ## Navegação modular (UHub / URede)
 
 - Funcionalidades globais devem ficar no contexto **UHub** (homepage, cooperativas, cidades).

@@ -116,6 +116,13 @@ Formatação no frontend (Brasil):
 Migração aplicada:
 - `db/migrations/sqlite/20260213_015_telefone_unificado_wpp.sql`
 - `db/migrations/sqlite/20260213_016_operadores_telefone_wpp.sql`
+- `db/migrations/sqlite/20260213_017_pessoas_unificadas.sql`
+
+Unificação de cadastros de pessoas:
+- Entidade central: `urede_pessoas`
+- Vínculos por cooperativa/categoria: `urede_pessoa_vinculos` (com `id_singular`)
+- Mapeamento opcional de login: `urede_pessoa_usuarios`
+- Tabelas legadas de pessoas seguem ativas para compatibilidade durante a transição.
 
 ## Endereços (Visão Geral e Plantão)
 

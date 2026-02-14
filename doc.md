@@ -298,7 +298,17 @@ Regras de exibição:
 Migração de referência:
 - `db/migrations/sqlite/20260213_015_telefone_unificado_wpp.sql`
 
-### 10.6 Dashboard
+### 10.6 Unificação de Pessoas (vigente)
+- Cadastro canônico em `urede_pessoas`.
+- Vínculo por cooperativa e contexto funcional em `urede_pessoa_vinculos` (sempre com `id_singular`).
+- Mapeamento opcional com usuários em `urede_pessoa_usuarios`.
+- Categorias iniciais: `diretoria`, `regulatorio`, `conselho`, `colaborador`, `ouvidoria`, `lgpd`, `auditoria`.
+- Tabelas legadas permanecem ativas para compatibilidade de telas durante a transição.
+
+Migração de referência:
+- `db/migrations/sqlite/20260213_017_pessoas_unificadas.sql`
+
+### 10.7 Dashboard
 - `/dashboard/stats` + `/pedidos`
 - Eventos custom (`window.dispatchEvent`) garantem sincronia após ações (created/updated/deleted)
 
