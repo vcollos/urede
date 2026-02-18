@@ -18,6 +18,7 @@ import { faCircleMinus, faCirclePlus } from '@fortawesome/free-solid-svg-icons';
 import { cn } from './ui/utils';
 import { hasWhatsAppFlag } from '../utils/whatsapp';
 import { CooperativaAuxiliaresTab } from './CooperativaAuxiliaresTab';
+import { PessoasView } from './PessoasView';
 
 // Representa o escopo de cobertura que o usuário pode administrar.
 interface CoberturaScope {
@@ -348,6 +349,7 @@ type DetailTab =
   | 'ouvidores'
   | 'lgpd'
   | 'auditores'
+  | 'pessoas'
   | 'history';
 
 type OverviewFormState = {
@@ -1105,6 +1107,7 @@ export function CooperativasView() {
             <TabsTrigger value="ouvidores">Ouvidoria</TabsTrigger>
             <TabsTrigger value="lgpd">LGPD</TabsTrigger>
             <TabsTrigger value="auditores">Auditores</TabsTrigger>
+            <TabsTrigger value="pessoas">Pessoas</TabsTrigger>
             <TabsTrigger value="history">Histórico</TabsTrigger>
           </TabsList>
 
@@ -1750,6 +1753,10 @@ export function CooperativasView() {
 
           <TabsContent value="auditores" className="mt-0">
             <CooperativaAuxiliaresTab idSingular={selectedCoop.id_singular} canEdit={canEditSelected} resourceKey="auditores" />
+          </TabsContent>
+
+          <TabsContent value="pessoas" className="mt-0">
+            <PessoasView idSingular={selectedCoop.id_singular} canEdit={canEditSelected} embedded />
           </TabsContent>
         </Tabs>
 

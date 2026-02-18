@@ -10,6 +10,7 @@ export interface User {
   cargo: string;
   cooperativa_id: string;
   cooperativas_ids?: string[];
+  modulos_acesso?: Array<'hub' | 'urede'>;
   papel: 'admin' | 'operador' | 'federacao' | 'confederacao';
   ativo: boolean;
   data_cadastro: string;
@@ -65,9 +66,33 @@ export interface Operador {
   id_singular: string;
   cooperativas_ids?: string[];
   cooperativa_principal_id?: string;
+  modulos_acesso?: Array<'hub' | 'urede'>;
   ativo: boolean;
   data_cadastro: string;
   papel?: 'operador' | 'admin' | 'federacao' | 'confederacao';
+}
+
+export interface PessoaUnificada {
+  vinculo_id: string;
+  pessoa_id: string;
+  id_singular: string;
+  singular_nome: string;
+  categoria: string;
+  subcategoria?: string | null;
+  primeiro_nome: string;
+  sobrenome?: string | null;
+  email?: string | null;
+  telefone?: string | null;
+  wpp?: boolean;
+  departamento?: string | null;
+  cargo_funcao?: string | null;
+  pasta?: string | null;
+  principal?: boolean;
+  visivel?: boolean;
+  chefia?: boolean;
+  ativo?: boolean;
+  inicio_mandato?: number | null;
+  fim_mandato?: number | null;
 }
 
 export interface Pedido {

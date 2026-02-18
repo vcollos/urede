@@ -8,12 +8,15 @@ import {
   LogOut,
   Bell,
   User,
+  Users,
   Menu,
   Map,
   Plus,
   UploadCloud,
   PieChart,
   Database,
+  ChevronDown,
+  AppWindow,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -36,6 +39,7 @@ interface LayoutProps {
   children: ReactNode;
   activeTab: string;
   activeModule: LayoutModule;
+  canAccessUrede?: boolean;
   onModuleChange?: (module: LayoutModule) => void;
   onTabChange: (tab: string) => void;
   onCreatePedido?: () => void;
@@ -47,6 +51,7 @@ export function Layout({
   children,
   activeTab,
   activeModule,
+  canAccessUrede = true,
   onModuleChange,
   onTabChange,
   onCreatePedido,
@@ -60,6 +65,7 @@ export function Layout({
   const [isLoadingAlertas, setIsLoadingAlertas] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [cooperativaTipo, setCooperativaTipo] = useState<CooperativaConfig['tipo'] | null>(null);
+  const [isConfigMenuExpanded, setConfigMenuExpanded] = useState(false);
   const isMountedRef = useRef(true);
   const lastAlertIdsRef = useRef<Set<string>>(new Set());
   const hasRequestedNotificationRef = useRef(false);
@@ -276,6 +282,7 @@ export function Layout({
   const isAdmin = user.papel === 'admin';
   const hubMenuItems = [
     { id: 'hub_home', label: 'Homepage', icon: Home },
+    { id: 'central_apps', label: 'Central de Apps', icon: AppWindow },
     { id: 'cooperativas', label: 'Cooperativas', icon: Building2 },
     { id: 'cidades', label: 'Cidades', icon: Map },
     ...(isAdmin ? [{ id: 'configuracoes_hub', label: 'Configurações', icon: Settings }] : []),
@@ -297,14 +304,26 @@ export function Layout({
   const configuracoesSubItems = isAdmin && activeModule === 'hub'
     ? [
       { id: 'operadores', label: 'Usuários', icon: User },
+      { id: 'pessoas', label: 'Pessoas', icon: Users },
       { id: 'gestao_dados', label: 'Gestão de dados', icon: Database },
     ]
     : [];
   const isConfigTab = (tabId: string) => tabId === 'configuracoes_hub' || tabId === 'configuracoes_urede';
-  const showUredeActions = activeModule === 'urede';
+  const isConfigSubTab = (tabId: string) => configuracoesSubItems.some((sub) => sub.id === tabId);
+  const showUredeActions = activeModule === 'urede' && canAccessUrede;
   const moduleHomeTab = activeModule === 'hub' ? 'hub_home' : 'dashboard';
   const currentBrandWordmark = activeModule === 'hub' ? hubWordmark : brandWordmark;
   const currentBrandAlt = activeModule === 'hub' ? 'Portal UHub' : 'Portal URede';
+
+  useEffect(() => {
+    if (activeModule !== 'hub' || configuracoesSubItems.length === 0) {
+      setConfigMenuExpanded(false);
+      return;
+    }
+    if (isConfigTab(activeTab) || isConfigSubTab(activeTab)) {
+      setConfigMenuExpanded(true);
+    }
+  }, [activeModule, activeTab, configuracoesSubItems.length]);
 
   const cooperativaScopeLabel = (() => {
     switch (cooperativaTipo) {
@@ -339,12 +358,24 @@ export function Layout({
     }
   })();
 
-  const handleTabChange = (tab: string) => {
+  const handleTabChange = (tab: string, options?: { closeMobile?: boolean }) => {
+    const shouldCloseMobile = options?.closeMobile ?? true;
+
+    if (!isConfigTab(tab) && !isConfigSubTab(tab)) {
+      setConfigMenuExpanded(false);
+    }
+
+    if (isConfigSubTab(tab)) {
+      setConfigMenuExpanded(true);
+    }
+
     if (tab === 'cooperativas' && activeTab === 'cooperativas') {
       window.dispatchEvent(new CustomEvent('cooperativas:go-list'));
     }
     onTabChange(tab);
-    setMobileNavOpen(false);
+    if (shouldCloseMobile) {
+      setMobileNavOpen(false);
+    }
   };
 
   const handleModuleChange = (module: LayoutModule) => {
@@ -455,7 +486,7 @@ export function Layout({
   };
 
   return (
-    <div className="min-h-screen w-full bg-[#F5F4FB] flex text-gray-900">
+    <div className="min-h-screen w-full bg-[#FBFBFD] flex text-gray-900">
       {/* Navigation panel */}
       <aside className="hidden lg:flex w-72 flex-col bg-white/70 backdrop-blur border-r border-white/60">
         <div className="p-6 border-b border-white/60">
@@ -481,7 +512,7 @@ export function Layout({
           >
             {roleDisplayLabel}
           </Badge>
-          <div className="mt-4 rounded-2xl bg-[#F3F1FF] p-1 grid grid-cols-2 gap-1">
+          <div className={cn('mt-4 rounded-2xl bg-[#F3F1FF] p-1 gap-1 grid', canAccessUrede ? 'grid-cols-2' : 'grid-cols-1')}>
             <button
               type="button"
               onClick={() => handleModuleChange('hub')}
@@ -494,18 +525,20 @@ export function Layout({
             >
               UHub
             </button>
-            <button
-              type="button"
-              onClick={() => handleModuleChange('urede')}
-              className={cn(
-                'rounded-xl px-3 py-2 text-xs font-semibold transition',
-                activeModule === 'urede'
-                  ? 'bg-white text-[#5B46C8] shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              )}
-            >
-              URede
-            </button>
+            {canAccessUrede && (
+              <button
+                type="button"
+                onClick={() => handleModuleChange('urede')}
+                className={cn(
+                  'rounded-xl px-3 py-2 text-xs font-semibold transition',
+                  activeModule === 'urede'
+                    ? 'bg-white text-[#5B46C8] shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                )}
+              >
+                URede
+              </button>
+            )}
           </div>
         </div>
 
@@ -525,7 +558,12 @@ export function Layout({
                   <div key={item.id} className="space-y-2">
                     <button
                       type="button"
-                      onClick={() => handleTabChange(item.id)}
+                      onClick={() => {
+                        if (isConfigGroup && configuracoesSubItems.length > 0) {
+                          setConfigMenuExpanded((prev) => !prev);
+                        }
+                        handleTabChange(item.id);
+                      }}
                       className={cn(
                         'w-full flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold transition',
                         isActive
@@ -534,9 +572,12 @@ export function Layout({
                       )}
                     >
                       <Icon className="w-4 h-4" />
-                      {item.label}
+                      <span className="flex-1 text-left">{item.label}</span>
+                      {isConfigGroup && configuracoesSubItems.length > 0 && (
+                        <ChevronDown className={cn('h-4 w-4 transition-transform', isConfigMenuExpanded ? 'rotate-180' : '')} />
+                      )}
                     </button>
-                    {isConfigGroup && configuracoesSubItems.length > 0 && (
+                    {isConfigGroup && configuracoesSubItems.length > 0 && isConfigMenuExpanded && (
                       <div className="pl-3 space-y-1">
                         {configuracoesSubItems.map((sub) => {
                           const SubIcon = sub.icon;
@@ -746,7 +787,7 @@ export function Layout({
               </div>
             </div>
 
-              <div className="rounded-xl bg-[#F3F1FF] p-1 grid grid-cols-2 gap-1">
+              <div className={cn('rounded-xl bg-[#F3F1FF] p-1 gap-1 grid', canAccessUrede ? 'grid-cols-2' : 'grid-cols-1')}>
                 <button
                   type="button"
                   onClick={() => handleModuleChange('hub')}
@@ -759,18 +800,20 @@ export function Layout({
                 >
                   UHub
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handleModuleChange('urede')}
-                  className={cn(
-                    'rounded-lg px-3 py-2 text-xs font-semibold transition',
-                    activeModule === 'urede'
-                      ? 'bg-white text-[#5B46C8] shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
-                  )}
-                >
-                  URede
-                </button>
+                {canAccessUrede && (
+                  <button
+                    type="button"
+                    onClick={() => handleModuleChange('urede')}
+                    className={cn(
+                      'rounded-lg px-3 py-2 text-xs font-semibold transition',
+                      activeModule === 'urede'
+                        ? 'bg-white text-[#5B46C8] shadow-sm'
+                        : 'text-gray-600 hover:text-gray-900'
+                    )}
+                  >
+                    URede
+                  </button>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -791,14 +834,21 @@ export function Layout({
                             : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
                         }`}
                         onClick={() => {
+                          if (isConfigGroup && configuracoesSubItems.length > 0) {
+                            setConfigMenuExpanded((prev) => !prev);
+                            handleTabChange(item.id, { closeMobile: false });
+                            return;
+                          }
                           handleTabChange(item.id);
-                          setMobileNavOpen(false);
                         }}
                       >
                         <Icon className="w-4 h-4 mr-3" />
-                        {item.label}
+                        <span className="flex-1 text-left">{item.label}</span>
+                        {isConfigGroup && configuracoesSubItems.length > 0 && (
+                          <ChevronDown className={cn('h-4 w-4 transition-transform', isConfigMenuExpanded ? 'rotate-180' : '')} />
+                        )}
                       </Button>
-                      {isConfigGroup && configuracoesSubItems.length > 0 && (
+                      {isConfigGroup && configuracoesSubItems.length > 0 && isConfigMenuExpanded && (
                         <div className="pl-4 space-y-1">
                           {configuracoesSubItems.map((sub) => {
                             const SubIcon = sub.icon;
@@ -812,10 +862,7 @@ export function Layout({
                                     ? 'bg-purple-100 text-purple-700 hover:bg-purple-200'
                                     : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
                                 }`}
-                                onClick={() => {
-                                  handleTabChange(sub.id);
-                                  setMobileNavOpen(false);
-                                }}
+                                onClick={() => handleTabChange(sub.id)}
                               >
                                 <SubIcon className="w-4 h-4 mr-3" />
                                 {sub.label}

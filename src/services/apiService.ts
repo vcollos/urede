@@ -15,6 +15,7 @@ import type {
   PedidoImportResponse,
   ReportsOverview,
   DiretorPhoneAccessRequest,
+  PessoaUnificada,
 } from '../types';
 
 const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
@@ -127,6 +128,7 @@ class ApiService {
     id_singular: string;
     cooperativas_ids?: string[];
     cooperativa_principal_id?: string;
+    modulos_acesso?: Array<'hub' | 'urede'>;
     senha_temporaria?: string;
     forcar_troca_senha?: boolean;
   }): Promise<Operador> {
@@ -303,6 +305,29 @@ class ApiService {
   // COOPERATIVAS (AUXILIARES)
   async getCooperativaAux<T = any>(cooperativaId: string, resource: string): Promise<T[]> {
     return await apiRequest(`/cooperativas/${cooperativaId}/aux/${resource}`);
+  }
+
+  async getPessoas(params?: {
+    id_singular?: string;
+    categoria?: string;
+    q?: string;
+  }): Promise<PessoaUnificada[]> {
+    const search = new URLSearchParams();
+    if (params?.id_singular) search.set('id_singular', params.id_singular);
+    if (params?.categoria) search.set('categoria', params.categoria);
+    if (params?.q) search.set('q', params.q);
+    const query = search.toString();
+    return await apiRequest(`/pessoas${query ? `?${query}` : ''}`);
+  }
+
+  async updatePessoaVinculo(
+    vinculoId: string,
+    data: Partial<PessoaUnificada>,
+  ): Promise<PessoaUnificada> {
+    return await apiRequest(`/pessoas/${vinculoId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
   }
 
   async createCooperativaAuxItem<T = any>(

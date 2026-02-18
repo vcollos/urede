@@ -22,6 +22,7 @@ import { apiService } from '../services/apiService';
 import { Operador, Cooperativa, PendingUserApproval } from '../types';
 import { deriveRole, toBaseRole, describeRole } from '../utils/roleMapping';
 import { hasWhatsAppFlag } from '../utils/whatsapp';
+import { normalizeModuleAccess } from '../utils/moduleAccess';
 import { authService } from '../services/authService';
 import { Alert, AlertDescription } from './ui/alert';
 
@@ -56,6 +57,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     forcar_troca_senha: true,
     cooperativas_ids: [] as string[],
     cooperativa_principal_id: '',
+    modulos_acesso: ['hub'] as Array<'hub' | 'urede'>,
   });
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -72,6 +74,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     forcar_troca_senha: true,
     cooperativas_ids: [] as string[],
     cooperativa_principal_id: '',
+    modulos_acesso: ['hub'] as Array<'hub' | 'urede'>,
   });
   const fetchPendingApprovals = useCallback(async () => {
     if (!user || user.papel !== 'admin' || user.approval_status !== 'approved') {
@@ -228,6 +231,10 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     { value: 'operador', label: 'Responsável' },
     { value: 'admin', label: 'Administrador' },
   ] as const;
+  const moduloOptions: Array<{ id: 'hub' | 'urede'; label: string; description: string }> = [
+    { id: 'hub', label: 'UHub', description: 'Módulo cadastral e administrativo.' },
+    { id: 'urede', label: 'URede', description: 'Módulo operacional de pedidos.' },
+  ];
 
   const toggleEditCooperativa = (idSingular: string, checked: boolean) => {
     setEditForm((prev) => {
@@ -266,6 +273,36 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
         cooperativas_ids: ids,
         cooperativa_principal_id: principal,
         id_singular: principal,
+      };
+    });
+  };
+
+  const toggleEditModulo = (modulo: 'hub' | 'urede', checked: boolean) => {
+    setEditForm((prev) => {
+      const atual = new Set(prev.modulos_acesso);
+      if (checked) {
+        atual.add(modulo);
+      } else {
+        atual.delete(modulo);
+      }
+      return {
+        ...prev,
+        modulos_acesso: normalizeModuleAccess(Array.from(atual), ['hub']),
+      };
+    });
+  };
+
+  const toggleCreateModulo = (modulo: 'hub' | 'urede', checked: boolean) => {
+    setCreateForm((prev) => {
+      const atual = new Set(prev.modulos_acesso);
+      if (checked) {
+        atual.add(modulo);
+      } else {
+        atual.delete(modulo);
+      }
+      return {
+        ...prev,
+        modulos_acesso: normalizeModuleAccess(Array.from(atual), ['hub']),
       };
     });
   };
@@ -318,6 +355,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
       forcar_troca_senha: true,
       cooperativas_ids: cooperativasOperador,
       cooperativa_principal_id: cooperativaPrincipal,
+      modulos_acesso: normalizeModuleAccess(operador.modulos_acesso, ['hub']),
     });
     setSaveError('');
     setIsEditOpen(true);
@@ -368,6 +406,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
       if (canManageRoles) {
         const coop = cooperativas.find((c) => c.id_singular === (cooperativaPrincipal || editingOperador.id_singular));
         payload.papel = deriveRole(editForm.papel, coop);
+        payload.modulos_acesso = normalizeModuleAccess(editForm.modulos_acesso, ['hub']);
       }
 
       if (canResetPassword && editForm.definir_senha) {
@@ -389,6 +428,9 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
 
       const updated = await apiService.updateOperador(editingOperador.id, payload);
       setOperadores((prev) => prev.map((op) => (op.id === updated.id ? updated : op)));
+      if (updated.email && updated.email === user?.email) {
+        await refreshUser();
+      }
       setIsEditOpen(false);
       setEditingOperador(null);
     } catch (err) {
@@ -412,6 +454,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
       forcar_troca_senha: true,
       cooperativas_ids: defaultSingular ? [defaultSingular] : [],
       cooperativa_principal_id: defaultSingular,
+      modulos_acesso: ['hub'],
     });
     setCreateError('');
     setIsCreateOpen(true);
@@ -433,6 +476,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
       forcar_troca_senha: true,
       cooperativas_ids: [],
       cooperativa_principal_id: '',
+      modulos_acesso: ['hub'],
     }));
   };
 
@@ -466,6 +510,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
         id_singular: createForm.id_singular,
         cooperativas_ids: [] as string[],
         cooperativa_principal_id: '',
+        modulos_acesso: normalizeModuleAccess(createForm.modulos_acesso, ['hub']),
         senha_temporaria: senhaTemporaria,
         forcar_troca_senha: createForm.forcar_troca_senha,
       };
@@ -502,6 +547,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
         forcar_troca_senha: true,
         cooperativas_ids: defaultSingular ? [defaultSingular] : [],
         cooperativa_principal_id: defaultSingular,
+        modulos_acesso: ['hub'],
       });
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Erro ao criar operador');
@@ -866,6 +912,44 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
                 </div>
               )}
 
+              {canManageRoles ? (
+                <div className="rounded-lg border border-gray-200 p-3 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">Módulos com acesso</p>
+                    <p className="text-xs text-gray-500">
+                      O padrão é UHub. Marque URede quando o usuário também precisar operar pedidos.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    {moduloOptions.map((modulo) => (
+                      <label
+                        key={`edit-modulo-${modulo.id}`}
+                        className="flex items-start gap-2 text-sm text-gray-700"
+                      >
+                        <Checkbox
+                          checked={editForm.modulos_acesso.includes(modulo.id)}
+                          onCheckedChange={(checked) => toggleEditModulo(modulo.id, checked === true)}
+                          disabled={modulo.id === 'hub'}
+                        />
+                        <span className="flex flex-col">
+                          <span className="font-medium">{modulo.label}</span>
+                          <span className="text-xs text-gray-500">{modulo.description}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label>Módulos com acesso</Label>
+                  <Input
+                    value={normalizeModuleAccess(editingOperador?.modulos_acesso, ['hub']).join(', ').toUpperCase()}
+                    disabled
+                    readOnly
+                  />
+                </div>
+              )}
+
               {canCreate && (
                 <div className="rounded-lg border border-gray-200 p-3 space-y-3">
                   <div>
@@ -1086,6 +1170,32 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
                       }
                     />
                   </div>
+                </div>
+              </div>
+              <div className="rounded-lg border border-gray-200 p-3 space-y-3">
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Módulos com acesso</p>
+                  <p className="text-xs text-gray-500">
+                    Novos usuários iniciam no UHub. Marque URede para liberar pedidos e relatórios operacionais.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {moduloOptions.map((modulo) => (
+                    <label
+                      key={`create-modulo-${modulo.id}`}
+                      className="flex items-start gap-2 text-sm text-gray-700"
+                    >
+                      <Checkbox
+                        checked={createForm.modulos_acesso.includes(modulo.id)}
+                        onCheckedChange={(checked) => toggleCreateModulo(modulo.id, checked === true)}
+                        disabled={modulo.id === 'hub'}
+                      />
+                      <span className="flex flex-col">
+                        <span className="font-medium">{modulo.label}</span>
+                        <span className="text-xs text-gray-500">{modulo.description}</span>
+                      </span>
+                    </label>
+                  ))}
                 </div>
               </div>
               <div className="space-y-2">

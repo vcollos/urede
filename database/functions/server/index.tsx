@@ -206,6 +206,64 @@ const mapCidade = (row: any) => ({
   nm_singular: row.NM_SINGULAR ?? row.nm_singular ?? null,
 });
 
+const normalizeModuleAccess = (
+  value: unknown,
+  fallback: string[] = ["hub"],
+) => {
+  const allowed = new Set(["hub", "urede"]);
+  const collected: string[] = [];
+
+  const append = (entry: unknown) => {
+    const normalized = String(entry ?? "").trim().toLowerCase();
+    if (!allowed.has(normalized)) return;
+    if (!collected.includes(normalized)) {
+      collected.push(normalized);
+    }
+  };
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => append(item));
+  } else if (typeof value === "string") {
+    const raw = value.trim();
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((item) => append(item));
+        } else {
+          raw.split(/[;,]/g).forEach((item) => append(item));
+        }
+      } catch {
+        raw.split(/[;,]/g).forEach((item) => append(item));
+      }
+    }
+  } else if (value && typeof value === "object") {
+    const maybe = value as Record<string, unknown>;
+    if (maybe.hub) append("hub");
+    if (maybe.urede) append("urede");
+  }
+
+  if (!collected.includes("hub")) {
+    collected.unshift("hub");
+  }
+
+  const fallbackNormalized = Array.from(
+    new Set(
+      (fallback || [])
+        .map((item) => String(item || "").trim().toLowerCase())
+        .filter((item) => allowed.has(item)),
+    ),
+  );
+
+  const merged = collected.length ? collected : fallbackNormalized;
+  return merged.length ? merged : ["hub"];
+};
+
+const serializeModuleAccess = (
+  value: unknown,
+  fallback: string[] = ["hub"],
+) => JSON.stringify(normalizeModuleAccess(value, fallback));
+
 const mapOperador = (row: any) => ({
   id: (row.id ?? "").toString(),
   nome: row.nome ?? "",
@@ -220,6 +278,10 @@ const mapOperador = (row: any) => ({
   ativo: (row.status ?? true) as boolean,
   data_cadastro: row.created_at ?? new Date().toISOString(),
   papel: row.auth_papel ?? row.papel ?? "operador",
+  modulos_acesso: normalizeModuleAccess(
+    row.auth_module_access ?? row.module_access,
+    ["hub"],
+  ),
 });
 
 const mapCoberturaLog = (row: any) => ({
@@ -378,7 +440,8 @@ const ensureAuthUsersSchema = () => {
       approved_by TEXT,
       approved_at TEXT,
       auto_approve INTEGER DEFAULT 0,
-      must_change_password INTEGER DEFAULT 0
+      must_change_password INTEGER DEFAULT 0,
+      module_access TEXT DEFAULT '["hub"]'
     )`);
   } catch (error) {
     console.warn("[auth_users] falha ao garantir tabela:", error);
@@ -396,6 +459,7 @@ const ensureAuthUsersSchema = () => {
       "ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS requested_papel TEXT",
       "ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS auto_approve INTEGER DEFAULT 0",
       "ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS must_change_password INTEGER DEFAULT 0",
+      "ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS module_access TEXT DEFAULT '[\"hub\"]'",
     ]
     : [
       "ALTER TABLE auth_users ADD COLUMN confirmation_token TEXT",
@@ -408,6 +472,7 @@ const ensureAuthUsersSchema = () => {
       "ALTER TABLE auth_users ADD COLUMN requested_papel TEXT",
       "ALTER TABLE auth_users ADD COLUMN auto_approve INTEGER DEFAULT 0",
       "ALTER TABLE auth_users ADD COLUMN must_change_password INTEGER DEFAULT 0",
+      "ALTER TABLE auth_users ADD COLUMN module_access TEXT DEFAULT '[\"hub\"]'",
     ];
   for (const stmt of statements) {
     try {
@@ -443,6 +508,15 @@ const ensureAuthUsersSchema = () => {
   try {
     db.query(
       "UPDATE auth_users SET email_confirmed_at = COALESCE(email_confirmed_at, data_cadastro) WHERE email_confirmed_at IS NULL",
+    );
+  } catch (_) {
+    /* ignore */
+  }
+  try {
+    db.query(
+      `UPDATE auth_users
+          SET module_access = COALESCE(NULLIF(TRIM(module_access), ''), '["hub"]')
+        WHERE module_access IS NULL OR TRIM(module_access) = ''`,
     );
   } catch (_) {
     /* ignore */
@@ -1934,7 +2008,11 @@ const ensureOperatorRecord = (user: {
     );
     try {
       db.query(
-        `UPDATE auth_users SET cooperativa_id = COALESCE(?, cooperativa_id), papel = COALESCE(papel, ?) WHERE email = ?`,
+        `UPDATE auth_users
+            SET cooperativa_id = COALESCE(?, cooperativa_id),
+                papel = COALESCE(papel, ?),
+                module_access = COALESCE(module_access, '["hub"]')
+          WHERE email = ?`,
         [user.cooperativa_id, user.papel || "operador", user.email],
       );
     } catch (e) {
@@ -2804,6 +2882,7 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
       cooperativa_id: "",
       cooperativas_ids: [] as string[],
       papel: "confederacao",
+      modulos_acesso: ["hub", "urede"],
       ativo: true,
       data_cadastro: new Date().toISOString(),
     } as any;
@@ -2832,6 +2911,7 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
             approved_at: string | null;
             requested_papel: string | null;
             must_change_password: number | null;
+            module_access: string | null;
           }>(
             `SELECT email,
                     nome,
@@ -2849,7 +2929,8 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
                     approval_requested_at,
                     approved_by,
                     approved_at,
-                    must_change_password
+                    must_change_password,
+                    module_access
              FROM auth_users WHERE email = ?`,
             [userEmail],
           )[0];
@@ -2870,6 +2951,7 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
               cooperativa_id: row.cooperativa_id || "",
               cooperativas_ids: resolvedCooperativas,
               papel: (row.papel as any) || "operador",
+              modulos_acesso: normalizeModuleAccess(row.module_access, ["hub"]),
               ativo: !!row.ativo,
               data_cadastro: row.data_cadastro,
               approval_status: approvalStatus,
@@ -2908,6 +2990,7 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
           cooperativa_id: o.id_singular,
           cooperativas_ids: resolvedCooperativas,
           papel: "operador",
+          modulos_acesso: ["hub"],
           approval_status: "approved",
           email_confirmed_at: nowIso(),
           approval_requested_at: null,
@@ -2940,6 +3023,7 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
       cooperativa_id: "",
       cooperativas_ids: [] as string[],
       papel: "operador",
+      modulos_acesso: ["hub"],
       ativo: true,
       data_cadastro: new Date().toISOString(),
       approval_status: "approved",
@@ -3152,6 +3236,7 @@ app.post("/auth/register", async (c) => {
       : false;
     const requestedRole = autoApprove ? "admin" : resolvedRole;
     const storedRole = autoApprove ? "admin" : "operador";
+    const moduleAccess = serializeModuleAccess(payload?.modulos_acesso, ["hub"]);
 
     db.query(
       `INSERT INTO auth_users (
@@ -3175,8 +3260,9 @@ app.post("/auth/register", async (c) => {
         approved_by,
         approved_at,
         auto_approve,
-        must_change_password
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        must_change_password,
+        module_access
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         emailRaw,
         hash,
@@ -3199,6 +3285,7 @@ app.post("/auth/register", async (c) => {
         null,
         autoApprove ? 1 : 0,
         0,
+        moduleAccess,
       ],
     );
 
@@ -3881,6 +3968,383 @@ app.get("/cooperativas", requireAuth, async (c) => {
   } catch (error) {
     console.error("Erro ao buscar cooperativas:", error);
     return c.json({ error: "Erro ao buscar cooperativas" }, 500);
+  }
+});
+
+const mapPessoaVinculoRow = (row: any) => ({
+  vinculo_id: String(row?.vinculo_id ?? ""),
+  pessoa_id: String(row?.pessoa_id ?? ""),
+  id_singular: String(row?.id_singular ?? ""),
+  singular_nome: String(row?.singular_nome ?? row?.id_singular ?? ""),
+  categoria: String(row?.categoria ?? ""),
+  subcategoria: row?.subcategoria ?? null,
+  primeiro_nome: String(row?.primeiro_nome ?? ""),
+  sobrenome: row?.sobrenome ?? null,
+  email: row?.email ?? null,
+  telefone: row?.telefone ?? null,
+  wpp: Number(row?.wpp ?? 0) === 1,
+  departamento: row?.departamento ?? null,
+  cargo_funcao: row?.cargo_funcao ?? null,
+  pasta: row?.pasta ?? null,
+  principal: Number(row?.principal ?? 0) === 1,
+  visivel: Number(row?.visivel ?? 1) === 1,
+  chefia: Number(row?.chefia ?? 0) === 1,
+  ativo: Number(row?.ativo ?? 1) === 1,
+  inicio_mandato: row?.inicio_mandato ?? null,
+  fim_mandato: row?.fim_mandato ?? null,
+});
+
+app.get("/pessoas", requireAuth, async (c) => {
+  try {
+    const authUser = c.get("user");
+    const userData = await getUserData(
+      authUser.id,
+      authUser.email || authUser?.claims?.email,
+    );
+    if (!userData) return c.json({ error: "Usuário não autenticado" }, 401);
+
+    const rawIdSingular = c.req.query("id_singular");
+    const idSingular = normalizeIdSingular(rawIdSingular);
+    if (rawIdSingular && !idSingular) {
+      return c.json({ error: "id_singular inválido. Use 3 dígitos (ex.: 001)." }, 400);
+    }
+    const categoria = normalizeEnumText(c.req.query("categoria"));
+    const qRaw = String(c.req.query("q") ?? "").trim().toLowerCase();
+    const likeQuery = qRaw ? `%${qRaw.replace(/\s+/g, "%")}%` : "";
+
+    const canReadAll = canReadAnyCooperativaData(userData);
+    const visible = canReadAll ? null : getVisibleCooperativas(userData);
+    if (idSingular && visible !== null && !visible.has(idSingular)) {
+      return c.json({ error: "Acesso negado para esta singular." }, 403);
+    }
+
+    const whereClauses: string[] = [];
+    const params: any[] = [];
+
+    if (idSingular) {
+      whereClauses.push("v.id_singular = ?");
+      params.push(idSingular);
+    } else if (visible !== null) {
+      const ids = Array.from(visible).filter(Boolean);
+      if (ids.length === 0) return c.json([]);
+      whereClauses.push(`v.id_singular IN (${ids.map(() => "?").join(",")})`);
+      params.push(...ids);
+    }
+
+    if (categoria) {
+      whereClauses.push("LOWER(TRIM(COALESCE(v.categoria, ''))) = ?");
+      params.push(categoria);
+    }
+
+    if (likeQuery) {
+      whereClauses.push(`(
+        LOWER(COALESCE(p.primeiro_nome, '')) LIKE ?
+        OR LOWER(COALESCE(p.sobrenome, '')) LIKE ?
+        OR LOWER(COALESCE(p.email, '')) LIKE ?
+        OR LOWER(COALESCE(p.telefone, '')) LIKE ?
+        OR LOWER(COALESCE(v.categoria, '')) LIKE ?
+        OR LOWER(COALESCE(v.cargo_funcao, p.cargo_funcao, '')) LIKE ?
+        OR LOWER(COALESCE(c.UNIODONTO, c.id_singular, '')) LIKE ?
+        OR LOWER(COALESCE(v.id_singular, '')) LIKE ?
+      )`);
+      params.push(
+        likeQuery,
+        likeQuery,
+        likeQuery,
+        likeQuery,
+        likeQuery,
+        likeQuery,
+        likeQuery,
+        likeQuery,
+      );
+    }
+
+    const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : "";
+
+    const rows = db.queryEntries<any>(
+      `SELECT
+         v.id AS vinculo_id,
+         p.id AS pessoa_id,
+         v.id_singular,
+         COALESCE(c.UNIODONTO, c.id_singular, v.id_singular) AS singular_nome,
+         v.categoria,
+         v.subcategoria,
+         p.primeiro_nome,
+         p.sobrenome,
+         p.email,
+         p.telefone,
+         COALESCE(p.wpp, 0) AS wpp,
+         COALESCE(v.departamento, p.departamento) AS departamento,
+         COALESCE(v.cargo_funcao, p.cargo_funcao) AS cargo_funcao,
+         v.pasta,
+         v.principal,
+         v.visivel,
+         v.chefia,
+         COALESCE(v.ativo, p.ativo, 1) AS ativo,
+         v.inicio_mandato,
+         v.fim_mandato
+       FROM ${TBL("pessoa_vinculos")} v
+       INNER JOIN ${TBL("pessoas")} p ON p.id = v.pessoa_id
+       LEFT JOIN ${TBL("cooperativas")} c ON c.id_singular = v.id_singular
+       ${whereSql}
+       ORDER BY v.id_singular, LOWER(COALESCE(v.categoria, '')), LOWER(COALESCE(p.primeiro_nome, '')), LOWER(COALESCE(p.sobrenome, ''))`,
+      params as any,
+    );
+
+    return c.json((rows || []).map(mapPessoaVinculoRow));
+  } catch (error) {
+    const msg = String((error as any)?.message || "");
+    if (msg.includes("no such table") && (msg.includes(TBL("pessoas")) || msg.includes(TBL("pessoa_vinculos")))) {
+      return c.json({ error: "Estrutura de pessoas ainda não aplicada. Rode as migrações do banco." }, 500);
+    }
+    console.error("[pessoas] erro ao listar:", error);
+    return c.json({ error: "Erro ao carregar pessoas" }, 500);
+  }
+});
+
+app.put("/pessoas/:vinculoId", requireAuth, async (c) => {
+  try {
+    const vinculoId = String(c.req.param("vinculoId") ?? "").trim();
+    if (!vinculoId) return c.json({ error: "vinculoId inválido" }, 400);
+
+    const authUser = c.get("user");
+    const userData = await getUserData(
+      authUser.id,
+      authUser.email || authUser?.claims?.email,
+    );
+    if (!userData) return c.json({ error: "Usuário não autenticado" }, 401);
+
+    const current = db.queryEntries<any>(
+      `SELECT v.id, v.id_singular, v.pessoa_id
+         FROM ${TBL("pessoa_vinculos")} v
+        WHERE v.id = ?
+        LIMIT 1`,
+      [vinculoId],
+    )?.[0];
+
+    if (!current?.id) {
+      return c.json({ error: "Vínculo de pessoa não encontrado." }, 404);
+    }
+
+    if (!canManageCooperativa(userData, String(current.id_singular))) {
+      return c.json({ error: "Acesso negado para editar pessoas desta singular." }, 403);
+    }
+
+    const body = await c.req.json().catch(() => ({}));
+    if (!body || typeof body !== "object") {
+      return c.json({ error: "Payload inválido." }, 400);
+    }
+
+    const pessoaUpdates: Record<string, unknown> = {};
+    const vinculoUpdates: Record<string, unknown> = {};
+
+    if (Object.prototype.hasOwnProperty.call(body, "primeiro_nome")) {
+      const nome = String((body as any).primeiro_nome ?? "").trim();
+      if (!nome) return c.json({ error: "primeiro_nome é obrigatório." }, 400);
+      pessoaUpdates.primeiro_nome = nome;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "sobrenome")) {
+      const sobrenome = String((body as any).sobrenome ?? "").replace(/\s+/g, " ").trim();
+      pessoaUpdates.sobrenome = sobrenome || null;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "email")) {
+      const email = String((body as any).email ?? "").trim().toLowerCase();
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return c.json({ error: "Email inválido." }, 400);
+      }
+      pessoaUpdates.email = email || null;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "telefone")) {
+      const original = String((body as any).telefone ?? "").trim();
+      const telefone = normalizeDigitsString((body as any).telefone);
+      if (original && !telefone) {
+        return c.json({ error: "Telefone inválido. Use apenas números." }, 400);
+      }
+      pessoaUpdates.telefone = telefone || null;
+      if (!Object.prototype.hasOwnProperty.call(body, "wpp")) {
+        pessoaUpdates.wpp = isLikelyBrazilMobile(telefone) ? 1 : 0;
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "wpp")) {
+      pessoaUpdates.wpp = normalizeBoolInt((body as any).wpp);
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "ativo")) {
+      const ativoInt = normalizeBoolInt((body as any).ativo);
+      pessoaUpdates.ativo = ativoInt;
+      vinculoUpdates.ativo = ativoInt;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "categoria")) {
+      const categoria = normalizeEnumText((body as any).categoria);
+      const categoriasPermitidas = new Set([
+        "diretoria",
+        "regulatorio",
+        "conselho",
+        "colaborador",
+        "ouvidoria",
+        "lgpd",
+        "auditoria",
+        "dentista",
+      ]);
+      if (!categoria || !categoriasPermitidas.has(categoria)) {
+        return c.json({ error: "categoria inválida." }, 400);
+      }
+      vinculoUpdates.categoria = categoria;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "subcategoria")) {
+      const subcategoria = String((body as any).subcategoria ?? "").replace(/\s+/g, " ").trim();
+      vinculoUpdates.subcategoria = subcategoria || null;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "cargo_funcao")) {
+      const cargo = String((body as any).cargo_funcao ?? "").replace(/\s+/g, " ").trim();
+      vinculoUpdates.cargo_funcao = cargo || null;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "departamento")) {
+      const departamento = normalizeColaboradorDepartamentos((body as any).departamento);
+      vinculoUpdates.departamento = departamento || null;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "pasta")) {
+      const pasta = String((body as any).pasta ?? "").replace(/\s+/g, " ").trim();
+      vinculoUpdates.pasta = pasta || null;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "principal")) {
+      vinculoUpdates.principal = normalizeBoolInt((body as any).principal);
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "visivel")) {
+      vinculoUpdates.visivel = normalizeBoolInt((body as any).visivel);
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "chefia")) {
+      vinculoUpdates.chefia = normalizeBoolInt((body as any).chefia);
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "inicio_mandato")) {
+      const raw = String((body as any).inicio_mandato ?? "").trim();
+      if (!raw) vinculoUpdates.inicio_mandato = null;
+      else {
+        const n = Number(raw);
+        if (!Number.isFinite(n)) return c.json({ error: "inicio_mandato inválido." }, 400);
+        vinculoUpdates.inicio_mandato = Math.trunc(n);
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "fim_mandato")) {
+      const raw = String((body as any).fim_mandato ?? "").trim();
+      if (!raw) vinculoUpdates.fim_mandato = null;
+      else {
+        const n = Number(raw);
+        if (!Number.isFinite(n)) return c.json({ error: "fim_mandato inválido." }, 400);
+        vinculoUpdates.fim_mandato = Math.trunc(n);
+      }
+    }
+
+    if (Object.keys(pessoaUpdates).length === 0 && Object.keys(vinculoUpdates).length === 0) {
+      const row = db.queryEntries<any>(
+        `SELECT
+           v.id AS vinculo_id,
+           p.id AS pessoa_id,
+           v.id_singular,
+           COALESCE(c.UNIODONTO, c.id_singular, v.id_singular) AS singular_nome,
+           v.categoria,
+           v.subcategoria,
+           p.primeiro_nome,
+           p.sobrenome,
+           p.email,
+           p.telefone,
+           COALESCE(p.wpp, 0) AS wpp,
+           COALESCE(v.departamento, p.departamento) AS departamento,
+           COALESCE(v.cargo_funcao, p.cargo_funcao) AS cargo_funcao,
+           v.pasta,
+           v.principal,
+           v.visivel,
+           v.chefia,
+           COALESCE(v.ativo, p.ativo, 1) AS ativo,
+           v.inicio_mandato,
+           v.fim_mandato
+         FROM ${TBL("pessoa_vinculos")} v
+         INNER JOIN ${TBL("pessoas")} p ON p.id = v.pessoa_id
+         LEFT JOIN ${TBL("cooperativas")} c ON c.id_singular = v.id_singular
+         WHERE v.id = ?
+         LIMIT 1`,
+        [vinculoId],
+      )?.[0];
+      return c.json(mapPessoaVinculoRow(row || {}));
+    }
+
+    if (!IS_POSTGRES) db.execute("BEGIN");
+    try {
+      if (Object.keys(pessoaUpdates).length > 0) {
+        const entries = Object.entries(pessoaUpdates);
+        const setClause = entries.map(([k]) => `${k} = ?`).join(", ");
+        db.query(
+          `UPDATE ${TBL("pessoas")}
+             SET ${setClause}, atualizado_em = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [...entries.map(([, v]) => v), current.pessoa_id] as any,
+        );
+      }
+
+      if (Object.keys(vinculoUpdates).length > 0) {
+        const entries = Object.entries(vinculoUpdates);
+        const setClause = entries.map(([k]) => `${k} = ?`).join(", ");
+        db.query(
+          `UPDATE ${TBL("pessoa_vinculos")}
+             SET ${setClause}, atualizado_em = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [...entries.map(([, v]) => v), vinculoId] as any,
+        );
+      }
+
+      if (!IS_POSTGRES) db.execute("COMMIT");
+    } catch (error) {
+      if (!IS_POSTGRES) {
+        try {
+          db.execute("ROLLBACK");
+        } catch {}
+      }
+      const msg = String((error as any)?.message || "");
+      if (msg.includes("UNIQUE constraint failed") && msg.includes("ux_urede_presidente_ativo_por_singular")) {
+        return c.json({ error: "Já existe um presidente ativo para esta singular." }, 400);
+      }
+      throw error;
+    }
+
+    const row = db.queryEntries<any>(
+      `SELECT
+         v.id AS vinculo_id,
+         p.id AS pessoa_id,
+         v.id_singular,
+         COALESCE(c.UNIODONTO, c.id_singular, v.id_singular) AS singular_nome,
+         v.categoria,
+         v.subcategoria,
+         p.primeiro_nome,
+         p.sobrenome,
+         p.email,
+         p.telefone,
+         COALESCE(p.wpp, 0) AS wpp,
+         COALESCE(v.departamento, p.departamento) AS departamento,
+         COALESCE(v.cargo_funcao, p.cargo_funcao) AS cargo_funcao,
+         v.pasta,
+         v.principal,
+         v.visivel,
+         v.chefia,
+         COALESCE(v.ativo, p.ativo, 1) AS ativo,
+         v.inicio_mandato,
+         v.fim_mandato
+       FROM ${TBL("pessoa_vinculos")} v
+       INNER JOIN ${TBL("pessoas")} p ON p.id = v.pessoa_id
+       LEFT JOIN ${TBL("cooperativas")} c ON c.id_singular = v.id_singular
+       WHERE v.id = ?
+       LIMIT 1`,
+      [vinculoId],
+    )?.[0];
+
+    if (!row) return c.json({ error: "Registro atualizado não encontrado." }, 404);
+    return c.json(mapPessoaVinculoRow(row));
+  } catch (error) {
+    const msg = String((error as any)?.message || "");
+    if (msg.includes("no such table") && (msg.includes(TBL("pessoas")) || msg.includes(TBL("pessoa_vinculos")))) {
+      return c.json({ error: "Estrutura de pessoas ainda não aplicada. Rode as migrações do banco." }, 500);
+    }
+    console.error("[pessoas] erro ao atualizar vínculo:", error);
+    return c.json({ error: "Erro ao atualizar pessoa" }, 500);
   }
 });
 
@@ -6957,7 +7421,7 @@ app.get("/operadores", requireAuth, async (c) => {
       return c.json({ error: "Usuário não autenticado" }, 401);
     }
 
-    const baseQuery = `SELECT op.*, au.papel AS auth_papel FROM ${
+    const baseQuery = `SELECT op.*, au.papel AS auth_papel, au.module_access AS auth_module_access FROM ${
       TBL("operadores")
     } op LEFT JOIN auth_users au ON au.email = op.email`;
     const visible = getVisibleCooperativas(userData);
@@ -7031,6 +7495,7 @@ app.post("/operadores", requireAuth, async (c) => {
     const wpp = normalizeBoolInt(body.wpp) === 1 || Boolean(whatsappInput) ||
       isLikelyBrazilMobile(telefone);
     const whatsapp = wpp ? (whatsappInput || telefone) : "";
+    const moduleAccess = serializeModuleAccess(body.modulos_acesso, ["hub"]);
     const payloadCooperativas = normalizeCooperativaIdsInput(
       body.cooperativas_ids,
     );
@@ -7123,6 +7588,7 @@ app.post("/operadores", requireAuth, async (c) => {
               approval_status = 'approved',
               email_confirmed_at = COALESCE(email_confirmed_at, ?),
               approved_at = COALESCE(approved_at, ?),
+              module_access = COALESCE(module_access, ?),
               must_change_password = ?,
               ativo = 1
              WHERE email = ?`,
@@ -7133,6 +7599,7 @@ app.post("/operadores", requireAuth, async (c) => {
               derivedRole,
               now,
               now,
+              moduleAccess,
               mustChange,
               email,
             ],
@@ -7154,8 +7621,9 @@ app.post("/operadores", requireAuth, async (c) => {
               data_cadastro,
               email_confirmed_at,
               approval_status,
-              must_change_password
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+              must_change_password,
+              module_access
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
             [
               email,
               passwordHash,
@@ -7172,6 +7640,7 @@ app.post("/operadores", requireAuth, async (c) => {
               now,
               "approved",
               mustChange,
+              moduleAccess,
             ],
           );
         }
@@ -7184,8 +7653,12 @@ app.post("/operadores", requireAuth, async (c) => {
     } else {
       try {
         db.query(
-          `UPDATE auth_users SET cooperativa_id = COALESCE(?, cooperativa_id), papel = COALESCE(papel, ?) WHERE email = ?`,
-          [idSingular, derivedRole, email],
+          `UPDATE auth_users
+              SET cooperativa_id = COALESCE(?, cooperativa_id),
+                  papel = COALESCE(papel, ?),
+                  module_access = COALESCE(module_access, ?)
+            WHERE email = ?`,
+          [idSingular, derivedRole, moduleAccess, email],
         );
       } catch (e) {
         console.warn("[operadores] sincronização com auth_users falhou:", e);
@@ -7195,7 +7668,7 @@ app.post("/operadores", requireAuth, async (c) => {
     syncUserCooperativaAssociacoes(email, cooperativasIds, idSingular);
 
     const inserted = db.queryEntries<any>(
-      `SELECT op.*, au.papel AS auth_papel FROM ${
+      `SELECT op.*, au.papel AS auth_papel, au.module_access AS auth_module_access FROM ${
         TBL("operadores")
       } op LEFT JOIN auth_users au ON au.email = op.email WHERE op.email = ? LIMIT 1`,
       [email],
@@ -7216,7 +7689,7 @@ app.post("/operadores", requireAuth, async (c) => {
 app.get("/operadores/public", async (c) => {
   try {
     const rows = db.queryEntries(
-      `SELECT op.*, au.papel AS auth_papel FROM ${
+      `SELECT op.*, au.papel AS auth_papel, au.module_access AS auth_module_access FROM ${
         TBL("operadores")
       } op LEFT JOIN auth_users au ON au.email = op.email`,
     );
@@ -7292,6 +7765,7 @@ app.put("/operadores/:id", requireAuth, async (c) => {
     const canEditRole = isConfAdmin || userData.papel === "admin";
     if (canEditRole) {
       whitelist.push("papel");
+      whitelist.push("modulos_acesso");
     }
 
     const canManageCredentials = !isSelf &&
@@ -7398,6 +7872,9 @@ app.put("/operadores/:id", requireAuth, async (c) => {
     if ("wpp" in allowed) {
       allowed.wpp = normalizeBoolInt(allowed.wpp);
     }
+    if ("modulos_acesso" in allowed) {
+      allowed.modulos_acesso = serializeModuleAccess(allowed.modulos_acesso, ["hub"]);
+    }
     if ("telefone" in allowed || "wpp" in allowed || "whatsapp" in allowed) {
       const resolvedTel = "telefone" in allowed
         ? String(allowed.telefone || "")
@@ -7416,6 +7893,7 @@ app.put("/operadores/:id", requireAuth, async (c) => {
     }
     if ("papel" in allowed && !canEditRole) {
       delete allowed.papel;
+      delete allowed.modulos_acesso;
     } else if ("papel" in allowed) {
       allowed.papel = deriveRoleForCooperativa(
         allowed.papel,
@@ -7426,7 +7904,10 @@ app.put("/operadores/:id", requireAuth, async (c) => {
     if (!hasCooperativasPayload && Object.keys(allowed).length === 0) {
       const refreshed = mapOperador(
         db.queryEntries<any>(
-          `SELECT * FROM ${TBL("operadores")} WHERE id = ? LIMIT 1`,
+          `SELECT op.*, au.papel AS auth_papel, au.module_access AS auth_module_access
+             FROM ${TBL("operadores")} op
+             LEFT JOIN auth_users au ON au.email = op.email
+            WHERE op.id = ? LIMIT 1`,
           [operadorId],
         )[0],
       );
@@ -7441,7 +7922,9 @@ app.put("/operadores/:id", requireAuth, async (c) => {
     }
 
     try {
-      const cols = Object.keys(allowed).filter((c) => c !== "papel");
+      const cols = Object.keys(allowed).filter((c) =>
+        c !== "papel" && c !== "modulos_acesso"
+      );
       if (cols.length > 0) {
         const placeholders = cols.map((c) => `${c} = ?`).join(", ");
         const values = cols.map((c) => (allowed as any)[c]);
@@ -7455,7 +7938,7 @@ app.put("/operadores/:id", requireAuth, async (c) => {
       return c.json({ error: "Erro ao atualizar operador" }, 500);
     }
 
-    if (allowed.papel || allowed.id_singular) {
+    if (allowed.papel || allowed.id_singular || allowed.modulos_acesso) {
       try {
         const updates: string[] = [];
         const values: any[] = [];
@@ -7466,6 +7949,10 @@ app.put("/operadores/:id", requireAuth, async (c) => {
         if (allowed.id_singular) {
           updates.push("cooperativa_id = ?");
           values.push(allowed.id_singular);
+        }
+        if (allowed.modulos_acesso) {
+          updates.push("module_access = ?");
+          values.push(allowed.modulos_acesso);
         }
         if (updates.length > 0) {
           db.query(
@@ -7510,6 +7997,9 @@ app.put("/operadores/:id", requireAuth, async (c) => {
         const resolvedCargo = "cargo" in allowed
           ? allowed.cargo
           : operador.cargo;
+        const resolvedModuleAccess = "modulos_acesso" in allowed
+          ? String(allowed.modulos_acesso || serializeModuleAccess(["hub"], ["hub"]))
+          : serializeModuleAccess(authUser?.module_access, ["hub"]);
 
         if (authUser) {
           db.query(
@@ -7519,6 +8009,7 @@ app.put("/operadores/:id", requireAuth, async (c) => {
               cooperativa_id = COALESCE(?, cooperativa_id),
               papel = COALESCE(?, papel),
               requested_papel = COALESCE(requested_papel, ?),
+              module_access = COALESCE(?, module_access),
               approval_status = 'approved',
               ativo = 1,
               email_confirmed_at = COALESCE(email_confirmed_at, ?),
@@ -7530,6 +8021,7 @@ app.put("/operadores/:id", requireAuth, async (c) => {
               cooperativaPrincipalId || operador.id_singular,
               resolvedRole,
               resolvedRole,
+              resolvedModuleAccess,
               now,
               now,
               operador.email,
@@ -7552,8 +8044,9 @@ app.put("/operadores/:id", requireAuth, async (c) => {
               data_cadastro,
               email_confirmed_at,
               approval_status,
-              must_change_password
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+              must_change_password,
+              module_access
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
             [
               operador.email,
               passwordHash,
@@ -7570,6 +8063,7 @@ app.put("/operadores/:id", requireAuth, async (c) => {
               now,
               "approved",
               mustChange,
+              resolvedModuleAccess,
             ],
           );
         }
@@ -7590,7 +8084,10 @@ app.put("/operadores/:id", requireAuth, async (c) => {
     }
 
     const updatedRow = db.queryEntries<any>(
-      `SELECT * FROM ${TBL("operadores")} WHERE id = ? LIMIT 1`,
+      `SELECT op.*, au.papel AS auth_papel, au.module_access AS auth_module_access
+         FROM ${TBL("operadores")} op
+         LEFT JOIN auth_users au ON au.email = op.email
+        WHERE op.id = ? LIMIT 1`,
       [operadorId],
     )[0];
     const updatedOperador = mapOperador(updatedRow);

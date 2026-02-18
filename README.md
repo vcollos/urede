@@ -30,6 +30,28 @@ Notas:
 - Rotas protegidas usam JWT local (gerado pelo próprio backend em `/auth/register` e `/auth/login`).
 - Tabelas do SQLite usam prefixo `urede_`. Os CSVs em `bases_csv/` alimentam `urede_cooperativas`, `urede_cidades` e `urede_operadores`.
 
+## Política de Portas (UHub + Sub Apps)
+
+Padrão oficial para desenvolvimento local:
+
+- `3400`: Frontend principal do UHub (`npm run dev`).
+- `8300` (fallback `8301,8302,8303`): API local Deno/Hono (`npm run server:dev`).
+- `3501-3599`: faixa reservada para apps externos em `sub_apps/*` (Central de Apps).
+
+Status atual:
+
+- `Gerador de Propostas` está **integrado no UHub** em `/hub/apps/propostas`.
+- `sub_apps/proposta` permanece como fonte externa para referência/evolução e pode ser rodado standalone em `3501` quando necessário.
+- `Gerador de Assinaturas de Email` está **integrado no UHub** em `/hub/apps/assinatura-email`.
+- `sub_apps/email_signature` pode ser rodado standalone em `3502` quando necessário.
+
+Regra para novos apps:
+
+1. Integrar primeiro no UHub, com rota canônica em `/hub/apps/<slug>`, mantendo shell/layout/Tailwind do UHub.
+2. Reservar a próxima porta livre da faixa `3501-3599` apenas se houver necessidade de rodar o app standalone.
+3. Se houver standalone, configurar a porta no `vite.config.ts` do sub app e registrar opcionalmente a URL no `.env` (`VITE_SUBAPP_<NOME>_URL`).
+4. Atualizar `sub_apps/README.md` e a documentação principal com rota canônica e porta reservada.
+
 ## Deploy (Supabase + Vercel)
 
 1) **Supabase (Postgres)**
@@ -71,7 +93,7 @@ Notas:
 ## Navegação Modular (UHub / URede)
 
 Escopo vigente da separação modular:
-- **UHub (compartilhado/global)**: Homepage do hub, `Cooperativas`, `Cidades`.
+- **UHub (compartilhado/global)**: Homepage do hub, `Central de Apps`, `Cooperativas`, `Cidades`.
 - **UHub (admin)**: `Usuários` (`operadores`) e `Gestão de dados` (`gestao_dados`) como subitens de `Configurações`.
 - **Módulo URede (específico)**: `Dashboard`, `Relatórios`, `Pedidos` e `Pedidos em lote` (`importacao`), incluindo ações de `Novo pedido`.
 - `Configurações` é contextual por módulo:
@@ -81,7 +103,7 @@ Escopo vigente da separação modular:
 - Para perfil `admin`, os subitens `Usuários` e `Gestão de dados` em `Configurações` aparecem no contexto Hub.
 
 Rotas canônicas desta fase:
-- Hub: `/hub`, `/hub/cooperativas`, `/hub/cidades`, `/hub/configuracoes`, `/hub/usuarios`, `/hub/gestao-dados`
+- Hub: `/hub`, `/hub/apps`, `/hub/apps/propostas`, `/hub/apps/assinatura-email`, `/hub/cooperativas`, `/hub/cidades`, `/hub/configuracoes`, `/hub/usuarios`, `/hub/gestao-dados`
 - URede: `/urede/dashboard`, `/urede/relatorios`, `/urede/pedidos`, `/urede/importacao`, `/urede/configuracoes`
 - Compatibilidade: rotas legadas continuam sendo aceitas e mapeadas para o módulo correspondente.
 - Branding da autenticação: a tela de login usa identidade visual UHub.

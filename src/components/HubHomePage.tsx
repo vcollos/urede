@@ -1,9 +1,9 @@
-import { ArrowRight, BarChart3, Building2, Database, MapPin, Network, Settings, Users } from 'lucide-react';
+import { AppWindow, ArrowRight, BarChart3, Building2, Database, MapPin, Network, Settings, Users } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 
-type HubShortcutTab = 'cooperativas' | 'cidades' | 'configuracoes_hub' | 'operadores' | 'gestao_dados';
+type HubShortcutTab = 'cooperativas' | 'cidades' | 'configuracoes_hub' | 'operadores' | 'gestao_dados' | 'central_apps';
 
 interface HubHomePageProps {
   isAdmin: boolean;
@@ -15,8 +15,8 @@ interface HubHomePageProps {
 export function HubHomePage({ isAdmin, userName, onOpenUredeModule, onOpenHubTab }: HubHomePageProps) {
   return (
     <div className="space-y-6">
-      <section className="grid gap-4 lg:grid-cols-3">
-        <Card className="rounded-2xl border border-[#E7E4FB] bg-white">
+      <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+        <Card className="h-full rounded-2xl border border-[#E7E4FB] bg-white">
           <CardHeader>
             <div className="flex items-center gap-2 text-[#5A46C5]">
               <BarChart3 className="h-4 w-4" />
@@ -26,10 +26,9 @@ export function HubHomePage({ isAdmin, userName, onOpenUredeModule, onOpenHubTab
               Operação de pedidos, dashboard, relatórios e importações em lote.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="mt-auto">
             <div className="mb-3 flex items-center justify-between gap-2">
               <Badge className="bg-[#ECE8FF] text-[#5B48C7] hover:bg-[#ECE8FF]">UHub</Badge>
-              <span className="text-xs text-gray-500">Olá, {userName.split(' ')[0]}</span>
             </div>
             <Button onClick={onOpenUredeModule} className="w-full rounded-xl bg-[#5A46C5] hover:bg-[#4C3CB0]">
               Entrar no módulo
@@ -38,7 +37,25 @@ export function HubHomePage({ isAdmin, userName, onOpenUredeModule, onOpenHubTab
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border border-[#E7E4FB] bg-white/90">
+        <Card className="h-full rounded-2xl border border-[#E7E4FB] bg-white">
+          <CardHeader>
+            <div className="flex items-center gap-2 text-[#5A46C5]">
+              <AppWindow className="h-4 w-4" />
+              <CardTitle className="text-base text-gray-900">Central de Apps</CardTitle>
+            </div>
+            <CardDescription>
+              Catálogo de aplicativos externos integrados ao ecossistema UHub.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="mt-auto">
+            <Button onClick={() => onOpenHubTab('central_apps')} className="w-full rounded-xl bg-[#5A46C5] hover:bg-[#4C3CB0]">
+              Entrar na central
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="h-full rounded-2xl border border-[#E7E4FB] bg-white/90">
           <CardHeader>
             <div className="flex items-center gap-2 text-gray-500">
               <Network className="h-4 w-4" />
@@ -46,12 +63,12 @@ export function HubHomePage({ isAdmin, userName, onOpenUredeModule, onOpenHubTab
             </div>
             <CardDescription>Espaço reservado para campanhas e comunicação institucional.</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="mt-auto">
             <Badge variant="outline" className="text-xs">Em breve</Badge>
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border border-[#E7E4FB] bg-white/90">
+        <Card className="h-full rounded-2xl border border-[#E7E4FB] bg-white/90">
           <CardHeader>
             <div className="flex items-center gap-2 text-gray-500">
               <Network className="h-4 w-4" />
@@ -59,7 +76,7 @@ export function HubHomePage({ isAdmin, userName, onOpenUredeModule, onOpenHubTab
             </div>
             <CardDescription>Conectores de compensação e comunicação entre sistemas.</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="mt-auto">
             <Badge variant="outline" className="text-xs">Em breve</Badge>
           </CardContent>
         </Card>

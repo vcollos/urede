@@ -155,6 +155,39 @@ npm --version
    ```
    - Gera artefatos em `build/`.
 
+### 6.1 Sequência oficial de portas (UHub + Sub Apps)
+
+- `3400`: Frontend principal do UHub (`npm run dev`).
+- `8300` (fallback `8301,8302,8303`): API local (`npm run server:dev`).
+- `3501-3599`: faixa reservada para apps externos em `sub_apps/*`.
+
+Status atual da Central de Apps:
+- `Gerador de Propostas` está integrado em `/hub/apps/propostas` (sem servidor separado obrigatório).
+- `3501` fica reservado para rodar `sub_apps/proposta` em modo standalone quando necessário.
+- `Gerador de Assinaturas de Email` está integrado em `/hub/apps/assinatura-email`.
+- `3502` fica reservado para rodar `sub_apps/email_signature` em modo standalone quando necessário.
+
+Regra para novos apps:
+1. Integrar primeiro no shell do UHub em `/hub/apps/<slug>`, mantendo layout e Tailwind do UHub.
+2. Reservar a próxima porta livre da faixa `3501-3599` apenas quando houver necessidade de execução standalone.
+3. Quando houver standalone, configurar no `vite.config.ts` do sub app e registrar opcionalmente URL no `.env` (`VITE_SUBAPP_<NOME>_URL`).
+4. Atualizar `sub_apps/README.md` e a documentação principal com rota canônica e porta reservada.
+
+Exemplo de execução padrão (módulo integrado):
+```bash
+# terminal 1 - hub
+npm run dev
+
+# terminal 2 - api
+npm run server:dev
+```
+
+Opcional (somente manutenção standalone do app externo):
+```bash
+npm --prefix sub_apps/proposta run dev
+npm --prefix sub_apps/email_signature run dev
+```
+
 ---
 
 ## 7. Variáveis de Ambiente
@@ -162,6 +195,9 @@ npm --version
 ### Frontend (`.env`, `.env.local`)
 ```bash
 VITE_API_BASE_URL=http://127.0.0.1:8300
+# opcional (apenas para manutenção standalone de sub app):
+# VITE_SUBAPP_PROPOSTA_URL=http://127.0.0.1:3501
+# VITE_SUBAPP_EMAIL_SIGNATURE_URL=http://127.0.0.1:3502
 ```
 Outros valores poderão ser adicionados conforme integração com serviços externos.
 
@@ -171,7 +207,7 @@ JWT_SECRET=dev-secret-change-me
 SQLITE_PATH=./data/urede.db
 TABLE_PREFIX=urede_
 INSECURE_MODE=false
-ALLOWED_ORIGINS=http://localhost:3400
+ALLOWED_ORIGINS=http://localhost:3400,http://127.0.0.1:3400,http://localhost:3501,http://127.0.0.1:3501,http://localhost:3502,http://127.0.0.1:3502
 PORT=8300
 PORT_FALLBACKS=8301,8302,8303
 ```
@@ -277,9 +313,10 @@ bash scripts/import-csv-sqlite.sh
 - `OperadoresLista` -> `/operadores`
 
 ### 10.4 Navegação Modular (fase atual)
-- **UHub**: `/hub`, `/hub/cooperativas`, `/hub/cidades`, `/hub/configuracoes`, `/hub/usuarios`, `/hub/gestao-dados`.
+- **UHub**: `/hub`, `/hub/apps`, `/hub/apps/propostas`, `/hub/apps/assinatura-email`, `/hub/cooperativas`, `/hub/cidades`, `/hub/configuracoes`, `/hub/usuarios`, `/hub/gestao-dados`.
 - **URede**: `/urede/dashboard`, `/urede/relatorios`, `/urede/pedidos`, `/urede/importacao`, `/urede/configuracoes`.
 - O shell principal alterna menu, atalhos e marca conforme o módulo ativo.
+- A Central de Apps é tratada como recurso global do UHub; apps externos devem ser incorporados por essa rota antes de considerar execução isolada.
 - Rotas legadas continuam com fallback para preservar deep links existentes.
 - As configurações são exibidas por contexto de módulo (Hub x URede) na mesma view.
 - Somente Administrador da Confederação pode salvar configurações de módulo.

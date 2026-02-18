@@ -19,16 +19,25 @@ import { DocumentacaoUsuariosApp } from './documentacao/usuarios';
 import { ReportsView } from './components/ReportsView';
 import { GestaoDadosPage } from './components/GestaoDadosPage';
 import { HubHomePage } from './components/HubHomePage';
+import { PessoasView } from './components/PessoasView';
+import { CentralAppsPage } from './components/CentralAppsPage';
+import { PropostasHubPage } from './components/PropostasHubPage';
+import { EmailSignatureHubPage } from './components/EmailSignatureHubPage';
+import { hasModuleAccess } from './utils/moduleAccess';
 
 type AppModule = 'hub' | 'urede';
 type AppTab =
   | 'hub_home'
+  | 'central_apps'
+  | 'apps_propostas'
+  | 'apps_assinatura_email'
   | 'cooperativas'
   | 'cidades'
   | 'configuracoes'
   | 'configuracoes_hub'
   | 'configuracoes_urede'
   | 'operadores'
+  | 'pessoas'
   | 'gestao_dados'
   | 'dashboard'
   | 'pedidos'
@@ -40,12 +49,16 @@ function AppContent() {
   const { isAuthenticated, isLoading, user, refreshUser } = useAuth();
   const tabPathMap: Record<AppTab, string> = {
     hub_home: '/hub',
+    central_apps: '/hub/apps',
+    apps_propostas: '/hub/apps/propostas',
+    apps_assinatura_email: '/hub/apps/assinatura-email',
     cooperativas: '/hub/cooperativas',
     cidades: '/hub/cidades',
     configuracoes: '/hub/configuracoes',
     configuracoes_hub: '/hub/configuracoes',
     configuracoes_urede: '/urede/configuracoes',
     operadores: '/hub/usuarios',
+    pessoas: '/hub/pessoas',
     gestao_dados: '/hub/gestao-dados',
     dashboard: '/urede/dashboard',
     pedidos: '/urede/pedidos',
@@ -55,12 +68,23 @@ function AppContent() {
 
   const hubTabs = useMemo(() => new Set<AppTab>([
     'hub_home',
+    'central_apps',
+    'apps_propostas',
+    'apps_assinatura_email',
     'cooperativas',
     'cidades',
     'configuracoes',
     'configuracoes_hub',
     'operadores',
+    'pessoas',
     'gestao_dados',
+  ]), []);
+  const uredeTabs = useMemo(() => new Set<AppTab>([
+    'dashboard',
+    'pedidos',
+    'importacao',
+    'relatorios',
+    'configuracoes_urede',
   ]), []);
 
   const deriveModuleFromTab = useMemo(() => {
@@ -72,9 +96,13 @@ function AppContent() {
       const normalizedPath = pathname.replace(/\/+$/, '') || '/';
 
       if (normalizedPath === '/' || normalizedPath === '/hub') return 'hub_home';
+      if (normalizedPath.startsWith('/hub/apps/assinatura-email')) return 'apps_assinatura_email';
+      if (normalizedPath.startsWith('/hub/apps/propostas')) return 'apps_propostas';
+      if (normalizedPath.startsWith('/hub/apps')) return 'central_apps';
       if (normalizedPath.startsWith('/hub/cooperativas') || normalizedPath.startsWith('/cooperativas')) return 'cooperativas';
       if (normalizedPath.startsWith('/hub/cidades') || normalizedPath.startsWith('/cidades')) return 'cidades';
       if (normalizedPath.startsWith('/hub/usuarios') || normalizedPath.startsWith('/operadores')) return 'operadores';
+      if (normalizedPath.startsWith('/hub/pessoas') || normalizedPath.startsWith('/pessoas')) return 'pessoas';
       if (normalizedPath.startsWith('/hub/configuracoes') || normalizedPath.startsWith('/configuracoes')) return 'configuracoes_hub';
       if (normalizedPath.startsWith('/urede/configuracoes')) return 'configuracoes_urede';
       if (normalizedPath.startsWith('/hub/gestao-dados') || normalizedPath.startsWith('/gestao_dados')) return 'gestao_dados';
@@ -99,6 +127,7 @@ function AppContent() {
   const [showNovoPedido, setShowNovoPedido] = useState(false);
   const [selectedPedido, setSelectedPedido] = useState<Pedido | null>(null);
   const [pedidosPresetFilter, setPedidosPresetFilter] = useState<PedidosFilterPreset | null>(null);
+  const canAccessUrede = hasModuleAccess(user?.modulos_acesso, 'urede', ['hub']);
 
   const navigateByTab = (tab: AppTab) => {
     const path = tabPathMap[tab];
@@ -113,6 +142,10 @@ function AppContent() {
   };
 
   const navigateToUredeModule = () => {
+    if (!canAccessUrede) {
+      navigateToHubModule();
+      return;
+    }
     navigateByTab('dashboard');
     setCurrentTab('dashboard');
     setShowNovoPedido(false);
@@ -150,6 +183,15 @@ function AppContent() {
     window.addEventListener('popstate', handle);
     return () => window.removeEventListener('popstate', handle);
   }, [deriveTabFromPath, deriveModuleFromTab]);
+
+  useEffect(() => {
+    if (!user || canAccessUrede) return;
+    if (!uredeTabs.has(activeTab)) return;
+    navigateByTab('hub_home');
+    setCurrentTab('hub_home');
+    setSelectedPedido(null);
+    setPedidosPresetFilter(null);
+  }, [activeTab, canAccessUrede, uredeTabs, user]);
 
   if (pathname.startsWith('/documentacao/usuarios')) {
     return <DocumentacaoUsuariosApp />;
@@ -251,6 +293,10 @@ function AppContent() {
       navigateToHubModule();
       return;
     }
+    if (!canAccessUrede) {
+      navigateToHubModule();
+      return;
+    }
     navigateToUredeModule();
   };
 
@@ -294,6 +340,7 @@ function AppContent() {
       case 'hub_home':
         return renderHubHome(user?.papel === 'admin');
       case 'dashboard':
+        if (!canAccessUrede) return renderHubHome(user?.papel === 'admin');
         return (
           <Dashboard
             onNavigateToPedidos={navigateToPedidosWithFilter}
@@ -305,6 +352,7 @@ function AppContent() {
           />
         );
       case 'pedidos':
+        if (!canAccessUrede) return renderHubHome(user?.papel === 'admin');
         if (selectedPedido) {
           return (
             <PedidoDetalhes
@@ -322,21 +370,37 @@ function AppContent() {
           />
         );
       case 'importacao':
+        if (!canAccessUrede) return renderHubHome(user?.papel === 'admin');
         return <PedidosImportPage onBack={() => handleSidebarTabChange('pedidos')} />;
       case 'gestao_dados':
         return user?.papel === 'admin' ? <GestaoDadosPage /> : renderHubHome(false);
+      case 'central_apps':
+        return (
+          <CentralAppsPage
+            onOpenPropostasModule={() => handleSidebarTabChange('apps_propostas')}
+            onOpenEmailSignatureModule={() => handleSidebarTabChange('apps_assinatura_email')}
+          />
+        );
+      case 'apps_propostas':
+        return <PropostasHubPage />;
+      case 'apps_assinatura_email':
+        return <EmailSignatureHubPage />;
       case 'cooperativas':
         return <CooperativasView />;
       case 'operadores':
         return user?.papel === 'admin' ? <OperadoresLista /> : renderHubHome(false);
+      case 'pessoas':
+        return user?.papel === 'admin' ? <PessoasView /> : renderHubHome(false);
       case 'cidades':
         return <CidadesView />;
       case 'configuracoes':
       case 'configuracoes_hub':
         return <ConfiguracoesView module="hub" />;
       case 'configuracoes_urede':
+        if (!canAccessUrede) return renderHubHome(user?.papel === 'admin');
         return <ConfiguracoesView module="urede" />;
       case 'relatorios':
+        if (!canAccessUrede) return renderHubHome(user?.papel === 'admin');
         return <ReportsView />;
       default:
         return renderHubHome(user?.papel === 'admin');
@@ -349,11 +413,12 @@ function AppContent() {
       <Layout
         activeTab={activeTab}
         activeModule={activeModule}
+        canAccessUrede={canAccessUrede}
         onModuleChange={handleModuleChange}
         onTabChange={handleSidebarTabChange}
-        onCreatePedido={activeModule === 'urede' ? openNovoPedido : undefined}
+        onCreatePedido={activeModule === 'urede' && canAccessUrede ? openNovoPedido : undefined}
         onOpenPedido={handleOpenPedidoFromAlert}
-        onOpenImportacao={activeModule === 'urede' ? handleOpenImportacao : undefined}
+        onOpenImportacao={activeModule === 'urede' && canAccessUrede ? handleOpenImportacao : undefined}
       >
         {renderContent()}
       </Layout>

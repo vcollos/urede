@@ -42,13 +42,25 @@
 
 ## Navegação modular (UHub / URede)
 
-- Funcionalidades globais devem ficar no contexto **UHub** (homepage, cooperativas, cidades).
+- Funcionalidades globais devem ficar no contexto **UHub** (homepage, cooperativas, cidades, central de apps).
 - Funcionalidades de operação de pedidos devem ficar no contexto **módulo URede** (dashboard, relatórios, pedidos, pedidos em lote, novo pedido).
 - Rotas legadas podem ser mantidas apenas para compatibilidade; novos fluxos devem priorizar rotas com prefixo de módulo (`/hub/*`, `/urede/*`).
+- Rotas canônicas do Hub para apps integrados: `/hub/apps` e `/hub/apps/<slug>` (ex.: `/hub/apps/propostas`, `/hub/apps/assinatura-email`).
 - Configurações são contextuais por módulo:
   - Hub: `/hub/configuracoes` (cadastros globais de dados cadastrais)
   - URede: `/urede/configuracoes` (fluxo de aprovação e categorias de pedidos)
 - Apenas **Administrador da Confederação** pode alterar configurações de módulo.
+
+## Central de Apps e sub_apps (obrigatório)
+
+1. Novos apps em `sub_apps/*` devem priorizar integração dentro do shell do UHub, mantendo layout e Tailwind do UHub.
+2. A rota preferencial para consumo é sempre `/hub/apps/<slug>`.
+3. Execução standalone de sub app é opcional e usada apenas para manutenção isolada quando necessário.
+4. Quando houver standalone local, usar a faixa de portas `3501-3599`.
+5. Ao integrar novo app, atualizar `README.md`, `doc.md` e este `AGENTS.md` com rota canônica e porta reservada (se houver standalone).
+6. Mapeamento atual:
+   - `sub_apps/proposta` => rota canônica `/hub/apps/propostas` (standalone `3501`).
+   - `sub_apps/email_signature` => rota canônica `/hub/apps/assinatura-email` (standalone `3502`).
 
 ## Vínculo de usuários e singulares
 
