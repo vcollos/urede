@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -12,6 +12,9 @@ import {
   AlertCircle,
   Tag,
   Users,
+  UserCheck,
+  Inbox,
+  Send,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/apiService';
@@ -27,9 +30,41 @@ export type PedidosFilterPreset = {
   token?: number;
 };
 
+export type PedidosScopeFilter =
+  | 'me'
+  | 'uniodonto'
+  | 'minha_singular';
+
+const scopeFilterOptions: Array<{
+  value: PedidosScopeFilter;
+  tooltip: string;
+  icon: typeof UserCheck;
+}> = [
+  {
+    value: 'me',
+    tooltip: 'Pedidos recebidos que sou responsável',
+    icon: UserCheck,
+  },
+  {
+    value: 'uniodonto',
+    tooltip: 'Pedidos recebidos sem responsável',
+    icon: Inbox,
+  },
+  {
+    value: 'minha_singular',
+    tooltip: 'Pedidos feitos por minha Uniodonto',
+    icon: Send,
+  },
+];
+
 interface PedidosListaProps {
   onViewPedido: (pedido: Pedido) => void;
   presetFilter?: PedidosFilterPreset | null;
+  embedded?: boolean;
+  defaultViewMode?: 'lista' | 'kanban';
+  showScopeFilter?: boolean;
+  defaultScopeFilter?: PedidosScopeFilter;
+  excludeCreatedOutsideCoop?: boolean;
 }
 
 const pedidosTableClasses = {
@@ -79,7 +114,15 @@ const chipBaseClass =
 const chipExtraClass =
   'rounded-full border-0 bg-[#f1f4ff] px-3 py-[6px] text-[11px] font-medium leading-none text-[#4b50be] shadow-none';
 
-export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) {
+export function PedidosLista({
+  onViewPedido,
+  presetFilter,
+  embedded = false,
+  defaultViewMode,
+  showScopeFilter = false,
+  defaultScopeFilter,
+  excludeCreatedOutsideCoop = false,
+}: PedidosListaProps) {
   const { user, isAuthenticated } = useAuth();
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -92,32 +135,21 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [customFilter, setCustomFilter] = useState<'vencendo' | null>(null);
+  const [scopeFilter, setScopeFilter] = useState<PedidosScopeFilter>(() => (defaultScopeFilter ?? 'me'));
+  const [kanbanConcluidosLimit, setKanbanConcluidosLimit] = useState(10);
+  const [kanbanOrder, setKanbanOrder] = useState<Record<Pedido['status'], string[]>>({
+    novo: [],
+    em_andamento: [],
+    concluido: [],
+    cancelado: [],
+  });
 
   // Carregar pedidos
   useEffect(() => {
     const loadPedidos = async () => {
       try {
         setIsLoading(true);
-        let pedidosData = await apiService.getPedidos();
-
-        const pedidosParaTransferir = pedidosData.filter(
-          (pedido) =>
-            !pedido.excluido &&
-            pedido.dias_restantes <= 0 &&
-            (pedido.status === 'novo' || pedido.status === 'em_andamento') &&
-            pedido.nivel_atual !== 'confederacao'
-        );
-
-        if (pedidosParaTransferir.length > 0) {
-          try {
-            await Promise.all(
-              pedidosParaTransferir.map((pedido) => apiService.transferirPedido(pedido.id))
-            );
-            pedidosData = await apiService.getPedidos();
-          } catch (transferError) {
-            console.error('Erro ao aplicar regra de transferência automática:', transferError);
-          }
-        }
+        const pedidosData = await apiService.getPedidos();
 
         setPedidos(pedidosData.filter((pedido) => !pedido.excluido));
       } catch (err) {
@@ -184,7 +216,7 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
     }
 
     if (arraysEqual(statusFilter, normalizedDefaultStatuses)) {
-      return 'Status (Ativos)';
+      return 'Status (Padrão)';
     }
 
     if (arraysEqual(statusFilter, normalizedAllStatuses)) {
@@ -230,6 +262,39 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
       .filter((pedido) => !pedido.excluido)
       .filter((pedido) => statusFilter.includes(pedido.status));
 
+    if (excludeCreatedOutsideCoop && user?.email && user?.cooperativa_id) {
+      const myEmail = user.email.toLowerCase();
+      pedidosFiltrados = pedidosFiltrados.filter((p) => {
+        const createdByMe = (p.criado_por_user || '').toLowerCase() === myEmail;
+        const outsideMyCoop = p.cooperativa_responsavel_id !== user.cooperativa_id;
+        return !(createdByMe && outsideMyCoop);
+      });
+    }
+
+    if (showScopeFilter && user) {
+      const myCoop = user.cooperativa_id;
+      const myUserId = user.id;
+      pedidosFiltrados = pedidosFiltrados.filter((p) => {
+        switch (scopeFilter) {
+          case 'me': {
+            if (p.cooperativa_responsavel_id !== myCoop) return false;
+            const assigned = p.responsavel_atual_id || null;
+            return !assigned || assigned === myUserId;
+          }
+          case 'uniodonto': {
+            if (p.cooperativa_responsavel_id !== myCoop) return false;
+            const assigned = p.responsavel_atual_id || null;
+            return !assigned;
+          }
+          case 'minha_singular': {
+            return p.cooperativa_solicitante_id === myCoop;
+          }
+          default:
+            return true;
+        }
+      });
+    }
+
     // Aplicar filtros de busca
     if (searchTerm) {
       pedidosFiltrados = pedidosFiltrados.filter(p => 
@@ -256,6 +321,11 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
   };
 
   useEffect(() => {
+    // Evita listas gigantes em "Concluídos" no Kanban.
+    setKanbanConcluidosLimit(10);
+  }, [searchTerm, nivelFilter, customFilter, statusFilter.join(','), scopeFilter, viewMode]);
+
+  useEffect(() => {
     if (!presetFilter) {
       return;
     }
@@ -270,7 +340,51 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
     setNivelFilter('todos');
   }, [presetFilter?.token, presetFilter?.status, presetFilter?.custom]);
 
-  const pedidosFiltrados = getFilteredPedidos();
+  const pedidosFiltrados = useMemo(
+    () => getFilteredPedidos(),
+    [
+      pedidos,
+      statusFilter,
+      excludeCreatedOutsideCoop,
+      user?.email,
+      user?.cooperativa_id,
+      showScopeFilter,
+      scopeFilter,
+      user?.id,
+      searchTerm,
+      nivelFilter,
+      customFilter,
+    ],
+  );
+
+  useEffect(() => {
+    setKanbanOrder((prev) => {
+      const next: Record<Pedido['status'], string[]> = {
+        novo: [],
+        em_andamento: [],
+        concluido: [],
+        cancelado: [],
+      };
+      const statuses: Pedido['status'][] = ['novo', 'em_andamento', 'concluido', 'cancelado'];
+      for (const status of statuses) {
+        const idsInStatus = pedidosFiltrados.filter((p) => p.status === status).map((p) => p.id);
+        const prevInStatus = (prev[status] || []).filter((id) => idsInStatus.includes(id));
+        const toAppend = idsInStatus.filter((id) => !prevInStatus.includes(id));
+        next[status] = [...prevInStatus, ...toAppend];
+      }
+      return next;
+    });
+  }, [pedidosFiltrados]);
+
+  const getOrderedByStatus = useCallback((status: Pedido['status'], list: Pedido[]) => {
+    const indexById = new Map(list.map((item) => [item.id, item]));
+    const orderedIds = kanbanOrder[status] || [];
+    const ordered = orderedIds
+      .map((id) => indexById.get(id))
+      .filter((item): item is Pedido => Boolean(item));
+    const missing = list.filter((item) => !orderedIds.includes(item.id));
+    return [...ordered, ...missing];
+  }, [kanbanOrder]);
 
   const labelByPov = (p: Pedido) => {
     switch (p.ponto_de_vista) {
@@ -386,36 +500,42 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
   };
 
   const KanbanView = () => {
+    const concluidos = getOrderedByStatus('concluido', pedidosFiltrados.filter((p) => p.status === 'concluido'));
+    const concluidosVisiveis = concluidos.slice(0, Math.max(10, kanbanConcluidosLimit));
+    const novosOrdenados = getOrderedByStatus('novo', pedidosFiltrados.filter((p) => p.status === 'novo'));
+    const andamentoOrdenados = getOrderedByStatus('em_andamento', pedidosFiltrados.filter((p) => p.status === 'em_andamento'));
+
     const columns = [
       {
         id: 'novo',
         title: 'Backlog',
-        pedidos: pedidosFiltrados.filter((p) => p.status === 'novo'),
-        columnBg: 'bg-gradient-to-b from-[#F5F2FF] via-white to-white',
+        pedidos: novosOrdenados,
+        columnBg: 'bg-gradient-to-b from-[#bf9cff] via-white to-white',
         headerColor: 'text-[#6C55D9]',
-        badgeClass: 'bg-[#E6DFFF] text-[#6C55D9]',
-        cardBg: 'bg-gradient-to-br from-[#F6F3FF] via-white to-white',
+        badgeClass: 'bg-[#d9c3ff] text-[#5a3acb]',
+        cardBg: 'bg-gradient-to-br from-[#f3ecff] via-white to-white',
         accentDot: 'bg-[#7B6EF6]',
       },
       {
         id: 'em_andamento',
         title: 'Em andamento',
-        pedidos: pedidosFiltrados.filter((p) => p.status === 'em_andamento'),
-        columnBg: 'bg-gradient-to-b from-[#FFF2E8] via-white to-white',
-        headerColor: 'text-[#D48C2B]',
-        badgeClass: 'bg-[#FFE5CC] text-[#C8730E]',
-        cardBg: 'bg-gradient-to-br from-[#FFF5EB] via-white to-white',
-        accentDot: 'bg-[#F4B961]',
+        pedidos: andamentoOrdenados,
+        columnBg: 'bg-gradient-to-b from-[#f2f8fa] via-white to-white',
+        headerColor: 'text-[#4A7483]',
+        badgeClass: 'bg-[#e3f1f5] text-[#3f6775]',
+        cardBg: 'bg-gradient-to-br from-[#f7fcfd] via-white to-white',
+        accentDot: 'bg-[#6ea7bb]',
       },
       {
         id: 'concluido',
         title: 'Concluídos',
-        pedidos: pedidosFiltrados.filter((p) => p.status === 'concluido'),
-        columnBg: 'bg-gradient-to-b from-[#EAF6EF] via-white to-white',
-        headerColor: 'text-[#2E8C63]',
-        badgeClass: 'bg-[#DDF5E6] text-[#2E8C63]',
-        cardBg: 'bg-gradient-to-br from-[#F0FBF4] via-white to-white',
-        accentDot: 'bg-[#3EA975]',
+        pedidos: concluidosVisiveis,
+        columnBg: 'bg-gradient-to-b from-[#e1ff7b] via-white to-white',
+        headerColor: 'text-[#5A7F00]',
+        badgeClass: 'bg-[#edfdb9] text-[#496700]',
+        cardBg: 'bg-gradient-to-br from-[#f8ffe3] via-white to-white',
+        accentDot: 'bg-[#7ea900]',
+        totalCount: concluidos.length,
       },
     ];
 
@@ -425,7 +545,7 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
           <div
             key={column.id}
             className={cn(
-              'rounded-3xl border border-white shadow-[0_24px_50px_-40px_rgba(107,86,217,0.5)] p-5 space-y-4',
+              'rounded-3xl border border-white shadow-[0_24px_50px_-40px_rgba(107,86,217,0.5)] p-5 space-y-4 transition',
               column.columnBg
             )}
           >
@@ -442,7 +562,7 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
                   column.badgeClass
                 )}
               >
-                {column.pedidos.length}
+                {'totalCount' in column ? (column as any).totalCount : column.pedidos.length}
               </span>
             </div>
             <div className="space-y-4">
@@ -451,7 +571,7 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
                   Nenhum pedido nesta etapa
                 </div>
               )}
-              {column.pedidos.map((pedido) => (
+              {column.pedidos.map((pedido, index) => (
                 <div
                   key={pedido.id}
                   className={cn(
@@ -519,6 +639,23 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
                     </div>
                 </div>
               ))}
+
+              {column.id === 'concluido' && (column as any).totalCount > column.pedidos.length && (
+                <div className="pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full rounded-full"
+                    onClick={() => setKanbanConcluidosLimit((prev) => prev + 10)}
+                  >
+                    Carregar mais 10
+                  </Button>
+                  <div className="mt-2 text-center text-[11px] text-gray-500">
+                    Mostrando {column.pedidos.length} de {(column as any).totalCount}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -655,14 +792,16 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
   };
 
   return (
-    <div className="grid gap-8">
+    <div className={embedded ? 'grid gap-6' : 'grid gap-8'}>
       {/* Header */}
-      <div className="space-y-1 max-w-3xl">
-        <h1 className="text-3xl font-semibold text-gray-900">Pedidos de Credenciamento</h1>
-        <p className="text-gray-600 leading-relaxed">
-          Gerencie pedidos de credenciamento e suprimento da rede com visibilidade sobre status, níveis e prazos.
-        </p>
-      </div>
+      {!embedded && (
+        <div className="space-y-1 max-w-3xl">
+          <h1 className="text-3xl font-semibold text-gray-900">Pedidos de Credenciamento</h1>
+          <p className="text-gray-600 leading-relaxed">
+            Gerencie pedidos de credenciamento e suprimento da rede com visibilidade sobre status, níveis e prazos.
+          </p>
+        </div>
+      )}
 
       {/* Filtros */}
       <Card className="rounded-3xl border border-slate-200/70 bg-white/95 shadow-[0_24px_45px_-35px_rgba(88,71,192,0.35)] backdrop-blur-sm">
@@ -680,6 +819,33 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
           )}
           <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
             <div className="flex flex-col md:flex-row gap-4 flex-1 w-full">
+              {showScopeFilter && (
+                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2 py-1">
+                  {scopeFilterOptions.map((option) => {
+                    const Icon = option.icon;
+                    const isActive = scopeFilter === option.value;
+
+                    return (
+                      <Button
+                        key={option.value}
+                        type="button"
+                        size="icon"
+                        variant={isActive ? 'default' : 'outline'}
+                        className={`h-9 w-9 rounded-full ${
+                          isActive
+                            ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                            : 'border-slate-300 text-slate-600 hover:bg-slate-100'
+                        }`}
+                        title={option.tooltip}
+                        aria-label={option.tooltip}
+                        onClick={() => setScopeFilter(option.value)}
+                      >
+                        <Icon className="h-4 w-4" />
+                      </Button>
+                    );
+                  })}
+                </div>
+              )}
               <Select value={quickFilterValue} onValueChange={handleQuickFilterChange}>
                 <SelectTrigger className="w-full md:w-48">
                   <SelectValue placeholder="Filtro rápido" />
@@ -706,8 +872,7 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
                   <Button
                     type="button"
                     variant="outline"
-                    size="sm"
-                    className="w-full md:w-48 justify-between"
+                    className="w-full md:w-48 h-10 justify-between rounded-md border border-input bg-background px-3 py-2 text-sm font-normal shadow-none"
                   >
                     <span className="truncate text-left">{statusButtonLabel}</span>
                     <svg
@@ -792,7 +957,13 @@ export function PedidosLista({ onViewPedido, presetFilter }: PedidosListaProps) 
               <Button
                 variant={viewMode === 'kanban' ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => setViewMode('kanban')}
+                onClick={() => {
+                  // Kanban deve mostrar concluídos por padrão.
+                  setStatusFilter((prev) => (
+                    prev.includes('concluido') ? prev : normalizeStatusSelection([...prev, 'concluido'])
+                  ));
+                  setViewMode('kanban');
+                }}
               >
                 Kanban
               </Button>

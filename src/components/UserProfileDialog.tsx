@@ -14,7 +14,7 @@ const roleLabel: Record<string, string> = {
   confederacao: 'Confederação',
   federacao: 'Federação',
   admin: 'Administrador',
-  operador: 'Operador',
+  operador: 'Responsável',
 };
 
 const roleBadgeClass: Record<string, string> = {
@@ -284,4 +284,3 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
     </Dialog>
   );
 }
-

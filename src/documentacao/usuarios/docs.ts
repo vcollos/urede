@@ -18,7 +18,7 @@ export const usuarioDocPages: UsuarioDocPage[] = [
   {
     slug: 'introducao',
     title: 'Visão Geral do Portal',
-    description: 'Resumo da proposta, objetivos e perfis atendidos pelo uRede.',
+    description: 'Resumo da proposta, objetivos e perfis atendidos pelo URede.',
     category: 'Fundamentos',
     audience: ['Operadores', 'Gestores', 'Diretoria', 'Auditoria'],
     content: introducao,

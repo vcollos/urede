@@ -7,13 +7,52 @@ import type {
   AuditoriaLog,
   DashboardStats,
   CoberturaLog,
+  CooperativaOverviewLog,
   SystemSettings,
+  CentralArquivosGoogleDriveCredentialStatus,
   Alerta,
   CooperativaConfig,
   PedidoImportPayload,
   PedidoImportResponse,
   ReportsOverview,
+  DiretorPhoneAccessRequest,
+  PessoaUnificada,
 } from '../types';
+
+const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
+  theme: 'light',
+  deadlines: {
+    singularToFederacao: 30,
+    federacaoToConfederacao: 30,
+  },
+  requireApproval: true,
+  autoNotifyManagers: true,
+  enableSelfRegistration: true,
+  pedido_motivos: [],
+  hub_cadastros: {
+    tipos_endereco: ['Sede', 'Filial', 'Núcleo', 'Clínica', 'Ponto de Venda', 'Plantão de Urgência & Emergência', 'Atendimento'],
+    tipos_conselho: ['Fiscal', 'Administrativo', 'Técnico'],
+    tipos_contato: ['E-mail', 'Telefone', 'Website', 'Rede social', 'Outro'],
+    subtipos_contato: [
+      'LGPD',
+      'Plantão',
+      'Geral',
+      'Emergência',
+      'Divulgação',
+      'Comercial PF',
+      'Comercial PJ',
+      'Institucional',
+      'Portal do Prestador',
+      'Portal do Cliente',
+      'Portal da Empresa',
+      'Portal do Corretor',
+      'E-Commerce',
+      'Portal do Cooperado',
+    ],
+    redes_sociais: ['Instagram', 'Facebook', 'LinkedIn', 'YouTube', 'TikTok', 'X'],
+    departamentos: ['INTERCÂMBIO', 'COMERCIAL', 'ATENDIMENTO', 'FINANCEIRO'],
+  },
+};
 
 class ApiService {
   // COOPERATIVAS
@@ -34,6 +73,31 @@ class ApiService {
   {
     const result = await apiRequest(`/cooperativas/${cooperativaId}/cobertura/historico?limit=${limit}`);
     return result?.logs ?? [];
+  }
+
+  async getCooperativaOverviewHistorico(cooperativaId: string, limit = 200): Promise<CooperativaOverviewLog[]>
+  {
+    const result = await apiRequest(`/cooperativas/${cooperativaId}/overview/historico?limit=${limit}`);
+    return result?.logs ?? [];
+  }
+
+  async updateCooperativaOverview(
+    cooperativaId: string,
+    data: {
+      cnpj?: string;
+      codigo_ans?: string;
+      data_fundacao?: string;
+      federacao?: string;
+      software?: string;
+      raz_social?: string;
+      website?: string;
+    },
+  ): Promise<{ cooperativa: Cooperativa; website: string | null }>
+  {
+    return await apiRequest(`/cooperativas/${cooperativaId}/overview`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
   }
 
   // COOPERATIVAS PÚBLICAS (para registro)
@@ -61,8 +125,11 @@ class ApiService {
     email: string;
     cargo?: string;
     telefone?: string;
-    whatsapp?: string;
+    wpp?: boolean;
     id_singular: string;
+    cooperativas_ids?: string[];
+    cooperativa_principal_id?: string;
+    modulos_acesso?: Array<'hub' | 'urede' | 'udocs' | 'umarketing' | 'ufast' | 'central_apps'>;
     senha_temporaria?: string;
     forcar_troca_senha?: boolean;
   }): Promise<Operador> {
@@ -236,6 +303,131 @@ class ApiService {
     }
   }
 
+  // COOPERATIVAS (AUXILIARES)
+  async getCooperativaAux<T = any>(cooperativaId: string, resource: string): Promise<T[]> {
+    return await apiRequest(`/cooperativas/${cooperativaId}/aux/${resource}`);
+  }
+
+  async getPessoas(params?: {
+    id_singular?: string;
+    categoria?: string;
+    q?: string;
+  }): Promise<PessoaUnificada[]> {
+    const search = new URLSearchParams();
+    if (params?.id_singular) search.set('id_singular', params.id_singular);
+    if (params?.categoria) search.set('categoria', params.categoria);
+    if (params?.q) search.set('q', params.q);
+    const query = search.toString();
+    return await apiRequest(`/pessoas${query ? `?${query}` : ''}`);
+  }
+
+  async updatePessoaVinculo(
+    vinculoId: string,
+    data: Partial<PessoaUnificada>,
+  ): Promise<PessoaUnificada> {
+    return await apiRequest(`/pessoas/${vinculoId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async createCooperativaAuxItem<T = any>(
+    cooperativaId: string,
+    resource: string,
+    data: Record<string, unknown>,
+  ): Promise<T> {
+    return await apiRequest(`/cooperativas/${cooperativaId}/aux/${resource}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateCooperativaAuxItem<T = any>(
+    cooperativaId: string,
+    resource: string,
+    itemId: string,
+    data: Record<string, unknown>,
+  ): Promise<T> {
+    return await apiRequest(`/cooperativas/${cooperativaId}/aux/${resource}/${itemId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteCooperativaAuxItem(
+    cooperativaId: string,
+    resource: string,
+    itemId: string,
+  ): Promise<void> {
+    await apiRequest(`/cooperativas/${cooperativaId}/aux/${resource}/${itemId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async importCooperativaAux(
+    cooperativaId: string,
+    resource: string,
+    items: Record<string, unknown>[],
+    mode: 'replace' | 'append' = 'replace',
+  ): Promise<{ ok: boolean; inserted?: number }> {
+    return await apiRequest(`/cooperativas/${cooperativaId}/aux/${resource}/import?mode=${mode}`, {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    });
+  }
+
+  async importCooperativaAuxBulk(
+    resource: string,
+    items: Record<string, unknown>[],
+    mode: 'replace' | 'append' = 'replace',
+  ): Promise<{ ok: boolean; inserted?: number; targets?: Record<string, { inserted: number }>; denied?: string[] }> {
+    return await apiRequest(`/admin/gestao-dados/aux/${resource}/import?mode=${mode}`, {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    });
+  }
+
+  async requestDiretorPhoneAccess(
+    cooperativaId: string,
+    diretorId: string,
+    motivo?: string,
+  ): Promise<{ ok?: boolean; id?: string; status?: string; message?: string }> {
+    return await apiRequest(`/cooperativas/${cooperativaId}/diretores/${diretorId}/solicitar-celular`, {
+      method: 'POST',
+      body: JSON.stringify({ motivo: motivo || '' }),
+    });
+  }
+
+  async getDiretorPhoneAccessRequests(
+    cooperativaId: string,
+    status: 'pending' | 'approved' | 'rejected' | 'all' = 'pending',
+  ): Promise<DiretorPhoneAccessRequest[]> {
+    const result = await apiRequest(`/cooperativas/${cooperativaId}/diretores/celular-requests?status=${status}`);
+    return Array.isArray(result) ? result : [];
+  }
+
+  async approveDiretorPhoneAccessRequest(
+    cooperativaId: string,
+    requestId: string,
+    notes?: string,
+  ): Promise<void> {
+    await apiRequest(`/cooperativas/${cooperativaId}/diretores/celular-requests/${requestId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ notes: notes || '' }),
+    });
+  }
+
+  async rejectDiretorPhoneAccessRequest(
+    cooperativaId: string,
+    requestId: string,
+    notes?: string,
+  ): Promise<void> {
+    await apiRequest(`/cooperativas/${cooperativaId}/diretores/celular-requests/${requestId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ notes: notes || '' }),
+    });
+  }
+
   // DASHBOARD
   async getDashboardStats(): Promise<DashboardStats> {
     try {
@@ -261,7 +453,7 @@ class ApiService {
   // CONFIGURAÇÕES
   async getSystemSettings(): Promise<SystemSettings> {
     const response = await apiRequest('/configuracoes/sistema');
-    return response?.settings ?? null;
+    return response?.settings ?? DEFAULT_SYSTEM_SETTINGS;
   }
 
   async updateSystemSettings(settings: SystemSettings): Promise<SystemSettings> {
@@ -270,6 +462,60 @@ class ApiService {
       body: JSON.stringify(settings),
     });
     return response?.settings ?? settings;
+  }
+
+  async getCentralArquivosGoogleDriveCredentialStatus(): Promise<CentralArquivosGoogleDriveCredentialStatus> {
+    try {
+      return await apiRequest('/configuracoes/sistema/udocs/google-drive');
+    } catch {
+      return await apiRequest('/configuracoes/sistema/central-arquivos/google-drive');
+    }
+  }
+
+  async updateCentralArquivosGoogleDriveCredential(
+    serviceAccount: Record<string, unknown>,
+  ): Promise<CentralArquivosGoogleDriveCredentialStatus> {
+    try {
+      return await apiRequest('/configuracoes/sistema/udocs/google-drive', {
+        method: 'PUT',
+        body: JSON.stringify({ service_account: serviceAccount }),
+      });
+    } catch {
+      return await apiRequest('/configuracoes/sistema/central-arquivos/google-drive', {
+        method: 'PUT',
+        body: JSON.stringify({ service_account: serviceAccount }),
+      });
+    }
+  }
+
+  async updateCentralArquivosGoogleDriveFolders(payload: {
+    drive_id?: string | null;
+    udocs_root_folder_id: string;
+    umarketing_root_folder_id: string;
+  }): Promise<CentralArquivosGoogleDriveCredentialStatus> {
+    try {
+      return await apiRequest('/configuracoes/sistema/udocs/google-drive', {
+        method: 'PUT',
+        body: JSON.stringify({ drive: payload }),
+      });
+    } catch {
+      return await apiRequest('/configuracoes/sistema/central-arquivos/google-drive', {
+        method: 'PUT',
+        body: JSON.stringify({ drive: payload }),
+      });
+    }
+  }
+
+  async deleteCentralArquivosGoogleDriveCredential(): Promise<CentralArquivosGoogleDriveCredentialStatus> {
+    try {
+      return await apiRequest('/configuracoes/sistema/udocs/google-drive', {
+        method: 'DELETE',
+      });
+    } catch {
+      return await apiRequest('/configuracoes/sistema/central-arquivos/google-drive', {
+        method: 'DELETE',
+      });
+    }
   }
 
   async getReportsOverview(params?: { start?: string; end?: string }): Promise<ReportsOverview> {

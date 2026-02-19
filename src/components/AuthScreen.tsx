@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { LoginForm } from './LoginForm';
 import { RegisterForm } from './RegisterForm';
-import brandWordmark from '../logo/urede_positivo.svg';
+import brandWordmark from '../logo/uhub_logo.svg';
 
 export const AuthScreen: React.FC = () => {
   const [isLoginMode, setIsLoginMode] = useState(true);
@@ -14,7 +14,7 @@ export const AuthScreen: React.FC = () => {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="auth-hero">
-          <img src={brandWordmark} alt="Uniodonto" />
+          <img src={brandWordmark} alt="UHub" />
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             Sistema Uniodonto
           </h1>

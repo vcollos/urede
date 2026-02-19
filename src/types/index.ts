@@ -9,6 +9,8 @@ export interface User {
   whatsapp: string;
   cargo: string;
   cooperativa_id: string;
+  cooperativas_ids?: string[];
+  modulos_acesso?: Array<'hub' | 'urede' | 'udocs' | 'umarketing' | 'ufast' | 'central_apps'>;
   papel: 'admin' | 'operador' | 'federacao' | 'confederacao';
   ativo: boolean;
   data_cadastro: string;
@@ -26,6 +28,8 @@ export interface Cooperativa {
   uniodonto: string;
   cnpj: string;
   cro_operadora: string;
+  resp_tecnico?: string;
+  cro_resp_tecnico?: string;
   data_fundacao: string;
   raz_social: string;
   codigo_ans: string;
@@ -45,6 +49,9 @@ export interface Cidade {
   nm_regiao: string;
   cidades_habitantes: number;
   id_singular: string;
+  id_singular_credenciamento?: string | null;
+  id_singular_vendas?: string | null;
+  reg_ans?: string | null;
   nm_singular?: string | null;
 }
 
@@ -53,12 +60,39 @@ export interface Operador {
   nome: string;
   email: string;
   telefone: string;
-  whatsapp: string;
+  whatsapp?: string;
+  wpp?: boolean;
   cargo: string;
   id_singular: string;
+  cooperativas_ids?: string[];
+  cooperativa_principal_id?: string;
+  modulos_acesso?: Array<'hub' | 'urede' | 'udocs' | 'umarketing' | 'ufast' | 'central_apps'>;
   ativo: boolean;
   data_cadastro: string;
   papel?: 'operador' | 'admin' | 'federacao' | 'confederacao';
+}
+
+export interface PessoaUnificada {
+  vinculo_id: string;
+  pessoa_id: string;
+  id_singular: string;
+  singular_nome: string;
+  categoria: string;
+  subcategoria?: string | null;
+  primeiro_nome: string;
+  sobrenome?: string | null;
+  email?: string | null;
+  telefone?: string | null;
+  wpp?: boolean;
+  departamento?: string | null;
+  cargo_funcao?: string | null;
+  pasta?: string | null;
+  principal?: boolean;
+  visivel?: boolean;
+  chefia?: boolean;
+  ativo?: boolean;
+  inicio_mandato?: number | null;
+  fim_mandato?: number | null;
 }
 
 export interface Pedido {
@@ -150,6 +184,21 @@ export interface CoberturaLog {
   timestamp: string;
 }
 
+export interface CooperativaOverviewLog {
+  id: string;
+  cooperativa_id: string;
+  cooperativa_nome?: string | null;
+  campo: string;
+  acao: 'create' | 'update' | 'delete' | string;
+  valor_anterior?: string | null;
+  valor_novo?: string | null;
+  usuario_email: string;
+  usuario_nome: string;
+  usuario_papel: string;
+  detalhes?: string | null;
+  timestamp: string;
+}
+
 export interface PendingUserApproval {
   id: string;
   email: string;
@@ -159,6 +208,23 @@ export interface PendingUserApproval {
   requested_papel: 'admin' | 'operador' | 'federacao' | 'confederacao';
   approval_status: string;
   created_at: string;
+}
+
+export interface DiretorPhoneAccessRequest {
+  id: string;
+  cooperativa_id: string;
+  diretor_id: string;
+  diretor_nome: string;
+  diretor_cargo?: string | null;
+  requester_email: string;
+  requester_nome: string;
+  requester_cooperativa_id?: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  motivo?: string | null;
+  created_at: string;
+  decided_at?: string | null;
+  decided_by?: string | null;
+  decision_notes?: string | null;
 }
 
 export interface SystemSettings {
@@ -171,6 +237,42 @@ export interface SystemSettings {
   autoNotifyManagers: boolean;
   enableSelfRegistration: boolean;
   pedido_motivos: string[];
+  hub_cadastros: {
+    tipos_endereco: string[];
+    tipos_conselho: string[];
+    tipos_contato: string[];
+    subtipos_contato: string[];
+    redes_sociais: string[];
+    departamentos: string[];
+  };
+}
+
+export interface CentralArquivosGoogleDriveCredentialStatus {
+  can_manage: boolean;
+  configured: boolean;
+  source: 'secure_store' | 'env' | null;
+  encryption_enabled: boolean;
+  credential: {
+    project_id: string | null;
+    client_email_masked: string;
+    updated_at: string | null;
+    updated_by: string | null;
+  } | null;
+  drive: {
+    source: 'secure_store' | 'env';
+    drive_id: string | null;
+    udocs_root_folder_id: string;
+    umarketing_root_folder_id: string | null;
+    validation?: {
+      status: 'valid';
+      checked_at: string;
+      drive_name: string | null;
+      udocs_folder_name: string | null;
+      umarketing_folder_name: string | null;
+    } | null;
+    updated_at: string | null;
+    updated_by: string | null;
+  };
 }
 
 export interface PedidoImportPayloadItem {

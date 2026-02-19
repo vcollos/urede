@@ -168,11 +168,11 @@ const exportPdf = (report: ReportsOverview) => {
   win.document.write(`
     <html>
       <head>
-        <title>Relatório uRede (${report.range.start} a ${report.range.end})</title>
+        <title>Relatório URede (${report.range.start} a ${report.range.end})</title>
         ${style}
       </head>
       <body>
-        <h1>Relatório uRede</h1>
+        <h1>Relatório URede</h1>
         <p>Período: ${report.range.start} a ${report.range.end}</p>
         <div class="section">
           <h2>Criação de pedidos</h2>

@@ -9,7 +9,7 @@ import {
 
 const BASE_PATH = '/documentacao/usuarios';
 const AREA_SUBTITLE =
-  'Guias completos para operadores, gestores e auditores utilizarem o portal uRede com consistência.';
+  'Guias completos para operadores, gestores e auditores utilizarem o portal URede com consistência.';
 
 const normalizePathname = (pathname: string) =>
   pathname.replace(/\/+$/, '') || '/';
@@ -56,7 +56,7 @@ export function DocumentacaoUsuariosApp() {
 
   useEffect(() => {
     if (typeof document !== 'undefined' && activeDoc) {
-      document.title = `${activeDoc.title} · Documentação uRede`;
+      document.title = `${activeDoc.title} · Documentação URede`;
     }
   }, [activeDoc]);
 

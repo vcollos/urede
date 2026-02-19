@@ -155,6 +155,42 @@ npm --version
    ```
    - Gera artefatos em `build/`.
 
+### 6.1 Sequência oficial de portas (UHub + Sub Apps)
+
+- `3400`: Frontend principal do UHub (`npm run dev`).
+- `8300` (fallback `8301,8302,8303`): API local (`npm run server:dev`).
+- `3501-3599`: faixa reservada para apps externos em `sub_apps/*`.
+
+Status atual da Central de Apps:
+- `Gerador de Propostas` está integrado em `/hub/apps/propostas` (sem servidor separado obrigatório).
+- `3501` fica reservado para rodar `sub_apps/proposta` em modo standalone quando necessário.
+- `Gerador de Assinaturas de Email` está integrado em `/hub/apps/assinatura-email`.
+- `3502` fica reservado para rodar `sub_apps/email_signature` em modo standalone quando necessário.
+- `UDocs` está integrada como módulo `UDocs` em `/udocs/dashboard`.
+- `3503` fica reservado para rodar `sub_apps/central_arquivos` em modo standalone quando necessário.
+
+Regra para novos apps:
+1. Integrar primeiro no shell do UHub em `/hub/apps/<slug>`, mantendo layout e Tailwind do UHub.
+2. Reservar a próxima porta livre da faixa `3501-3599` apenas quando houver necessidade de execução standalone.
+3. Quando houver standalone, configurar no `vite.config.ts` do sub app e registrar opcionalmente URL no `.env` (`VITE_SUBAPP_<NOME>_URL`).
+4. Atualizar `sub_apps/README.md` e a documentação principal com rota canônica e porta reservada.
+
+Exemplo de execução padrão (módulo integrado):
+```bash
+# terminal 1 - hub
+npm run dev
+
+# terminal 2 - api
+npm run server:dev
+```
+
+Opcional (somente manutenção standalone do app externo):
+```bash
+npm --prefix sub_apps/proposta run dev
+npm --prefix sub_apps/email_signature run dev
+npm --prefix sub_apps/central_arquivos run dev
+```
+
 ---
 
 ## 7. Variáveis de Ambiente
@@ -162,6 +198,10 @@ npm --version
 ### Frontend (`.env`, `.env.local`)
 ```bash
 VITE_API_BASE_URL=http://127.0.0.1:8300
+# opcional (apenas para manutenção standalone de sub app):
+# VITE_SUBAPP_PROPOSTA_URL=http://127.0.0.1:3501
+# VITE_SUBAPP_EMAIL_SIGNATURE_URL=http://127.0.0.1:3502
+# VITE_SUBAPP_CENTRAL_ARQUIVOS_URL=http://127.0.0.1:3503
 ```
 Outros valores poderão ser adicionados conforme integração com serviços externos.
 
@@ -171,13 +211,15 @@ JWT_SECRET=dev-secret-change-me
 SQLITE_PATH=./data/urede.db
 TABLE_PREFIX=urede_
 INSECURE_MODE=false
-ALLOWED_ORIGINS=http://localhost:3400
+ALLOWED_ORIGINS=http://localhost:3400,http://127.0.0.1:3400,http://localhost:3501,http://127.0.0.1:3501,http://localhost:3502,http://127.0.0.1:3502,http://localhost:3503,http://127.0.0.1:3503
 PORT=8300
 PORT_FALLBACKS=8301,8302,8303
 ```
 - `INSECURE_MODE=true` libera autenticação para desenvolvimento.
 - Ajuste `ALLOWED_ORIGINS` para ambientes adicionais (app em produção, etc.).
 - `PORT` define a porta preferencial e `PORT_FALLBACKS` lista alternativas caso alguma já esteja em uso.
+- Para a UDocs, configure `GDRIVE_*` (service account + drive id) conforme `database/functions/server/.env.example`.
+- Para salvar o JSON de Service Account via tela (`Hub > Configurações`), defina também `CENTRAL_ARQUIVOS_ENCRYPTION_KEY` no backend.
 
 ---
 
@@ -199,7 +241,29 @@ bash scripts/import-csv-sqlite.sh
 ## 9. Estrutura de Pastas (Simplificada)
 
 ```
-.
+
+---
+
+## Atualizações Recentes (Admin e Usuários)
+
+- Telefones de `urede_operadores` foram unificados em `telefone` com flag booleana `wpp`.
+- O campo legado `whatsapp` texto permanece apenas para retrocompatibilidade.
+- Na UI de usuários, o contato é exibido em uma única linha de telefone com ícone do WhatsApp quando `wpp=true`.
+- O menu `Responsáveis` foi renomeado para `Usuários`.
+- `Usuários` e `Gestão de dados` agora aparecem como subitens de `Configurações`, somente para administradores.
+- Navegação modular ativada: UHub concentra homepage e menus globais (`Cooperativas`, `Cidades`), Central de Apps, URede concentra `Dashboard`, `Relatórios`, `Pedidos` e `Pedidos em lote`, UDocs concentra a biblioteca digital institucional, UMarketing concentra comunicação institucional e Ufast concentra o acesso à Câmara.
+- O controle de acesso por usuário passou a respeitar `modulos_acesso` com os módulos `central_apps`, `urede`, `udocs`, `umarketing` e `ufast`.
+- Branding por contexto: o topo alterna identidade visual conforme o módulo ativo.
+- Tela de autenticação atualizada para identidade UHub; na homepage do hub, o card de boas-vindas foi simplificado para reduzir redundância visual.
+- Configurações agora são contextuais por módulo: Hub (`/hub/configuracoes`) e URede (`/urede/configuracoes`) usam a mesma tela com seções diferentes.
+- Alteração de configurações de módulo é restrita a Administrador da Confederação (validação no frontend e backend).
+- CRUD de usuários atualizado para múltiplas singulares: cadastro e edição aceitam uma ou mais associações, com definição de singular principal.
+- Vínculos extras de usuário/cooperativa são persistidos em `auth_user_cooperativas` e sincronizados com `auth_users.cooperativa_id` (principal).
+- Na edição de usuário, a redefinição de credencial provisória é acionada por botão explícito no modal.
+- A gestão de cooperativas ganhou aba dedicada de **Endereços** para CRUD completo.
+- Endereços agora possuem `exibir_visao_geral` (0/1) para controlar exibição na aba **Visão Geral**.
+- Endereços do tipo `plantao_urgencia_emergencia` sincronizam com `cooperativa_plantao_clinicas` (vínculo por `plantao_clinica_id`/`endereco_id`) para reduzir duplicidade entre cadastros de endereço e plantão.
+- O Hub passou a manter catálogos globais de dados cadastrais (`tipos_endereco`, `tipos_conselho`, `tipos_contato`, `subtipos_contato`, `redes_sociais`, `departamentos`) em `settings.system_preferences`, reutilizados no cadastro auxiliar de cooperativas.
 ├── src/
 │   ├── App.tsx
 │   ├── main.tsx
@@ -255,7 +319,43 @@ bash scripts/import-csv-sqlite.sh
 - `CooperativasView` (componente inline em `App`) -> `/cooperativas`, `/operadores`, `/cidades`
 - `OperadoresLista` -> `/operadores`
 
-### 10.4 Dashboard
+### 10.4 Navegação Modular (fase atual)
+- **UHub**: `/hub`, `/hub/apps`, `/hub/apps/propostas`, `/hub/apps/assinatura-email`, `/hub/cooperativas`, `/hub/cidades`, `/hub/configuracoes`, `/hub/usuarios`, `/hub/gestao-dados`.
+- **URede**: `/urede/dashboard`, `/urede/relatorios`, `/urede/pedidos`, `/urede/importacao`, `/urede/configuracoes`.
+- **UDocs**: `/udocs/dashboard`.
+- **UMarketing**: `/umarketing/dashboard`.
+- **Ufast**: `/ufast/dashboard`.
+- O shell principal alterna menu, atalhos e marca conforme o módulo ativo.
+- A Central de Apps é tratada como recurso global do UHub; apps externos devem ser incorporados por essa rota antes de considerar execução isolada.
+- Rotas legadas continuam com fallback para preservar deep links existentes.
+- As configurações são exibidas por contexto de módulo (Hub x URede) na mesma view.
+- Somente Administrador da Confederação pode salvar configurações de módulo.
+
+### 10.5 Padrão de Telefonia (vigente)
+- Campo canônico: `telefone` (string, somente números).
+- Indicador de WhatsApp: `wpp` (0/1).
+- Em contatos (`cooperativa_contatos` e `cooperativa_plantao_contatos`), `tipo` telefônico é padronizado para `telefone`; WhatsApp é identificado por `wpp=1`.
+- Colunas legadas (`telefone_fixo`, `telefone_celular`, `whatsapp` texto) são mantidas para retrocompatibilidade, mas não devem ser usadas em novas implementações.
+
+Regras de exibição:
+- Celular BR: `(DD) 9 0000-0000`
+- Fixo BR: `(DD) 0000-0000`
+- 0800: `0800 0000 0000`
+
+Migração de referência:
+- `db/migrations/sqlite/20260213_015_telefone_unificado_wpp.sql`
+
+### 10.6 Unificação de Pessoas (vigente)
+- Cadastro canônico em `urede_pessoas`.
+- Vínculo por cooperativa e contexto funcional em `urede_pessoa_vinculos` (sempre com `id_singular`).
+- Mapeamento opcional com usuários em `urede_pessoa_usuarios`.
+- Categorias iniciais: `diretoria`, `regulatorio`, `conselho`, `colaborador`, `ouvidoria`, `lgpd`, `auditoria`.
+- Tabelas legadas permanecem ativas para compatibilidade de telas durante a transição.
+
+Migração de referência:
+- `db/migrations/sqlite/20260213_017_pessoas_unificadas.sql`
+
+### 10.7 Dashboard
 - `/dashboard/stats` + `/pedidos`
 - Eventos custom (`window.dispatchEvent`) garantem sincronia após ações (created/updated/deleted)
 
