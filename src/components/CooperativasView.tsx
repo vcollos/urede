@@ -76,19 +76,28 @@ const formatCooperativaTipo = (tipo: string) => {
   return tipo || '—';
 };
 
+const normalizeCooperativaPapel = (value: unknown) =>
+  String(value ?? '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
 const formatCooperativaPapel = (value: unknown) => {
   const raw = String(value ?? '').trim();
   if (!raw) return '—';
-  const normalized = raw.toLowerCase();
-  if (normalized === 'operadora') return 'Operadora';
-  if (normalized === 'institucional') return 'Institucional';
+  const normalized = normalizeCooperativaPapel(raw);
+  if (normalized.includes('operador')) return 'Operadora';
+  if (normalized.includes('prestador')) return 'Prestadora';
+  if (normalized.includes('institucional')) return 'Institucional';
   return raw.charAt(0).toUpperCase() + raw.slice(1);
 };
 
 const cooperativaPapelBadgeClass = (value: unknown) => {
-  const normalized = String(value ?? '').trim().toLowerCase();
-  if (normalized === 'operadora') return 'bg-emerald-100 text-emerald-800 border-emerald-200';
-  if (normalized === 'institucional') return 'bg-blue-100 text-blue-800 border-blue-200';
+  const normalized = normalizeCooperativaPapel(value);
+  if (normalized.includes('operador')) return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+  if (normalized.includes('prestador')) return 'bg-amber-100 text-amber-800 border-amber-200';
+  if (normalized.includes('institucional')) return 'bg-blue-100 text-blue-800 border-blue-200';
   if (normalized) return 'bg-amber-100 text-amber-800 border-amber-200';
   return 'bg-slate-100 text-slate-700 border-slate-200';
 };
@@ -547,6 +556,43 @@ export function CooperativasView() {
       return queryTerms.every((term) => searchableRow.includes(term));
     });
   }, [cooperativas, searchTerm, cidadeCountMap, operadorCountMap]);
+
+  const panoramaResumo = useMemo(() => {
+    const totalCooperativas = cooperativas.length;
+    let singulares = 0;
+    let federacoes = 0;
+    let confederacoes = 0;
+    let operadoras = 0;
+    let prestadores = 0;
+    let institucionais = 0;
+
+    cooperativas.forEach((coop) => {
+      if (coop.tipo === 'SINGULAR') singulares += 1;
+      if (coop.tipo === 'FEDERACAO') federacoes += 1;
+      if (coop.tipo === 'CONFEDERACAO') confederacoes += 1;
+
+      const papel = normalizeCooperativaPapel(coop.op_pr);
+      if (papel.includes('operador')) operadoras += 1;
+      else if (papel.includes('prestador')) prestadores += 1;
+      else if (papel.includes('institucional')) institucionais += 1;
+    });
+
+    const cidadesIndicadas = cidades.reduce((acc, cidade) => {
+      const hasCoop = String(cidade.id_singular ?? '').trim().length > 0;
+      return acc + (hasCoop ? 1 : 0);
+    }, 0);
+
+    return {
+      totalCooperativas,
+      singulares,
+      federacoes,
+      confederacoes,
+      operadoras,
+      prestadores,
+      institucionais,
+      cidadesIndicadas,
+    };
+  }, [cooperativas, cidades]);
 
   // Calcula o escopo de edição sempre que usuário ou cooperativas mudarem.
   const scope = useMemo(() => resolveScope(user?.papel, user?.cooperativa_id, cooperativas), [user?.papel, user?.cooperativa_id, cooperativas]);
@@ -1980,6 +2026,40 @@ export function CooperativasView() {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
+          <div className="grid grid-cols-2 gap-3 border-b border-gray-200 bg-[#FBFBFD] px-4 py-4 md:grid-cols-4 xl:grid-cols-8">
+            <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">Total</p>
+              <p className="text-lg font-semibold text-gray-900">{panoramaResumo.totalCooperativas}</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">Singulares</p>
+              <p className="text-lg font-semibold text-gray-900">{panoramaResumo.singulares}</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">Federações</p>
+              <p className="text-lg font-semibold text-gray-900">{panoramaResumo.federacoes}</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">Confederações</p>
+              <p className="text-lg font-semibold text-gray-900">{panoramaResumo.confederacoes}</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">Operadoras</p>
+              <p className="text-lg font-semibold text-gray-900">{panoramaResumo.operadoras}</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">Prestadores</p>
+              <p className="text-lg font-semibold text-gray-900">{panoramaResumo.prestadores}</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">Institucionais</p>
+              <p className="text-lg font-semibold text-gray-900">{panoramaResumo.institucionais}</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">Cidades indicadas</p>
+              <p className="text-lg font-semibold text-gray-900">{panoramaResumo.cidadesIndicadas}</p>
+            </div>
+          </div>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>

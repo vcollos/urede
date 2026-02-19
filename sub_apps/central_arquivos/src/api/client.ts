@@ -6,10 +6,41 @@ const deriveDefaultBase = () => {
       const protocol = window.location.protocol || 'http:';
       const hostname = window.location.hostname || '127.0.0.1';
       const port = 8300;
+      const isIpAddress = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname);
       const localHosts = new Set(['localhost', '127.0.0.1', '0.0.0.0']);
+
       if (localHosts.has(hostname)) {
         return `${protocol}//127.0.0.1:${port}`;
       }
+
+      if (isIpAddress) {
+        return `${protocol}//${hostname}:${port}`;
+      }
+
+      if (hostname === 'urede.collos.com.br') {
+        return `${protocol}//apiurede.collos.com.br`;
+      }
+
+      if (hostname === 'uhub.collos.com.br') {
+        return `${protocol}//apiuhub.collos.com.br`;
+      }
+
+      if (hostname === 'uhub.uniodonto.coop.br') {
+        return `${protocol}//apiuhub.uniodonto.coop.br`;
+      }
+
+      if (hostname.startsWith('uhub.')) {
+        return `${protocol}//apiuhub.${hostname.slice('uhub.'.length)}`;
+      }
+
+      if (hostname.startsWith('urede.')) {
+        return `${protocol}//apiurede.${hostname.slice('urede.'.length)}`;
+      }
+
+      if (hostname.endsWith('.collos.com.br') || hostname.endsWith('.uniodonto.coop.br')) {
+        return `${protocol}//api.${hostname}`;
+      }
+
       return `${protocol}//${hostname}`;
     }
   } catch {

@@ -1116,7 +1116,7 @@ export default function App() {
         <div className="shortcuts-grid">
           <div>
             <h3>Atalhos</h3>
-            <ul>
+            <ul className="shortcuts-list">
               {shortcuts.length === 0 ? (
                 <li className="muted">Sem atalhos configurados.</li>
               ) : (
@@ -1138,7 +1138,7 @@ export default function App() {
 
           <div>
             <h3>Apoio</h3>
-            <ul>
+            <ul className="support-list">
               <li>{moduleMeta.supportEmail}</li>
               <li>{moduleMeta.supportPhone}</li>
             </ul>

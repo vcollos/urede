@@ -663,9 +663,18 @@ tbody tr.folder-row {
   margin: 10px 0 0;
   padding: 0;
   list-style: none;
+}
+
+.shortcuts-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px 14px;
+}
+
+.support-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
 }
 
 .shortcuts-grid li {
@@ -861,6 +870,10 @@ tbody tr.folder-row {
     flex-direction: column;
     align-items: flex-start;
   }
+
+  .shortcuts-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 560px) {
@@ -880,7 +893,7 @@ tbody tr.folder-row {
     grid-template-columns: 1fr;
   }
 
-  .shortcuts-grid ul {
+  .shortcuts-list {
     grid-template-columns: 1fr;
   }
 }
