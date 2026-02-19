@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
+import type { ChangeEvent } from 'react';
 import { Check, X } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { apiService } from '../services/apiService';
-import type { CooperativaConfig, SystemSettings } from '../types';
+import type { CentralArquivosGoogleDriveCredentialStatus, CooperativaConfig, SystemSettings } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
 type ConfiguracoesModule = 'hub' | 'urede';
@@ -228,6 +229,24 @@ const normalizeSystemSettings = (settings?: SystemSettings | null): SystemSettin
   };
 };
 
+const formatDateTime = (value?: string | null) => {
+  if (!value) return 'não informado';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(date);
+};
+
+const buildDriveFoldersForm = (
+  status?: CentralArquivosGoogleDriveCredentialStatus | null,
+) => ({
+  drive_id: status?.drive?.drive_id ?? '',
+  udocs_root_folder_id: status?.drive?.udocs_root_folder_id ?? 'root',
+  umarketing_root_folder_id: status?.drive?.umarketing_root_folder_id ?? '',
+});
+
 export function ConfiguracoesView({ module }: ConfiguracoesViewProps) {
   const { user } = useAuth();
 
@@ -251,6 +270,17 @@ export function ConfiguracoesView({ module }: ConfiguracoesViewProps) {
 
   const [cooperativaConfig, setCooperativaConfig] = useState<CooperativaConfig | null>(null);
   const [isLoadingPermission, setIsLoadingPermission] = useState(false);
+  const [driveCredentialStatus, setDriveCredentialStatus] = useState<CentralArquivosGoogleDriveCredentialStatus | null>(null);
+  const [isLoadingDriveCredential, setIsLoadingDriveCredential] = useState(false);
+  const [driveCredentialFeedback, setDriveCredentialFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [driveFoldersFeedback, setDriveFoldersFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [selectedServiceAccount, setSelectedServiceAccount] = useState<Record<string, unknown> | null>(null);
+  const [selectedServiceAccountFileName, setSelectedServiceAccountFileName] = useState('');
+  const [serviceAccountInputKey, setServiceAccountInputKey] = useState(0);
+  const [driveFoldersForm, setDriveFoldersForm] = useState(() => buildDriveFoldersForm());
+  const [isSavingDriveCredential, setIsSavingDriveCredential] = useState(false);
+  const [isDeletingDriveCredential, setIsDeletingDriveCredential] = useState(false);
+  const [isSavingDriveFolders, setIsSavingDriveFolders] = useState(false);
 
   const moduleTitle = module === 'hub' ? 'Configurações do Hub' : 'Configurações do URede';
   const moduleDescription = module === 'hub'
@@ -319,8 +349,66 @@ export function ConfiguracoesView({ module }: ConfiguracoesViewProps) {
     };
   }, [user?.cooperativa_id, user?.papel]);
 
+  useEffect(() => {
+    if (module !== 'hub') {
+      setDriveCredentialStatus(null);
+      setDriveCredentialFeedback(null);
+      setDriveFoldersFeedback(null);
+      setSelectedServiceAccount(null);
+      setSelectedServiceAccountFileName('');
+      setDriveFoldersForm(buildDriveFoldersForm());
+      setIsLoadingDriveCredential(false);
+      return;
+    }
+
+    let active = true;
+    const run = async () => {
+      try {
+        setIsLoadingDriveCredential(true);
+        const response = await apiService.getCentralArquivosGoogleDriveCredentialStatus();
+        if (active) {
+          setDriveCredentialStatus(response);
+          setDriveFoldersForm(buildDriveFoldersForm(response));
+        }
+      } catch (error) {
+        if (!active) return;
+        const errorStatus = typeof (error as { status?: unknown })?.status === 'number'
+          ? Number((error as { status?: unknown }).status)
+          : null;
+
+        if (errorStatus === 403) {
+          setDriveCredentialStatus(null);
+          setDriveCredentialFeedback(null);
+          setDriveFoldersFeedback(null);
+          setDriveFoldersForm(buildDriveFoldersForm());
+          return;
+        }
+
+        const message = error instanceof Error ? error.message : 'Não foi possível carregar as configurações do Google Drive.';
+        setDriveCredentialFeedback({ type: 'error', message });
+      } finally {
+        if (active) {
+          setIsLoadingDriveCredential(false);
+        }
+      }
+    };
+
+    run();
+
+    return () => {
+      active = false;
+    };
+  }, [module, user?.email]);
+
   const isConfederacaoAdmin = Boolean(user?.papel === 'admin' && cooperativaConfig?.tipo === 'CONFEDERACAO');
   const awaitingPermissionCheck = Boolean(user?.papel === 'admin' && user?.cooperativa_id && isLoadingPermission && !cooperativaConfig);
+  const canManageCentralArquivosCredential = Boolean(driveCredentialStatus?.can_manage) || isConfederacaoAdmin;
+  const canAccessModuleSettings = module === 'hub'
+    ? (isConfederacaoAdmin || canManageCentralArquivosCredential)
+    : isConfederacaoAdmin;
+  const awaitingHubPermissionCheck = module === 'hub'
+    ? (!isConfederacaoAdmin && isLoadingDriveCredential)
+    : false;
 
   const handleAddMotivo = () => {
     const trimmed = novoMotivo.trim();
@@ -412,6 +500,121 @@ export function ConfiguracoesView({ module }: ConfiguracoesViewProps) {
     setEditingHubItem(null);
   };
 
+  const handleServiceAccountFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const raw = await file.text();
+      const parsed = JSON.parse(raw) as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Arquivo JSON inválido.');
+      }
+      setSelectedServiceAccount(parsed as Record<string, unknown>);
+      setSelectedServiceAccountFileName(file.name);
+      setDriveCredentialFeedback({
+        type: 'success',
+        message: 'Arquivo carregado. Clique em "Salvar credencial" para aplicar.',
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Não foi possível ler o arquivo JSON.';
+      setSelectedServiceAccount(null);
+      setSelectedServiceAccountFileName('');
+      setDriveCredentialFeedback({ type: 'error', message });
+    }
+  };
+
+  const handleSaveDriveCredential = async () => {
+    if (!selectedServiceAccount) {
+      setDriveCredentialFeedback({
+        type: 'error',
+        message: 'Selecione um arquivo JSON de Service Account antes de salvar.',
+      });
+      return;
+    }
+
+    try {
+      setIsSavingDriveCredential(true);
+      setDriveCredentialFeedback(null);
+      const response = await apiService.updateCentralArquivosGoogleDriveCredential(selectedServiceAccount);
+      setDriveCredentialStatus(response);
+      setDriveFoldersForm(buildDriveFoldersForm(response));
+      setSelectedServiceAccount(null);
+      setSelectedServiceAccountFileName('');
+      setServiceAccountInputKey((prev) => prev + 1);
+      setDriveCredentialFeedback({ type: 'success', message: 'Credencial salva com sucesso.' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Não foi possível salvar a credencial.';
+      setDriveCredentialFeedback({ type: 'error', message });
+    } finally {
+      setIsSavingDriveCredential(false);
+    }
+  };
+
+  const handleDeleteDriveCredential = async () => {
+    try {
+      setIsDeletingDriveCredential(true);
+      setDriveCredentialFeedback(null);
+      const response = await apiService.deleteCentralArquivosGoogleDriveCredential();
+      setDriveCredentialStatus(response);
+      setDriveFoldersForm(buildDriveFoldersForm(response));
+      setSelectedServiceAccount(null);
+      setSelectedServiceAccountFileName('');
+      setServiceAccountInputKey((prev) => prev + 1);
+      setDriveCredentialFeedback({ type: 'success', message: 'Credencial removida com sucesso.' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Não foi possível remover a credencial.';
+      setDriveCredentialFeedback({ type: 'error', message });
+    } finally {
+      setIsDeletingDriveCredential(false);
+    }
+  };
+
+  const handleSaveDriveFolders = async () => {
+    const driveId = driveFoldersForm.drive_id.trim();
+    const udocsRootFolderId = driveFoldersForm.udocs_root_folder_id.trim();
+    const umarketingRootFolderId = driveFoldersForm.umarketing_root_folder_id.trim();
+    if (!driveId) {
+      setDriveFoldersFeedback({
+        type: 'error',
+        message: 'Informe o Shared Drive ID (U-Hub).',
+      });
+      return;
+    }
+    if (!udocsRootFolderId) {
+      setDriveFoldersFeedback({
+        type: 'error',
+        message: 'Informe a pasta raiz do UDocs.',
+      });
+      return;
+    }
+    if (!umarketingRootFolderId) {
+      setDriveFoldersFeedback({
+        type: 'error',
+        message: 'Informe a pasta raiz do UMkt.',
+      });
+      return;
+    }
+
+    try {
+      setIsSavingDriveFolders(true);
+      setDriveFoldersFeedback(null);
+      const response = await apiService.updateCentralArquivosGoogleDriveFolders({
+        drive_id: driveId,
+        udocs_root_folder_id: udocsRootFolderId,
+        umarketing_root_folder_id: umarketingRootFolderId,
+      });
+      setDriveCredentialStatus(response);
+      setDriveFoldersForm(buildDriveFoldersForm(response));
+      setDriveFoldersFeedback({ type: 'success', message: 'Estrutura de pastas validada e salva com sucesso.' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Não foi possível salvar a estrutura de pastas.';
+      setDriveFoldersFeedback({ type: 'error', message });
+    } finally {
+      setIsSavingDriveFolders(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!isConfederacaoAdmin) return;
 
@@ -468,7 +671,7 @@ export function ConfiguracoesView({ module }: ConfiguracoesViewProps) {
     );
   }
 
-  if (awaitingPermissionCheck) {
+  if (awaitingPermissionCheck || awaitingHubPermissionCheck) {
     return (
       <div className="space-y-6">
         <div className="space-y-1">
@@ -479,7 +682,7 @@ export function ConfiguracoesView({ module }: ConfiguracoesViewProps) {
           <CardHeader>
             <CardTitle>Verificando permissões</CardTitle>
             <CardDescription>
-              Aguarde um instante enquanto confirmamos o vínculo com a Confederação.
+              Aguarde um instante enquanto confirmamos os acessos disponíveis.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -487,7 +690,7 @@ export function ConfiguracoesView({ module }: ConfiguracoesViewProps) {
     );
   }
 
-  if (!isConfederacaoAdmin) {
+  if (!canAccessModuleSettings) {
     return (
       <div className="space-y-6">
         <div className="space-y-1">
@@ -498,7 +701,9 @@ export function ConfiguracoesView({ module }: ConfiguracoesViewProps) {
           <CardHeader>
             <CardTitle>Acesso restrito</CardTitle>
             <CardDescription>
-              Estas configurações podem ser acessadas apenas por Administradores da Confederação.
+              {module === 'hub'
+                ? 'Estas configurações podem ser acessadas apenas por Administradores da Confederação ou Administradores da Central.'
+                : 'Estas configurações podem ser acessadas apenas por Administradores da Confederação.'}
             </CardDescription>
           </CardHeader>
         </Card>
@@ -637,7 +842,7 @@ export function ConfiguracoesView({ module }: ConfiguracoesViewProps) {
         </>
       )}
 
-      {module === 'hub' && (
+      {module === 'hub' && isConfederacaoAdmin && (
         <Card>
           <CardHeader>
             <CardTitle>Cadastros globais de dados cadastrais</CardTitle>
@@ -763,16 +968,251 @@ export function ConfiguracoesView({ module }: ConfiguracoesViewProps) {
         </Card>
       )}
 
-      <div className="flex items-center justify-between">
-        {status && (
-          <p className={`text-sm ${status.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
-            {status.message}
-          </p>
-        )}
-        <Button onClick={handleSave} disabled={isSaving}>
-          {isSaving ? 'Salvando...' : 'Salvar preferências'}
-        </Button>
-      </div>
+      {module === 'hub' && canManageCentralArquivosCredential && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Google Drive · UDocs e UMkt</CardTitle>
+            <CardDescription>
+              Configure a credencial de acesso e as pastas raiz de cada módulo da Central.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {isLoadingDriveCredential ? (
+              <p className="text-sm text-gray-600 dark:text-slate-400">Carregando configuração do Google Drive...</p>
+            ) : (
+              <div className="space-y-2 rounded-md border border-gray-200 bg-gray-50 p-4 text-sm dark:border-slate-800 dark:bg-slate-900/60">
+                <p>
+                  <strong>Status da credencial:</strong>{' '}
+                  {driveCredentialStatus?.configured ? 'configurado' : 'não configurado'}
+                </p>
+                <p>
+                  <strong>Origem da credencial:</strong>{' '}
+                  {driveCredentialStatus?.source === 'secure_store'
+                    ? 'Configuração criptografada no sistema'
+                    : driveCredentialStatus?.source === 'env'
+                      ? 'Variável de ambiente (fallback)'
+                      : 'Nenhuma'}
+                </p>
+                <p>
+                  <strong>E-mail da service account:</strong>{' '}
+                  {driveCredentialStatus?.credential?.client_email_masked || 'não informado'}
+                </p>
+                <p>
+                  <strong>Projeto:</strong>{' '}
+                  {driveCredentialStatus?.credential?.project_id || 'não informado'}
+                </p>
+                <p>
+                  <strong>Atualizado em:</strong>{' '}
+                  {formatDateTime(driveCredentialStatus?.credential?.updated_at)}
+                </p>
+                <p>
+                  <strong>Atualizado por:</strong>{' '}
+                  {driveCredentialStatus?.credential?.updated_by || 'não informado'}
+                </p>
+                <hr className="border-gray-200 dark:border-slate-700" />
+                <p>
+                  <strong>Origem da estrutura:</strong>{' '}
+                  {driveCredentialStatus?.drive?.source === 'secure_store'
+                    ? 'Configuração salva no sistema'
+                    : 'Variável de ambiente (fallback)'}
+                </p>
+                <p>
+                  <strong>Shared Drive ID:</strong>{' '}
+                  {driveCredentialStatus?.drive?.drive_id || 'não informado'}
+                </p>
+                <p>
+                  <strong>Pasta raiz UDocs:</strong>{' '}
+                  {driveCredentialStatus?.drive?.udocs_root_folder_id || 'não informado'}
+                </p>
+                <p>
+                  <strong>Pasta raiz UMkt:</strong>{' '}
+                  {driveCredentialStatus?.drive?.umarketing_root_folder_id || 'não informado'}
+                </p>
+                <p>
+                  <strong>Validação Google Drive:</strong>{' '}
+                  {driveCredentialStatus?.drive?.validation?.status === 'valid'
+                    ? 'válida'
+                    : 'pendente'}
+                </p>
+                {driveCredentialStatus?.drive?.validation?.status === 'valid' && (
+                  <>
+                    <p>
+                      <strong>Nome do Shared Drive:</strong>{' '}
+                      {driveCredentialStatus?.drive?.validation?.drive_name || 'não informado'}
+                    </p>
+                    <p>
+                      <strong>Nome da pasta UDocs:</strong>{' '}
+                      {driveCredentialStatus?.drive?.validation?.udocs_folder_name || 'não informado'}
+                    </p>
+                    <p>
+                      <strong>Nome da pasta UMkt:</strong>{' '}
+                      {driveCredentialStatus?.drive?.validation?.umarketing_folder_name || 'não informado'}
+                    </p>
+                    <p>
+                      <strong>Validação em:</strong>{' '}
+                      {formatDateTime(driveCredentialStatus?.drive?.validation?.checked_at)}
+                    </p>
+                  </>
+                )}
+                <p>
+                  <strong>Estrutura atualizada em:</strong>{' '}
+                  {formatDateTime(driveCredentialStatus?.drive?.updated_at)}
+                </p>
+                <p>
+                  <strong>Estrutura atualizada por:</strong>{' '}
+                  {driveCredentialStatus?.drive?.updated_by || 'não informado'}
+                </p>
+              </div>
+            )}
+
+            <div className="space-y-4 rounded-md border border-gray-200 p-4 dark:border-slate-800">
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100">Credencial da Service Account</h3>
+                <p className="text-xs text-gray-600 dark:text-slate-400">
+                  Use o arquivo JSON da conta de serviço com acesso ao Shared Drive.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-slate-200" htmlFor="service-account-json">
+                  Arquivo JSON da Service Account
+                </label>
+                <Input
+                  key={serviceAccountInputKey}
+                  id="service-account-json"
+                  type="file"
+                  accept=".json,application/json"
+                  onChange={handleServiceAccountFileChange}
+                  disabled={isSavingDriveCredential || isDeletingDriveCredential}
+                />
+                {selectedServiceAccountFileName && (
+                  <p className="text-xs text-gray-600 dark:text-slate-400">
+                    Arquivo selecionado: {selectedServiceAccountFileName}
+                  </p>
+                )}
+              </div>
+
+              {driveCredentialFeedback && (
+                <p className={`text-sm ${driveCredentialFeedback.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                  {driveCredentialFeedback.message}
+                </p>
+              )}
+
+              {!driveCredentialStatus?.encryption_enabled && (
+                <p className="text-sm text-amber-700 dark:text-amber-400">
+                  Defina <code>CENTRAL_ARQUIVOS_ENCRYPTION_KEY</code> no servidor para habilitar o armazenamento criptografado do JSON.
+                </p>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  onClick={handleSaveDriveCredential}
+                  disabled={!selectedServiceAccount || isSavingDriveCredential || isDeletingDriveCredential}
+                >
+                  {isSavingDriveCredential ? 'Salvando credencial...' : 'Salvar credencial'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleDeleteDriveCredential}
+                  disabled={
+                    isSavingDriveCredential ||
+                    isDeletingDriveCredential ||
+                    !driveCredentialStatus?.configured ||
+                    driveCredentialStatus?.source !== 'secure_store'
+                  }
+                >
+                  {isDeletingDriveCredential ? 'Removendo...' : 'Remover credencial salva'}
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-4 rounded-md border border-gray-200 p-4 dark:border-slate-800">
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100">Estrutura de pastas por módulo</h3>
+                <p className="text-xs text-gray-600 dark:text-slate-400">
+                  Defina os IDs usados para leitura no Google Drive para UDocs e UMkt.
+                </p>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-sm font-medium text-gray-700 dark:text-slate-200" htmlFor="drive-id">
+                    Shared Drive ID (U-Hub)
+                  </label>
+                  <Input
+                    id="drive-id"
+                    value={driveFoldersForm.drive_id}
+                    onChange={(event) =>
+                      setDriveFoldersForm((prev) => ({ ...prev, drive_id: event.target.value }))
+                    }
+                    placeholder="Ex.: 0AxxxxxxxxxxxxxxPVA"
+                    disabled={isSavingDriveFolders}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700 dark:text-slate-200" htmlFor="udocs-root-folder-id">
+                    Pasta raiz do UDocs
+                  </label>
+                  <Input
+                    id="udocs-root-folder-id"
+                    value={driveFoldersForm.udocs_root_folder_id}
+                    onChange={(event) =>
+                      setDriveFoldersForm((prev) => ({ ...prev, udocs_root_folder_id: event.target.value }))
+                    }
+                    placeholder="Ex.: 1AbCdEfGhIjKlMn"
+                    disabled={isSavingDriveFolders}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700 dark:text-slate-200" htmlFor="umarketing-root-folder-id">
+                    Pasta raiz do UMkt
+                  </label>
+                  <Input
+                    id="umarketing-root-folder-id"
+                    value={driveFoldersForm.umarketing_root_folder_id}
+                    onChange={(event) =>
+                      setDriveFoldersForm((prev) => ({ ...prev, umarketing_root_folder_id: event.target.value }))
+                    }
+                    placeholder="Ex.: 1ZyXwVuTsRqPoNm"
+                    disabled={isSavingDriveFolders}
+                  />
+                </div>
+              </div>
+
+              {driveFoldersFeedback && (
+                <p className={`text-sm ${driveFoldersFeedback.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                  {driveFoldersFeedback.message}
+                </p>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  onClick={handleSaveDriveFolders}
+                  disabled={isSavingDriveFolders}
+                >
+                  {isSavingDriveFolders ? 'Salvando estrutura...' : 'Salvar estrutura de pastas'}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {isConfederacaoAdmin && (
+        <div className="flex items-center justify-between">
+          {status && (
+            <p className={`text-sm ${status.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+              {status.message}
+            </p>
+          )}
+          <Button onClick={handleSave} disabled={isSaving}>
+            {isSaving ? 'Salvando...' : 'Salvar preferências'}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

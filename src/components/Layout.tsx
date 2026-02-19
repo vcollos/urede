@@ -1,6 +1,7 @@
 import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Building2,
+  Archive,
   FileText,
   BarChart3,
   Settings,
@@ -17,6 +18,8 @@ import {
   Database,
   ChevronDown,
   AppWindow,
+  Megaphone,
+  Network,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -33,13 +36,17 @@ import sidebarBrandSymbol from '../logo/roxo.svg';
 import { apiService } from '../services/apiService';
 import type { Alerta, CooperativaConfig } from '../types';
 
-type LayoutModule = 'hub' | 'urede';
+type LayoutModule = 'hub' | 'urede' | 'udocs' | 'umarketing' | 'ufast';
 
 interface LayoutProps {
   children: ReactNode;
   activeTab: string;
   activeModule: LayoutModule;
   canAccessUrede?: boolean;
+  canAccessCentralApps?: boolean;
+  canAccessUDocs?: boolean;
+  canAccessUMarketing?: boolean;
+  canAccessUfast?: boolean;
   onModuleChange?: (module: LayoutModule) => void;
   onTabChange: (tab: string) => void;
   onCreatePedido?: () => void;
@@ -52,6 +59,10 @@ export function Layout({
   activeTab,
   activeModule,
   canAccessUrede = true,
+  canAccessCentralApps = true,
+  canAccessUDocs = true,
+  canAccessUMarketing = true,
+  canAccessUfast = true,
   onModuleChange,
   onTabChange,
   onCreatePedido,
@@ -280,27 +291,42 @@ export function Layout({
   if (!user) return null;
   const canCreatePedido = ['operador', 'admin', 'confederacao'].includes(user.papel);
   const isAdmin = user.papel === 'admin';
+  const hubGlobalMenuItems = [
+    { id: 'cooperativas', label: 'Cooperativas', icon: Building2 },
+    { id: 'cidades', label: 'Cidades', icon: Map },
+  ];
   const hubMenuItems = [
     { id: 'hub_home', label: 'Homepage', icon: Home },
-    { id: 'central_apps', label: 'Central de Apps', icon: AppWindow },
-    { id: 'cooperativas', label: 'Cooperativas', icon: Building2 },
-    { id: 'cidades', label: 'Cidades', icon: Map },
+    ...(canAccessCentralApps ? [{ id: 'central_apps', label: 'Central de Apps', icon: AppWindow }] : []),
+    ...hubGlobalMenuItems,
     ...(isAdmin ? [{ id: 'configuracoes_hub', label: 'Configurações', icon: Settings }] : []),
   ];
-  const sharedMenuItems = [
-    { id: 'cooperativas', label: 'Cooperativas', icon: Building2 },
-    { id: 'cidades', label: 'Cidades', icon: Map },
-    ...(isAdmin ? [{ id: 'configuracoes_urede', label: 'Configurações', icon: Settings }] : []),
-  ];
+  const sharedMenuItems = [...hubGlobalMenuItems];
   const uredeMenuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
     { id: 'relatorios', label: 'Relatórios', icon: PieChart },
     { id: 'pedidos', label: 'Pedidos', icon: FileText },
     ...(canCreatePedido ? [{ id: 'importacao', label: 'Pedidos em lote', icon: UploadCloud }] : []),
+    ...(isAdmin ? [{ id: 'configuracoes_urede', label: 'Configurações', icon: Settings }] : []),
+  ];
+  const udocsMenuItems = [
+    { id: 'udocs_dashboard', label: 'UDocs', icon: Archive },
+  ];
+  const umarketingMenuItems = [
+    { id: 'umarketing_dashboard', label: 'UMkt', icon: Megaphone },
+  ];
+  const ufastMenuItems = [
+    { id: 'ufast_dashboard', label: 'Ufast', icon: Network },
   ];
   const menuItems = activeModule === 'hub'
     ? hubMenuItems
-    : [...uredeMenuItems, ...sharedMenuItems];
+    : activeModule === 'urede'
+    ? [...uredeMenuItems, ...sharedMenuItems]
+    : activeModule === 'udocs'
+    ? [...udocsMenuItems, ...sharedMenuItems]
+    : activeModule === 'umarketing'
+    ? [...umarketingMenuItems, ...sharedMenuItems]
+    : [...ufastMenuItems, ...sharedMenuItems];
   const configuracoesSubItems = isAdmin && activeModule === 'hub'
     ? [
       { id: 'operadores', label: 'Usuários', icon: User },
@@ -311,9 +337,32 @@ export function Layout({
   const isConfigTab = (tabId: string) => tabId === 'configuracoes_hub' || tabId === 'configuracoes_urede';
   const isConfigSubTab = (tabId: string) => configuracoesSubItems.some((sub) => sub.id === tabId);
   const showUredeActions = activeModule === 'urede' && canAccessUrede;
-  const moduleHomeTab = activeModule === 'hub' ? 'hub_home' : 'dashboard';
-  const currentBrandWordmark = activeModule === 'hub' ? hubWordmark : brandWordmark;
-  const currentBrandAlt = activeModule === 'hub' ? 'Portal UHub' : 'Portal URede';
+  const moduleSwitchOptions: Array<{ id: LayoutModule; label: string }> = [
+    { id: 'hub', label: 'UHub' },
+    ...(canAccessUrede ? [{ id: 'urede' as LayoutModule, label: 'URede' }] : []),
+    ...(canAccessUDocs ? [{ id: 'udocs' as LayoutModule, label: 'UDocs' }] : []),
+    ...(canAccessUMarketing ? [{ id: 'umarketing' as LayoutModule, label: 'UMkt' }] : []),
+    ...(canAccessUfast ? [{ id: 'ufast' as LayoutModule, label: 'Ufast' }] : []),
+  ];
+  const moduleHomeTab = activeModule === 'hub'
+    ? 'hub_home'
+    : activeModule === 'urede'
+    ? 'dashboard'
+    : activeModule === 'udocs'
+    ? 'udocs_dashboard'
+    : activeModule === 'umarketing'
+    ? 'umarketing_dashboard'
+    : 'ufast_dashboard';
+  const currentBrandWordmark = activeModule === 'urede' ? brandWordmark : hubWordmark;
+  const currentBrandAlt = activeModule === 'hub'
+    ? 'Portal UHub'
+    : activeModule === 'urede'
+    ? 'Portal URede'
+    : activeModule === 'udocs'
+    ? 'Portal UDocs'
+    : activeModule === 'umarketing'
+    ? 'Portal UMkt'
+    : 'Portal Ufast';
 
   useEffect(() => {
     if (activeModule !== 'hub' || configuracoesSubItems.length === 0) {
@@ -512,40 +561,20 @@ export function Layout({
           >
             {roleDisplayLabel}
           </Badge>
-          <div className={cn('mt-4 rounded-2xl bg-[#F3F1FF] p-1 gap-1 grid', canAccessUrede ? 'grid-cols-2' : 'grid-cols-1')}>
-            <button
-              type="button"
-              onClick={() => handleModuleChange('hub')}
-              className={cn(
-                'rounded-xl px-3 py-2 text-xs font-semibold transition',
-                activeModule === 'hub'
-                  ? 'bg-white text-[#5B46C8] shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              )}
-            >
-              UHub
-            </button>
-            {canAccessUrede && (
-              <button
-                type="button"
-                onClick={() => handleModuleChange('urede')}
-                className={cn(
-                  'rounded-xl px-3 py-2 text-xs font-semibold transition',
-                  activeModule === 'urede'
-                    ? 'bg-white text-[#5B46C8] shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
-                )}
-              >
-                URede
-              </button>
-            )}
-          </div>
         </div>
 
         <nav className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#9A91D9] mb-3">
-              {activeModule === 'hub' ? 'Navegação Hub' : 'Navegação URede'}
+              {activeModule === 'hub'
+                ? 'Navegação Hub'
+                : activeModule === 'urede'
+                ? 'Navegação URede'
+                : activeModule === 'udocs'
+                ? 'Navegação UDocs'
+                : activeModule === 'umarketing'
+                ? 'Navegação UMkt'
+                : 'Navegação Ufast'}
             </p>
             <div className="space-y-2">
               {menuItems.map((item) => {
@@ -675,14 +704,46 @@ export function Layout({
       <div className="flex-1 flex flex-col min-w-0">
         <header className="px-4 sm:px-6 pt-6 pb-4">
           <div className="rounded-3xl bg-white shadow-[0_24px_60px_-32px_rgba(107,86,217,0.35)] border border-white/70 px-6 py-4 flex items-center justify-between gap-4">
-            <button
-              type="button"
-              onClick={() => handleTabChange(moduleHomeTab)}
-              className="flex items-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7B6EF6]"
-              aria-label={activeModule === 'hub' ? 'Ir para a homepage do UHub' : 'Ir para o dashboard do URede'}
-            >
-              <img src={currentBrandWordmark} alt={currentBrandAlt} className="h-10 w-auto" />
-            </button>
+            <div className="flex min-w-0 items-center gap-4">
+              <button
+                type="button"
+                onClick={() => handleTabChange(moduleHomeTab)}
+                className="flex shrink-0 items-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7B6EF6]"
+                aria-label={
+                  activeModule === 'hub'
+                    ? 'Ir para a homepage do UHub'
+                    : activeModule === 'urede'
+                    ? 'Ir para o dashboard do URede'
+                    : activeModule === 'udocs'
+                    ? 'Ir para o dashboard do UDocs'
+                    : activeModule === 'umarketing'
+                    ? 'Ir para o dashboard do UMkt'
+                    : 'Ir para o dashboard do Ufast'
+                }
+              >
+                <img src={currentBrandWordmark} alt={currentBrandAlt} className="h-10 w-auto" />
+              </button>
+              <div
+                className="hidden md:grid rounded-2xl bg-[#F3F1FF] p-1 gap-1"
+                style={{ gridTemplateColumns: `repeat(${Math.max(1, moduleSwitchOptions.length)}, minmax(0, 1fr))` }}
+              >
+                {moduleSwitchOptions.map((option) => (
+                  <button
+                    key={`header-module-${option.id}`}
+                    type="button"
+                    onClick={() => handleModuleChange(option.id)}
+                    className={cn(
+                      'rounded-xl px-3 py-2 text-xs font-semibold whitespace-nowrap transition',
+                      activeModule === option.id
+                        ? 'bg-white text-[#5B46C8] shadow-sm'
+                        : 'text-gray-600 hover:text-gray-900'
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="flex items-center gap-2">
               {showUredeActions && typeof onCreatePedido === 'function' && (
                 <Button
@@ -765,7 +826,17 @@ export function Layout({
                     setMobileNavOpen(false);
                   }}
                   className="flex items-center gap-2 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
-                  aria-label={activeModule === 'hub' ? 'Ir para a homepage do UHub' : 'Ir para o dashboard do URede'}
+                  aria-label={
+                    activeModule === 'hub'
+                      ? 'Ir para a homepage do UHub'
+                      : activeModule === 'urede'
+                      ? 'Ir para o dashboard do URede'
+                      : activeModule === 'udocs'
+                      ? 'Ir para o dashboard do UDocs'
+                      : activeModule === 'umarketing'
+                      ? 'Ir para o dashboard do UMkt'
+                      : 'Ir para o dashboard do Ufast'
+                  }
                 >
                   <img src={currentBrandWordmark} alt={currentBrandAlt} className="h-6 w-auto" />
                 </button>
@@ -787,33 +858,25 @@ export function Layout({
               </div>
             </div>
 
-              <div className={cn('rounded-xl bg-[#F3F1FF] p-1 gap-1 grid', canAccessUrede ? 'grid-cols-2' : 'grid-cols-1')}>
-                <button
-                  type="button"
-                  onClick={() => handleModuleChange('hub')}
-                  className={cn(
-                    'rounded-lg px-3 py-2 text-xs font-semibold transition',
-                    activeModule === 'hub'
-                      ? 'bg-white text-[#5B46C8] shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
-                  )}
-                >
-                  UHub
-                </button>
-                {canAccessUrede && (
+              <div
+                className="rounded-xl bg-[#F3F1FF] p-1 gap-1 grid"
+                style={{ gridTemplateColumns: `repeat(${Math.max(1, moduleSwitchOptions.length)}, minmax(0, 1fr))` }}
+              >
+                {moduleSwitchOptions.map((option) => (
                   <button
+                    key={`mobile-module-${option.id}`}
                     type="button"
-                    onClick={() => handleModuleChange('urede')}
+                    onClick={() => handleModuleChange(option.id)}
                     className={cn(
                       'rounded-lg px-3 py-2 text-xs font-semibold transition',
-                      activeModule === 'urede'
+                      activeModule === option.id
                         ? 'bg-white text-[#5B46C8] shadow-sm'
                         : 'text-gray-600 hover:text-gray-900'
                     )}
                   >
-                    URede
+                    {option.label}
                   </button>
-                )}
+                ))}
               </div>
 
               <div className="space-y-2">

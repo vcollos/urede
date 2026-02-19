@@ -22,7 +22,7 @@ import { apiService } from '../services/apiService';
 import { Operador, Cooperativa, PendingUserApproval } from '../types';
 import { deriveRole, toBaseRole, describeRole } from '../utils/roleMapping';
 import { hasWhatsAppFlag } from '../utils/whatsapp';
-import { normalizeModuleAccess } from '../utils/moduleAccess';
+import { normalizeModuleAccess, type AppModuleAccess } from '../utils/moduleAccess';
 import { authService } from '../services/authService';
 import { Alert, AlertDescription } from './ui/alert';
 
@@ -57,7 +57,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     forcar_troca_senha: true,
     cooperativas_ids: [] as string[],
     cooperativa_principal_id: '',
-    modulos_acesso: ['hub'] as Array<'hub' | 'urede'>,
+    modulos_acesso: ['hub', 'central_apps'] as AppModuleAccess[],
   });
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -74,7 +74,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     forcar_troca_senha: true,
     cooperativas_ids: [] as string[],
     cooperativa_principal_id: '',
-    modulos_acesso: ['hub'] as Array<'hub' | 'urede'>,
+    modulos_acesso: ['hub', 'central_apps'] as AppModuleAccess[],
   });
   const fetchPendingApprovals = useCallback(async () => {
     if (!user || user.papel !== 'admin' || user.approval_status !== 'approved') {
@@ -231,9 +231,13 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     { value: 'operador', label: 'Responsável' },
     { value: 'admin', label: 'Administrador' },
   ] as const;
-  const moduloOptions: Array<{ id: 'hub' | 'urede'; label: string; description: string }> = [
+  const moduloOptions: Array<{ id: AppModuleAccess; label: string; description: string }> = [
     { id: 'hub', label: 'UHub', description: 'Módulo cadastral e administrativo.' },
+    { id: 'central_apps', label: 'Central de Apps', description: 'Catálogo de apps integrados no ecossistema UHub.' },
     { id: 'urede', label: 'URede', description: 'Módulo operacional de pedidos.' },
+    { id: 'udocs', label: 'UDocs', description: 'Biblioteca digital institucional da Confederação.' },
+    { id: 'umarketing', label: 'UMkt', description: 'Módulo institucional de marketing e comunicação.' },
+    { id: 'ufast', label: 'Ufast', description: 'Câmara de Compensação / Ufast.' },
   ];
 
   const toggleEditCooperativa = (idSingular: string, checked: boolean) => {
@@ -277,7 +281,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     });
   };
 
-  const toggleEditModulo = (modulo: 'hub' | 'urede', checked: boolean) => {
+  const toggleEditModulo = (modulo: AppModuleAccess, checked: boolean) => {
     setEditForm((prev) => {
       const atual = new Set(prev.modulos_acesso);
       if (checked) {
@@ -292,7 +296,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
     });
   };
 
-  const toggleCreateModulo = (modulo: 'hub' | 'urede', checked: boolean) => {
+  const toggleCreateModulo = (modulo: AppModuleAccess, checked: boolean) => {
     setCreateForm((prev) => {
       const atual = new Set(prev.modulos_acesso);
       if (checked) {
@@ -454,7 +458,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
       forcar_troca_senha: true,
       cooperativas_ids: defaultSingular ? [defaultSingular] : [],
       cooperativa_principal_id: defaultSingular,
-      modulos_acesso: ['hub'],
+      modulos_acesso: ['hub', 'central_apps'],
     });
     setCreateError('');
     setIsCreateOpen(true);
@@ -476,7 +480,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
       forcar_troca_senha: true,
       cooperativas_ids: [],
       cooperativa_principal_id: '',
-      modulos_acesso: ['hub'],
+      modulos_acesso: ['hub', 'central_apps'],
     }));
   };
 
@@ -547,7 +551,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
         forcar_troca_senha: true,
         cooperativas_ids: defaultSingular ? [defaultSingular] : [],
         cooperativa_principal_id: defaultSingular,
-        modulos_acesso: ['hub'],
+        modulos_acesso: ['hub', 'central_apps'],
       });
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Erro ao criar operador');
@@ -917,7 +921,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
                   <div>
                     <p className="text-sm font-medium text-gray-700">Módulos com acesso</p>
                     <p className="text-xs text-gray-500">
-                      O padrão é UHub. Marque URede quando o usuário também precisar operar pedidos.
+                      O padrão é UHub. Habilite os módulos necessários: Central de Apps, URede, UDocs, UMkt e Ufast.
                     </p>
                   </div>
                   <div className="space-y-2">
@@ -1176,7 +1180,7 @@ export function OperadoresLista({ onRequestEdit, onEditOperador }: OperadoresLis
                 <div>
                   <p className="text-sm font-medium text-gray-700">Módulos com acesso</p>
                   <p className="text-xs text-gray-500">
-                    Novos usuários iniciam no UHub. Marque URede para liberar pedidos e relatórios operacionais.
+                    Novos usuários iniciam no UHub. Habilite os módulos necessários: Central de Apps, URede, UDocs, UMkt e Ufast.
                   </p>
                 </div>
                 <div className="space-y-2">

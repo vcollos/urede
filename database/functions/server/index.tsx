@@ -149,6 +149,36 @@ const BREVO_APPROVAL_TEMPLATE_ID = Number(
   Deno.env.get("BREVO_APPROVAL_TEMPLATE_ID") ?? "",
 ) || null;
 
+const GDRIVE_ENABLED =
+  (Deno.env.get("GDRIVE_ENABLED") ?? "true").toLowerCase() !== "false";
+const GDRIVE_DRIVE_ID = (Deno.env.get("GDRIVE_DRIVE_ID") || "").trim();
+const GDRIVE_ROOT_FOLDER_ID = (Deno.env.get("GDRIVE_ROOT_FOLDER_ID") || "root")
+  .trim() || "root";
+const GDRIVE_UDOCS_ROOT_FOLDER_ID = (
+  Deno.env.get("GDRIVE_UDOCS_ROOT_FOLDER_ID") || GDRIVE_ROOT_FOLDER_ID || "root"
+).trim() || "root";
+const GDRIVE_UMARKETING_ROOT_FOLDER_ID = (
+  Deno.env.get("GDRIVE_UMARKETING_ROOT_FOLDER_ID") || ""
+).trim();
+const GDRIVE_SERVICE_ACCOUNT_EMAIL = (
+  Deno.env.get("GDRIVE_SERVICE_ACCOUNT_EMAIL") || ""
+).trim();
+const GDRIVE_SERVICE_ACCOUNT_PRIVATE_KEY = (
+  Deno.env.get("GDRIVE_SERVICE_ACCOUNT_PRIVATE_KEY") || ""
+).replace(/\\n/g, "\n").trim();
+const CENTRAL_ARQUIVOS_ENCRYPTION_KEY = (
+  Deno.env.get("CENTRAL_ARQUIVOS_ENCRYPTION_KEY") || ""
+).trim();
+const GDRIVE_SCOPES = (Deno.env.get("GDRIVE_SCOPES") ||
+  "https://www.googleapis.com/auth/drive.readonly").trim();
+const GDRIVE_CATEGORY_FOLDERS_RAW = (
+  Deno.env.get("GDRIVE_CATEGORY_FOLDERS_JSON") || "{}"
+).trim();
+const ARQUIVOS_AUDIT_RETENTION_DAYS = Math.max(
+  1,
+  Number(Deno.env.get("ARQUIVOS_AUDIT_RETENTION_DAYS") || 365) || 365,
+);
+
 // Operação 100% local (SQLite)
 
 // Helpers de mapeamento para o formato esperado pelo frontend
@@ -210,11 +240,27 @@ const normalizeModuleAccess = (
   value: unknown,
   fallback: string[] = ["hub"],
 ) => {
-  const allowed = new Set(["hub", "urede"]);
+  const allowed = new Set([
+    "hub",
+    "urede",
+    "udocs",
+    "umarketing",
+    "ufast",
+    "central_apps",
+  ]);
   const collected: string[] = [];
 
+  const toCanonicalModule = (entry: unknown) => {
+    const raw = String(entry ?? "").trim().toLowerCase();
+    if (!raw) return "";
+    if (raw === "central-apps" || raw === "centralapps" || raw === "central de apps" || raw === "central_de_apps") {
+      return "central_apps";
+    }
+    return raw;
+  };
+
   const append = (entry: unknown) => {
-    const normalized = String(entry ?? "").trim().toLowerCase();
+    const normalized = toCanonicalModule(entry);
     if (!allowed.has(normalized)) return;
     if (!collected.includes(normalized)) {
       collected.push(normalized);
@@ -241,6 +287,10 @@ const normalizeModuleAccess = (
     const maybe = value as Record<string, unknown>;
     if (maybe.hub) append("hub");
     if (maybe.urede) append("urede");
+    if (maybe.udocs) append("udocs");
+    if (maybe.umarketing) append("umarketing");
+    if (maybe.ufast) append("ufast");
+    if (maybe.central_apps) append("central_apps");
   }
 
   if (!collected.includes("hub")) {
@@ -250,7 +300,7 @@ const normalizeModuleAccess = (
   const fallbackNormalized = Array.from(
     new Set(
       (fallback || [])
-        .map((item) => String(item || "").trim().toLowerCase())
+        .map((item) => toCanonicalModule(item))
         .filter((item) => allowed.has(item)),
     ),
   );
@@ -416,6 +466,72 @@ const isDuplicateColumnError = (error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
   return /duplicate column|already exists|duplicate key/i.test(message);
 };
+
+const normalizeArquivoCategoryLabel = (value: unknown) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  return raw
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+type ArquivoItemTipo = "pasta" | "arquivo";
+
+const extractArquivoCodeAndLabel = (value: unknown) => {
+  const title = String(value ?? "").trim();
+  const match = title.match(/^\[(\d+)\]\s*(.+)$/);
+  if (!match) {
+    return {
+      code: null as string | null,
+      label: title,
+    };
+  }
+  return {
+    code: String(match[1] || "").trim() || null,
+    label: String(match[2] || "").trim() || title,
+  };
+};
+
+const hasArquivoLikeExtension = (value: string) =>
+  /\.[a-z0-9]{2,5}$/i.test(String(value || "").trim());
+
+const resolveArquivoItemTipo = (item: Pick<ArquivoItemRecord, "mime_type" | "titulo">): ArquivoItemTipo => {
+  const mime = String(item.mime_type || "").toLowerCase().trim();
+  if (mime === "application/vnd.google-apps.folder" || mime.includes("folder")) {
+    return "pasta";
+  }
+  if (mime && mime !== "application/octet-stream") {
+    return "arquivo";
+  }
+
+  const parsed = extractArquivoCodeAndLabel(item.titulo);
+  if (!parsed.code) return "arquivo";
+  if (hasArquivoLikeExtension(item.titulo)) return "arquivo";
+  if (hasArquivoLikeExtension(parsed.label)) return "arquivo";
+  return "pasta";
+};
+
+const parseDriveCategoryFolders = () => {
+  try {
+    const parsed = JSON.parse(GDRIVE_CATEGORY_FOLDERS_RAW || "{}");
+    if (!parsed || typeof parsed !== "object") return {} as Record<string, string>;
+    const result: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      const label = normalizeArquivoCategoryLabel(key);
+      const id = String(value ?? "").trim();
+      if (!label || !id) continue;
+      result[label] = id;
+    }
+    return result;
+  } catch (error) {
+    console.warn("[gdrive] GDRIVE_CATEGORY_FOLDERS_JSON inválido:", error);
+    return {} as Record<string, string>;
+  }
+};
+
+const GDRIVE_CATEGORY_FOLDERS = parseDriveCategoryFolders();
 
 const ensureAuthUsersSchema = () => {
   try {
@@ -1400,6 +1516,286 @@ const ensureCooperativaSettingsSchema = () => {
 
 ensureCooperativaSettingsSchema();
 
+const ensureArquivosSchema = () => {
+  try {
+    db.query(`CREATE TABLE IF NOT EXISTS ${TBL("arquivos_itens")} (
+      id TEXT PRIMARY KEY,
+      drive_file_id TEXT NOT NULL UNIQUE,
+      titulo TEXT NOT NULL,
+      categoria TEXT,
+      ano INTEGER,
+      mime_type TEXT,
+      item_tipo TEXT NOT NULL DEFAULT 'arquivo',
+      parent_drive_file_id TEXT,
+      ordem_manual INTEGER,
+      tamanho_bytes INTEGER DEFAULT 0,
+      drive_modified_at TEXT,
+      drive_created_at TEXT,
+      preview_url TEXT,
+      download_url TEXT,
+      checksum TEXT,
+      modulo TEXT NOT NULL DEFAULT 'udocs',
+      cooperativa_scope TEXT,
+      ativo INTEGER NOT NULL DEFAULT 1,
+      sincronizado_em TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+      criado_em TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+    )`);
+  } catch (error) {
+    console.warn("[schema] falha ao criar arquivos_itens:", error);
+  }
+
+  try {
+    db.query(`CREATE TABLE IF NOT EXISTS ${TBL("arquivos_atalhos")} (
+      id TEXT PRIMARY KEY,
+      modulo TEXT NOT NULL DEFAULT 'udocs',
+      folder_drive_file_id TEXT NOT NULL,
+      rotulo TEXT NOT NULL,
+      ordem INTEGER NOT NULL DEFAULT 0,
+      ativo INTEGER NOT NULL DEFAULT 1,
+      criado_em TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+      atualizado_em TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+    )`);
+  } catch (error) {
+    console.warn("[schema] falha ao criar arquivos_atalhos:", error);
+  }
+
+  try {
+    db.query(`CREATE TABLE IF NOT EXISTS ${TBL("arquivos_acl")} (
+      id TEXT PRIMARY KEY,
+      scope_type TEXT NOT NULL DEFAULT 'global',
+      scope_value TEXT,
+      principal_type TEXT NOT NULL,
+      principal_value TEXT NOT NULL,
+      can_view INTEGER NOT NULL DEFAULT 1,
+      can_download INTEGER NOT NULL DEFAULT 1,
+      effect TEXT NOT NULL DEFAULT 'allow',
+      ativo INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+      updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+    )`);
+  } catch (error) {
+    console.warn("[schema] falha ao criar arquivos_acl:", error);
+  }
+
+  try {
+    db.query(`CREATE TABLE IF NOT EXISTS ${TBL("arquivos_grupos")} (
+      id TEXT PRIMARY KEY,
+      nome TEXT NOT NULL UNIQUE,
+      descricao TEXT,
+      ativo INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+      updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+    )`);
+  } catch (error) {
+    console.warn("[schema] falha ao criar arquivos_grupos:", error);
+  }
+
+  try {
+    db.query(`CREATE TABLE IF NOT EXISTS ${TBL("arquivos_grupo_membros")} (
+      grupo_id TEXT NOT NULL,
+      user_email TEXT NOT NULL,
+      ativo INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+      updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+      PRIMARY KEY (grupo_id, user_email)
+    )`);
+  } catch (error) {
+    console.warn("[schema] falha ao criar arquivos_grupo_membros:", error);
+  }
+
+  try {
+    db.query(`CREATE TABLE IF NOT EXISTS ${TBL("arquivos_sync_state")} (
+      provider TEXT PRIMARY KEY,
+      cursor_token TEXT,
+      last_sync_at TEXT,
+      last_status TEXT,
+      last_error TEXT,
+      updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+    )`);
+  } catch (error) {
+    console.warn("[schema] falha ao criar arquivos_sync_state:", error);
+  }
+
+  try {
+    db.query(`CREATE TABLE IF NOT EXISTS ${TBL("arquivos_auditoria")} (
+      id TEXT PRIMARY KEY,
+      arquivo_id TEXT,
+      drive_file_id TEXT,
+      acao TEXT NOT NULL,
+      resultado TEXT NOT NULL DEFAULT 'ok',
+      usuario_email TEXT,
+      usuario_nome TEXT,
+      usuario_papel TEXT,
+      cooperativa_id TEXT,
+      ip TEXT,
+      user_agent TEXT,
+      detalhes TEXT,
+      created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+    )`);
+  } catch (error) {
+    console.warn("[schema] falha ao criar arquivos_auditoria:", error);
+  }
+
+  const alterStatements = IS_POSTGRES
+    ? [
+      `ALTER TABLE ${TBL("arquivos_itens")} ADD COLUMN IF NOT EXISTS cooperativa_scope TEXT`,
+      `ALTER TABLE ${TBL("arquivos_itens")} ADD COLUMN IF NOT EXISTS preview_url TEXT`,
+      `ALTER TABLE ${TBL("arquivos_itens")} ADD COLUMN IF NOT EXISTS download_url TEXT`,
+      `ALTER TABLE ${TBL("arquivos_itens")} ADD COLUMN IF NOT EXISTS checksum TEXT`,
+      `ALTER TABLE ${TBL("arquivos_itens")} ADD COLUMN IF NOT EXISTS modulo TEXT`,
+      `ALTER TABLE ${TBL("arquivos_itens")} ADD COLUMN IF NOT EXISTS ano INTEGER`,
+      `ALTER TABLE ${TBL("arquivos_itens")} ADD COLUMN IF NOT EXISTS item_tipo TEXT`,
+      `ALTER TABLE ${TBL("arquivos_itens")} ADD COLUMN IF NOT EXISTS parent_drive_file_id TEXT`,
+      `ALTER TABLE ${TBL("arquivos_itens")} ADD COLUMN IF NOT EXISTS ordem_manual INTEGER`,
+      `ALTER TABLE ${TBL("arquivos_itens")} ADD COLUMN IF NOT EXISTS sincronizado_em TEXT`,
+    ]
+    : [
+      `ALTER TABLE ${TBL("arquivos_itens")} ADD COLUMN cooperativa_scope TEXT`,
+      `ALTER TABLE ${TBL("arquivos_itens")} ADD COLUMN preview_url TEXT`,
+      `ALTER TABLE ${TBL("arquivos_itens")} ADD COLUMN download_url TEXT`,
+      `ALTER TABLE ${TBL("arquivos_itens")} ADD COLUMN checksum TEXT`,
+      `ALTER TABLE ${TBL("arquivos_itens")} ADD COLUMN modulo TEXT`,
+      `ALTER TABLE ${TBL("arquivos_itens")} ADD COLUMN ano INTEGER`,
+      `ALTER TABLE ${TBL("arquivos_itens")} ADD COLUMN item_tipo TEXT`,
+      `ALTER TABLE ${TBL("arquivos_itens")} ADD COLUMN parent_drive_file_id TEXT`,
+      `ALTER TABLE ${TBL("arquivos_itens")} ADD COLUMN ordem_manual INTEGER`,
+      `ALTER TABLE ${TBL("arquivos_itens")} ADD COLUMN sincronizado_em TEXT`,
+    ];
+  for (const stmt of alterStatements) {
+    try {
+      db.query(stmt);
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) {
+        console.warn("[schema] falha ao ajustar coluna de arquivos:", error);
+      }
+    }
+  }
+
+  try {
+    db.query(
+      `UPDATE ${TBL("arquivos_itens")}
+          SET modulo = 'udocs'
+        WHERE modulo IS NULL OR TRIM(COALESCE(modulo, '')) = ''`,
+    );
+  } catch (error) {
+    console.warn("[schema] falha ao ajustar modulo padrão em arquivos_itens:", error);
+  }
+
+  try {
+    db.query(
+      `UPDATE ${TBL("arquivos_itens")}
+          SET item_tipo = CASE
+            WHEN LOWER(COALESCE(mime_type, '')) = 'application/vnd.google-apps.folder'
+              OR LOWER(COALESCE(mime_type, '')) LIKE '%folder%'
+            THEN 'pasta'
+            ELSE 'arquivo'
+          END
+        WHERE item_tipo IS NULL OR TRIM(COALESCE(item_tipo, '')) = ''`,
+    );
+  } catch (error) {
+    console.warn("[schema] falha ao ajustar item_tipo padrão em arquivos_itens:", error);
+  }
+
+  try {
+    const now = nowIso();
+    db.query(
+      `INSERT INTO ${TBL("arquivos_grupos")}
+        (id, nome, descricao, ativo, created_at, updated_at)
+       VALUES (?, ?, ?, 1, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         nome = excluded.nome,
+         descricao = excluded.descricao,
+         updated_at = excluded.updated_at`,
+      [
+        CENTRAL_ARQUIVOS_ADMIN_GROUP_ID,
+        "Administradores da Central",
+        "Grupo com permissão para gerenciar integrações e ACL da UDocs.",
+        now,
+        now,
+      ],
+    );
+  } catch (error) {
+    console.warn("[schema] falha ao garantir grupo central_admin:", error);
+  }
+
+  try {
+    db.query(
+      `CREATE INDEX IF NOT EXISTS idx_${
+        TBL("arquivos_itens").replace(".", "_")
+      }_categoria ON ${TBL("arquivos_itens")}(categoria)`,
+    );
+    db.query(
+      `CREATE INDEX IF NOT EXISTS idx_${
+        TBL("arquivos_itens").replace(".", "_")
+      }_ano ON ${TBL("arquivos_itens")}(ano)`,
+    );
+    db.query(
+      `CREATE INDEX IF NOT EXISTS idx_${
+        TBL("arquivos_itens").replace(".", "_")
+      }_ativo ON ${TBL("arquivos_itens")}(ativo)`,
+    );
+    db.query(
+      `CREATE INDEX IF NOT EXISTS idx_${
+        TBL("arquivos_itens").replace(".", "_")
+      }_scope ON ${TBL("arquivos_itens")}(cooperativa_scope)`,
+    );
+    db.query(
+      `CREATE INDEX IF NOT EXISTS idx_${
+        TBL("arquivos_itens").replace(".", "_")
+      }_modulo ON ${TBL("arquivos_itens")}(modulo)`,
+    );
+    db.query(
+      `CREATE INDEX IF NOT EXISTS idx_${
+        TBL("arquivos_itens").replace(".", "_")
+      }_parent ON ${TBL("arquivos_itens")}(parent_drive_file_id)`,
+    );
+    db.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_${
+        TBL("arquivos_atalhos").replace(".", "_")
+      }_modulo_folder ON ${TBL("arquivos_atalhos")}(modulo, folder_drive_file_id)`,
+    );
+    db.query(
+      `CREATE INDEX IF NOT EXISTS idx_${
+        TBL("arquivos_atalhos").replace(".", "_")
+      }_ordem ON ${TBL("arquivos_atalhos")}(modulo, ordem)`,
+    );
+    db.query(
+      `CREATE INDEX IF NOT EXISTS idx_${
+        TBL("arquivos_acl").replace(".", "_")
+      }_scope ON ${TBL("arquivos_acl")}(scope_type, scope_value)`,
+    );
+    db.query(
+      `CREATE INDEX IF NOT EXISTS idx_${
+        TBL("arquivos_acl").replace(".", "_")
+      }_principal ON ${TBL("arquivos_acl")}(principal_type, principal_value)`,
+    );
+    db.query(
+      `CREATE INDEX IF NOT EXISTS idx_${
+        TBL("arquivos_grupo_membros").replace(".", "_")
+      }_email ON ${TBL("arquivos_grupo_membros")}(user_email)`,
+    );
+    db.query(
+      `CREATE INDEX IF NOT EXISTS idx_${
+        TBL("arquivos_auditoria").replace(".", "_")
+      }_created_at ON ${TBL("arquivos_auditoria")}(created_at)`,
+    );
+    db.query(
+      `CREATE INDEX IF NOT EXISTS idx_${
+        TBL("arquivos_auditoria").replace(".", "_")
+      }_user ON ${TBL("arquivos_auditoria")}(usuario_email)`,
+    );
+    db.query(
+      `CREATE INDEX IF NOT EXISTS idx_${
+        TBL("arquivos_auditoria").replace(".", "_")
+      }_arquivo ON ${TBL("arquivos_auditoria")}(arquivo_id)`,
+    );
+  } catch (error) {
+    console.warn("[schema] falha ao criar indices de arquivos:", error);
+  }
+};
+
+ensureArquivosSchema();
+
 const ensureDiretoresPrivacidadeSchema = () => {
   try {
     db.query(
@@ -1526,6 +1922,11 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
 };
 
 const SETTINGS_KEY_SYSTEM = "system_preferences";
+const SETTINGS_KEY_CENTRAL_ARQUIVOS_GDRIVE_SECRET =
+  "central_arquivos_gdrive_service_account_secret";
+const SETTINGS_KEY_CENTRAL_ARQUIVOS_GDRIVE_CONFIG =
+  "central_arquivos_gdrive_config";
+const CENTRAL_ARQUIVOS_ADMIN_GROUP_ID = "central_admin";
 
 const sanitizeMotivos = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
@@ -1635,6 +2036,398 @@ const persistSystemSettings = (settings: SystemSettings) => {
     console.error("[settings] falha ao salvar configurações:", error);
     throw error;
   }
+};
+
+type GoogleServiceAccountPayload = {
+  type: "service_account";
+  project_id: string | null;
+  private_key_id: string | null;
+  private_key: string;
+  client_email: string;
+  client_id: string | null;
+  token_uri: string;
+};
+
+type CentralArquivosDriveSecretPayload = {
+  service_account: GoogleServiceAccountPayload;
+  updated_at: string;
+  updated_by_email: string | null;
+  updated_by_nome: string | null;
+};
+
+type CentralArquivosDriveConfigPayload = {
+  drive_id: string | null;
+  udocs_root_folder_id: string;
+  umarketing_root_folder_id: string | null;
+  validation?: {
+    status: "valid";
+    checked_at: string;
+    drive_name: string | null;
+    udocs_folder_name: string | null;
+    umarketing_folder_name: string | null;
+  } | null;
+  updated_at: string;
+  updated_by_email: string | null;
+  updated_by_nome: string | null;
+};
+
+type EncryptedSecretEnvelope = {
+  v: number;
+  alg: string;
+  iv: string;
+  ciphertext: string;
+};
+
+const toBase64 = (input: Uint8Array) => {
+  let binary = "";
+  for (const byte of input) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+};
+
+const fromBase64 = (input: string) => {
+  const binary = atob(input);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+};
+
+const maskEmail = (email?: string | null) => {
+  const raw = String(email || "").trim();
+  if (!raw.includes("@")) return "";
+  const [local, domain] = raw.split("@");
+  if (!domain) return "";
+  const visible = local.slice(0, Math.min(3, local.length));
+  const masked = `${visible}${"*".repeat(Math.max(2, local.length - visible.length))}`;
+  return `${masked}@${domain}`;
+};
+
+const normalizeDriveResourceId = (value: unknown) => {
+  const normalized = String(value ?? "").trim();
+  return normalized || null;
+};
+
+const normalizeCentralArquivosDriveConfigInput = (
+  value: unknown,
+  fallback?: Partial<CentralArquivosDriveConfigPayload>,
+) => {
+  const source = (value && typeof value === "object")
+    ? (value as Record<string, unknown>)
+    : {};
+
+  const resolvedDriveId = normalizeDriveResourceId(
+    source.drive_id ?? fallback?.drive_id ?? GDRIVE_DRIVE_ID,
+  );
+  const resolvedUdocsRoot = String(
+    source.udocs_root_folder_id ??
+      fallback?.udocs_root_folder_id ??
+      GDRIVE_UDOCS_ROOT_FOLDER_ID,
+  ).trim();
+  if (!resolvedUdocsRoot) {
+    throw new Error("Pasta raiz do UDocs é obrigatória.");
+  }
+
+  const resolvedUMarketingRoot = normalizeDriveResourceId(
+    source.umarketing_root_folder_id ??
+      fallback?.umarketing_root_folder_id ??
+      GDRIVE_UMARKETING_ROOT_FOLDER_ID,
+  );
+
+  return {
+    drive_id: resolvedDriveId,
+    udocs_root_folder_id: resolvedUdocsRoot,
+    umarketing_root_folder_id: resolvedUMarketingRoot,
+  };
+};
+
+let centralArquivosEncryptionKeyPromise: Promise<CryptoKey> | null = null;
+
+const getCentralArquivosEncryptionKey = async () => {
+  if (!CENTRAL_ARQUIVOS_ENCRYPTION_KEY) {
+    throw new Error(
+      "Chave de criptografia não configurada. Defina CENTRAL_ARQUIVOS_ENCRYPTION_KEY no servidor.",
+    );
+  }
+  if (!centralArquivosEncryptionKeyPromise) {
+    centralArquivosEncryptionKeyPromise = (async () => {
+      const raw = new TextEncoder().encode(CENTRAL_ARQUIVOS_ENCRYPTION_KEY);
+      if (raw.length < 16) {
+        throw new Error(
+          "CENTRAL_ARQUIVOS_ENCRYPTION_KEY deve ter pelo menos 16 caracteres.",
+        );
+      }
+      const digest = await crypto.subtle.digest("SHA-256", raw);
+      return await crypto.subtle.importKey(
+        "raw",
+        digest,
+        { name: "AES-GCM" },
+        false,
+        ["encrypt", "decrypt"],
+      );
+    })();
+  }
+  return centralArquivosEncryptionKeyPromise;
+};
+
+const encryptCentralArquivosSecret = async (
+  payload: CentralArquivosDriveSecretPayload,
+) => {
+  const key = await getCentralArquivosEncryptionKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const plain = new TextEncoder().encode(JSON.stringify(payload));
+  const encrypted = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    plain,
+  );
+  const envelope: EncryptedSecretEnvelope = {
+    v: 1,
+    alg: "AES-256-GCM",
+    iv: toBase64(iv),
+    ciphertext: toBase64(new Uint8Array(encrypted)),
+  };
+  return JSON.stringify(envelope);
+};
+
+const decryptCentralArquivosSecret = async (
+  encryptedValue: string,
+): Promise<CentralArquivosDriveSecretPayload> => {
+  const envelope = JSON.parse(encryptedValue || "{}") as EncryptedSecretEnvelope;
+  if (
+    !envelope || typeof envelope !== "object" ||
+    !envelope.iv || !envelope.ciphertext
+  ) {
+    throw new Error("Formato de segredo criptografado inválido.");
+  }
+  const key = await getCentralArquivosEncryptionKey();
+  const iv = fromBase64(String(envelope.iv));
+  const ciphertext = fromBase64(String(envelope.ciphertext));
+  const decrypted = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv },
+    key,
+    ciphertext,
+  );
+  const parsed = JSON.parse(new TextDecoder().decode(decrypted)) as Partial<
+    CentralArquivosDriveSecretPayload
+  >;
+  const serviceAccount = normalizeGoogleServiceAccountPayload(
+    parsed?.service_account,
+  );
+  return {
+    service_account: serviceAccount,
+    updated_at: String(parsed?.updated_at || nowIso()),
+    updated_by_email: parsed?.updated_by_email
+      ? String(parsed.updated_by_email)
+      : null,
+    updated_by_nome: parsed?.updated_by_nome
+      ? String(parsed.updated_by_nome)
+      : null,
+  };
+};
+
+const readSettingsValue = (key: string) => {
+  try {
+    const row = db.queryEntries<{ value: string; updated_at: string | null }>(
+      `SELECT value, updated_at FROM ${TBL("settings")} WHERE key = ? LIMIT 1`,
+      [key],
+    )[0];
+    if (!row?.value) return null;
+    return {
+      value: String(row.value),
+      updated_at: row.updated_at ? String(row.updated_at) : null,
+    };
+  } catch (error) {
+    console.warn("[settings] falha ao ler chave:", key, error);
+    return null;
+  }
+};
+
+const persistSettingsValue = (key: string, value: string) => {
+  db.query(
+    `INSERT INTO ${TBL("settings")} (key, value, updated_at)
+     VALUES (?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    [key, value],
+  );
+};
+
+const deleteSettingsValue = (key: string) => {
+  db.query(`DELETE FROM ${TBL("settings")} WHERE key = ?`, [key]);
+};
+
+const normalizeGoogleServiceAccountPayload = (
+  value: unknown,
+): GoogleServiceAccountPayload => {
+  const source = (value && typeof value === "object")
+    ? (value as Record<string, unknown>)
+    : {};
+
+  const type = String(source.type || "service_account").trim();
+  if (type !== "service_account") {
+    throw new Error("Arquivo inválido: esperado tipo service_account.");
+  }
+
+  const clientEmail = String(source.client_email || "").trim().toLowerCase();
+  if (!clientEmail || !clientEmail.includes("@")) {
+    throw new Error("Arquivo inválido: client_email ausente ou inválido.");
+  }
+
+  const privateKey = String(source.private_key || "")
+    .replace(/\r/g, "")
+    .replace(/\\n/g, "\n")
+    .trim();
+  if (
+    !privateKey ||
+    !privateKey.includes("BEGIN PRIVATE KEY") ||
+    !privateKey.includes("END PRIVATE KEY")
+  ) {
+    throw new Error("Arquivo inválido: private_key ausente ou em formato inesperado.");
+  }
+
+  const tokenUri = String(source.token_uri || "https://oauth2.googleapis.com/token")
+    .trim() || "https://oauth2.googleapis.com/token";
+
+  return {
+    type: "service_account",
+    project_id: source.project_id ? String(source.project_id).trim() : null,
+    private_key_id: source.private_key_id
+      ? String(source.private_key_id).trim()
+      : null,
+    private_key: privateKey,
+    client_email: clientEmail,
+    client_id: source.client_id ? String(source.client_id).trim() : null,
+    token_uri: tokenUri,
+  };
+};
+
+const readStoredCentralArquivosDriveSecret = async () => {
+  const stored = readSettingsValue(SETTINGS_KEY_CENTRAL_ARQUIVOS_GDRIVE_SECRET);
+  if (!stored?.value) return null;
+  const payload = await decryptCentralArquivosSecret(stored.value);
+  return {
+    ...payload,
+    db_updated_at: stored.updated_at,
+  };
+};
+
+const readStoredCentralArquivosDriveConfig = () => {
+  const stored = readSettingsValue(SETTINGS_KEY_CENTRAL_ARQUIVOS_GDRIVE_CONFIG);
+  if (!stored?.value) return null;
+  try {
+    const parsed = JSON.parse(stored.value) as Partial<CentralArquivosDriveConfigPayload>;
+    const normalized = normalizeCentralArquivosDriveConfigInput(parsed);
+    const parsedValidation = (
+      parsed?.validation &&
+        typeof parsed.validation === "object" &&
+        (parsed.validation as Record<string, unknown>).status === "valid"
+    )
+      ? {
+        status: "valid" as const,
+        checked_at: String((parsed.validation as Record<string, unknown>).checked_at || ""),
+        drive_name: normalizeDriveResourceId(
+          (parsed.validation as Record<string, unknown>).drive_name,
+        ),
+        udocs_folder_name: normalizeDriveResourceId(
+          (parsed.validation as Record<string, unknown>).udocs_folder_name,
+        ),
+        umarketing_folder_name: normalizeDriveResourceId(
+          (parsed.validation as Record<string, unknown>).umarketing_folder_name,
+        ),
+      }
+      : null;
+    return {
+      ...normalized,
+      validation: parsedValidation,
+      updated_at: parsed?.updated_at ? String(parsed.updated_at) : null,
+      updated_by_email: parsed?.updated_by_email
+        ? String(parsed.updated_by_email)
+        : null,
+      updated_by_nome: parsed?.updated_by_nome
+        ? String(parsed.updated_by_nome)
+        : null,
+      db_updated_at: stored.updated_at,
+    };
+  } catch (error) {
+    console.warn("[settings] falha ao ler configuração de pastas do Google Drive:", error);
+    return null;
+  }
+};
+
+const buildCentralArquivosDriveCredentialStatus = async () => {
+  const secureStored = await readStoredCentralArquivosDriveSecret();
+  if (secureStored?.service_account?.client_email) {
+    return {
+      configured: true,
+      source: "secure_store" as const,
+      credential: {
+        project_id: secureStored.service_account.project_id,
+        client_email_masked: maskEmail(secureStored.service_account.client_email),
+        updated_at: secureStored.updated_at || secureStored.db_updated_at || null,
+        updated_by: secureStored.updated_by_nome || secureStored.updated_by_email || null,
+      },
+    };
+  }
+
+  if (GDRIVE_SERVICE_ACCOUNT_EMAIL && GDRIVE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+    return {
+      configured: true,
+      source: "env" as const,
+      credential: {
+        project_id: null,
+        client_email_masked: maskEmail(GDRIVE_SERVICE_ACCOUNT_EMAIL),
+        updated_at: null,
+        updated_by: null,
+      },
+    };
+  }
+
+  return {
+    configured: false,
+    source: null as null | "env" | "secure_store",
+    credential: null as null | {
+      project_id: string | null;
+      client_email_masked: string;
+      updated_at: string | null;
+      updated_by: string | null;
+    },
+  };
+};
+
+const buildCentralArquivosDriveConfigStatus = () => {
+  const storedConfig = readStoredCentralArquivosDriveConfig();
+  if (storedConfig) {
+    return {
+      source: "secure_store" as const,
+      drive_id: storedConfig.drive_id,
+      udocs_root_folder_id: storedConfig.udocs_root_folder_id,
+      umarketing_root_folder_id: storedConfig.umarketing_root_folder_id,
+      validation: storedConfig.validation || null,
+      updated_at: storedConfig.updated_at || storedConfig.db_updated_at || null,
+      updated_by: storedConfig.updated_by_nome || storedConfig.updated_by_email || null,
+    };
+  }
+
+  return {
+    source: "env" as const,
+    drive_id: normalizeDriveResourceId(GDRIVE_DRIVE_ID),
+    udocs_root_folder_id: GDRIVE_UDOCS_ROOT_FOLDER_ID,
+    umarketing_root_folder_id: normalizeDriveResourceId(GDRIVE_UMARKETING_ROOT_FOLDER_ID),
+    validation: null,
+    updated_at: null,
+    updated_by: null,
+  };
+};
+
+const resolveCentralArquivosDriveRuntimeConfig = () => {
+  const config = buildCentralArquivosDriveConfigStatus();
+  return {
+    driveId: config.drive_id,
+    udocsRootFolderId: config.udocs_root_folder_id || "root",
+    umarketingRootFolderId: config.umarketing_root_folder_id,
+  };
 };
 
 // Garante que haja um registro padrão
@@ -2074,6 +2867,1241 @@ const truncateText = (value: string, max = 280) => {
   const normalized = value.replace(/\s+/g, " ").trim();
   if (normalized.length <= max) return normalized;
   return `${normalized.slice(0, max - 1)}…`;
+};
+
+type ArquivoModule = "udocs" | "umarketing";
+
+type ArquivoPermissionAction = "view" | "download";
+
+type ArquivoItemRecord = {
+  id: string;
+  drive_file_id: string;
+  modulo: ArquivoModule;
+  titulo: string;
+  categoria: string;
+  ano: number | null;
+  mime_type: string;
+  item_tipo: ArquivoItemTipo;
+  parent_drive_file_id: string | null;
+  ordem_manual: number | null;
+  tamanho_bytes: number;
+  drive_modified_at: string | null;
+  drive_created_at: string | null;
+  preview_url: string | null;
+  download_url: string | null;
+  checksum: string | null;
+  cooperativa_scope: string | null;
+  ativo: boolean;
+  sincronizado_em: string | null;
+  criado_em: string | null;
+};
+
+type ArquivoAclRow = {
+  id: string;
+  scope_type: string;
+  scope_value: string | null;
+  principal_type: string;
+  principal_value: string;
+  can_view: number;
+  can_download: number;
+  effect: string;
+  ativo: number;
+};
+
+type ArquivoAccessContext = {
+  email: string;
+  role: string;
+  cooperativas: Set<string>;
+  grupos: Set<string>;
+  allCooperativas: boolean;
+  isConfederacaoAdmin: boolean;
+};
+
+type DriveRepoEntry = {
+  id: string;
+  module: ArquivoModule;
+  name: string;
+  mimeType: string;
+  itemTipo: ArquivoItemTipo;
+  parentDriveFileId: string | null;
+  size?: string;
+  modifiedTime?: string;
+  createdTime?: string;
+  parents?: string[];
+  webViewLink?: string;
+  webContentLink?: string;
+  md5Checksum?: string;
+  category: string;
+};
+
+type DriveCategoryRoot = {
+  module: ArquivoModule;
+  category: string;
+  folderId: string;
+};
+
+type DriveReadOptions = {
+  driveId?: string | null;
+};
+
+type DriveRuntimeCredentials = {
+  serviceAccountEmail: string;
+  privateKey: string;
+  source: "secure_store" | "env";
+};
+
+let gdriveTokenCache: { token: string; expiresAt: number } | null = null;
+let arquivosAuditCleanupLastAt = 0;
+
+const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const GOOGLE_DRIVE_FILES_API = "https://www.googleapis.com/drive/v3/files";
+const GOOGLE_DRIVE_DRIVES_API = "https://www.googleapis.com/drive/v3/drives";
+const MAX_DRIVE_FULLTEXT_RESULTS = 1200;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const shouldRetryGoogleStatus = (status: number) => status === 429 || status >= 500;
+
+const fetchGoogleWithRetry = async (
+  input: string,
+  init: RequestInit,
+  context: string,
+  attempts = 4,
+) => {
+  let lastStatus = 0;
+  let lastBody = "";
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const response = await fetch(input, init);
+    if (response.ok) return response;
+    lastStatus = response.status;
+    lastBody = await response.text().catch(() => "");
+    const retryable = shouldRetryGoogleStatus(response.status) && attempt < attempts;
+    if (!retryable) {
+      throw new Error(`${context} (${response.status}): ${lastBody.slice(0, 500)}`);
+    }
+    const delayMs = 300 * attempt + Math.floor(Math.random() * 200);
+    console.warn(
+      `[gdrive] erro transitório (${response.status}) em ${context}; tentativa ${attempt}/${attempts}.`,
+    );
+    await sleep(delayMs);
+  }
+  throw new Error(`${context} (${lastStatus || 0}): ${String(lastBody || "").slice(0, 500)}`);
+};
+
+const escapeDriveQueryLiteral = (value: string) =>
+  String(value || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'");
+
+const tokenizeSearchQuery = (value: string) => {
+  const normalized = normalizeArquivoComparable(value);
+  const tokens = normalized
+    .split(/\s+/g)
+    .map((token) => token.trim())
+    .filter(Boolean);
+  return Array.from(new Set(tokens));
+};
+
+const buildSearchSnippet = (text: string, queryTokens: string[]) => {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  if (!clean) return "";
+  if (!queryTokens.length) return clean.slice(0, 180);
+  const normalized = normalizeArquivoComparable(clean);
+  let bestIndex = -1;
+  let bestToken = "";
+  for (const token of queryTokens) {
+    if (!token) continue;
+    const idx = normalized.indexOf(token);
+    if (idx >= 0 && (bestIndex < 0 || idx < bestIndex)) {
+      bestIndex = idx;
+      bestToken = token;
+    }
+  }
+  if (bestIndex < 0) return clean.slice(0, 180);
+  const start = Math.max(0, bestIndex - 48);
+  const end = Math.min(clean.length, bestIndex + Math.max(bestToken.length, 1) + 72);
+  const prefix = start > 0 ? "…" : "";
+  const suffix = end < clean.length ? "…" : "";
+  return `${prefix}${clean.slice(start, end)}${suffix}`.slice(0, 220);
+};
+
+const normalizeArquivoComparable = (value: unknown) =>
+  normalizeArquivoCategoryLabel(value).toLowerCase();
+
+const toBase64Url = (input: Uint8Array) => {
+  let binary = "";
+  for (const byte of input) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+};
+
+const toBase64UrlString = (input: string) =>
+  toBase64Url(new TextEncoder().encode(input));
+
+const pemToPkcs8 = (pem: string) => {
+  const cleaned = pem
+    .replace(/-----BEGIN PRIVATE KEY-----/g, "")
+    .replace(/-----END PRIVATE KEY-----/g, "")
+    .replace(/\s+/g, "");
+  const binary = atob(cleaned);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
+};
+
+const assertDriveEnabled = () => {
+  if (!GDRIVE_ENABLED) {
+    throw new Error("Integração com Google Drive desativada.");
+  }
+};
+
+const resolveDriveRuntimeCredentials = async (): Promise<DriveRuntimeCredentials> => {
+  assertDriveEnabled();
+
+  const secureStored = await readStoredCentralArquivosDriveSecret().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Credencial criptografada inválida da UDocs: ${message.slice(0, 200)}`,
+    );
+  });
+  if (secureStored?.service_account?.client_email && secureStored?.service_account?.private_key) {
+    return {
+      serviceAccountEmail: secureStored.service_account.client_email,
+      privateKey: secureStored.service_account.private_key,
+      source: "secure_store",
+    };
+  }
+
+  if (GDRIVE_SERVICE_ACCOUNT_EMAIL && GDRIVE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+    return {
+      serviceAccountEmail: GDRIVE_SERVICE_ACCOUNT_EMAIL,
+      privateKey: GDRIVE_SERVICE_ACCOUNT_PRIVATE_KEY,
+      source: "env",
+    };
+  }
+
+  throw new Error(
+    "Credenciais do Google Drive não configuradas. Cadastre o JSON do Service Account em Configurações > Hub ou defina GDRIVE_SERVICE_ACCOUNT_EMAIL/GDRIVE_SERVICE_ACCOUNT_PRIVATE_KEY.",
+  );
+};
+
+const getDriveAccessToken = async () => {
+  assertDriveEnabled();
+  if (gdriveTokenCache && gdriveTokenCache.expiresAt > Date.now() + 30_000) {
+    return gdriveTokenCache.token;
+  }
+  const driveCredentials = await resolveDriveRuntimeCredentials();
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const header = { alg: "RS256", typ: "JWT" };
+  const payload = {
+    iss: driveCredentials.serviceAccountEmail,
+    scope: GDRIVE_SCOPES,
+    aud: GOOGLE_OAUTH_TOKEN_URL,
+    iat: nowSeconds,
+    exp: nowSeconds + 3600,
+  };
+
+  const encodedHeader = toBase64UrlString(JSON.stringify(header));
+  const encodedPayload = toBase64UrlString(JSON.stringify(payload));
+  const signingInput = `${encodedHeader}.${encodedPayload}`;
+
+  const privateKey = await crypto.subtle.importKey(
+    "pkcs8",
+    pemToPkcs8(driveCredentials.privateKey),
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signatureBuffer = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    privateKey,
+    new TextEncoder().encode(signingInput),
+  );
+  const signature = toBase64Url(new Uint8Array(signatureBuffer));
+  const assertion = `${signingInput}.${signature}`;
+
+  const body = new URLSearchParams({
+    grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+    assertion,
+  });
+
+  const response = await fetch(GOOGLE_OAUTH_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  if (!response.ok) {
+    const errorPayload = await response.text().catch(() => "");
+    throw new Error(
+      `[gdrive] falha ao obter access token (${response.status}): ${errorPayload.slice(0, 500)}`,
+    );
+  }
+  const payloadToken = await response.json() as {
+    access_token?: string;
+    expires_in?: number;
+  };
+  const accessToken = payloadToken.access_token;
+  if (!accessToken) {
+    throw new Error("[gdrive] token não retornado pela API do Google.");
+  }
+  const ttlSeconds = Math.max(120, Number(payloadToken.expires_in ?? 3600));
+  gdriveTokenCache = {
+    token: accessToken,
+    expiresAt: Date.now() + (ttlSeconds - 60) * 1000,
+  };
+  return accessToken;
+};
+
+const getDriveParentQueryToken = (parentId: string) =>
+  parentId === "root" ? "root" : parentId;
+
+const listDriveChildren = async (
+  accessToken: string,
+  parentId: string,
+  pageToken?: string,
+  options: DriveReadOptions = {},
+) => {
+  const params = new URLSearchParams();
+  params.set(
+    "q",
+    `'${getDriveParentQueryToken(parentId)}' in parents and trashed = false`,
+  );
+  params.set(
+    "fields",
+    "nextPageToken,files(id,name,mimeType,size,modifiedTime,createdTime,parents,webViewLink,webContentLink,md5Checksum,shortcutDetails(targetId,targetMimeType))",
+  );
+  params.set("pageSize", "1000");
+  params.set("supportsAllDrives", "true");
+  params.set("includeItemsFromAllDrives", "true");
+  const resolvedDriveId = normalizeDriveResourceId(options.driveId ?? GDRIVE_DRIVE_ID);
+  if (resolvedDriveId) {
+    params.set("corpora", "drive");
+    params.set("driveId", resolvedDriveId);
+  }
+  if (pageToken) {
+    params.set("pageToken", pageToken);
+  }
+
+  const response = await fetchGoogleWithRetry(
+    `${GOOGLE_DRIVE_FILES_API}?${params.toString()}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+    `[gdrive] falha ao listar pasta ${parentId}`,
+  );
+  const payload = await response.json() as {
+    files?: Array<Record<string, unknown>>;
+    nextPageToken?: string;
+  };
+  return payload;
+};
+
+const listAllDriveChildren = async (
+  accessToken: string,
+  parentId: string,
+  options: DriveReadOptions = {},
+) => {
+  const items: Array<Record<string, unknown>> = [];
+  let nextPageToken: string | undefined;
+  do {
+    const page = await listDriveChildren(
+      accessToken,
+      parentId,
+      nextPageToken,
+      options,
+    );
+    if (Array.isArray(page.files)) {
+      items.push(...page.files);
+    }
+    nextPageToken = page.nextPageToken;
+  } while (nextPageToken);
+  return items;
+};
+
+const searchDriveFullTextIds = async (
+  accessToken: string,
+  query: string,
+  options: DriveReadOptions = {},
+) => {
+  const tokens = tokenizeSearchQuery(query).slice(0, 6);
+  if (!tokens.length) return new Set<string>();
+
+  const qClauses = ["trashed = false", ...tokens.map((token) =>
+    `fullText contains '${escapeDriveQueryLiteral(token)}'`
+  )];
+  const found = new Set<string>();
+  let nextPageToken: string | undefined;
+
+  do {
+    const params = new URLSearchParams();
+    params.set("q", qClauses.join(" and "));
+    params.set("fields", "nextPageToken,files(id)");
+    params.set("pageSize", "200");
+    params.set("supportsAllDrives", "true");
+    params.set("includeItemsFromAllDrives", "true");
+    const resolvedDriveId = normalizeDriveResourceId(options.driveId ?? GDRIVE_DRIVE_ID);
+    if (resolvedDriveId) {
+      params.set("corpora", "drive");
+      params.set("driveId", resolvedDriveId);
+    }
+    if (nextPageToken) {
+      params.set("pageToken", nextPageToken);
+    }
+
+    const response = await fetchGoogleWithRetry(
+      `${GOOGLE_DRIVE_FILES_API}?${params.toString()}`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+      "[gdrive] falha em busca fullText",
+    );
+    const payload = await response.json() as {
+      files?: Array<{ id?: string }>;
+      nextPageToken?: string;
+    };
+    for (const row of payload.files || []) {
+      const id = String(row.id || "").trim();
+      if (!id) continue;
+      found.add(id);
+      if (found.size >= MAX_DRIVE_FULLTEXT_RESULTS) {
+        return found;
+      }
+    }
+    nextPageToken = payload.nextPageToken;
+  } while (nextPageToken);
+
+  return found;
+};
+
+const discoverDriveCategoryRoots = async (
+  accessToken: string,
+  rootFolderId: string,
+  module: ArquivoModule,
+  options: DriveReadOptions = {},
+): Promise<DriveCategoryRoot[]> => {
+  if (Object.keys(GDRIVE_CATEGORY_FOLDERS).length > 0) {
+    return Object.entries(GDRIVE_CATEGORY_FOLDERS).map(([category, folderId]) => ({
+      module,
+      category,
+      folderId,
+    }));
+  }
+
+  const topFolders = await listAllDriveChildren(accessToken, rootFolderId, options);
+  const folders = topFolders.filter((item) =>
+    String(item.mimeType || "") === "application/vnd.google-apps.folder"
+  );
+  if (folders.length === 0) {
+    return [{ module, category: "Geral", folderId: rootFolderId }];
+  }
+
+  return folders
+    .map((item) => ({
+      module,
+      category: normalizeArquivoCategoryLabel(item.name) || "Geral",
+      folderId: String(item.id || "").trim(),
+    }))
+    .filter((item) => item.folderId);
+};
+
+const collectDriveEntriesByCategory = async (
+  accessToken: string,
+  root: DriveCategoryRoot,
+  options: DriveReadOptions = {},
+) => {
+  const entries: DriveRepoEntry[] = [];
+  const queue: Array<{ folderId: string; isCategoryRoot: boolean }> = [
+    { folderId: root.folderId, isCategoryRoot: true },
+  ];
+  const visited = new Set<string>();
+
+  const pushEntry = (
+    rawItem: Record<string, unknown>,
+    itemId: string,
+    itemMimeType: string,
+    itemTipo: ArquivoItemTipo,
+    parentDriveFileId: string | null,
+  ) => {
+    entries.push({
+      id: itemId,
+      module: root.module,
+      name: String(rawItem.name || itemId),
+      mimeType: itemMimeType || "application/octet-stream",
+      itemTipo,
+      parentDriveFileId,
+      size: rawItem.size ? String(rawItem.size) : undefined,
+      modifiedTime: rawItem.modifiedTime ? String(rawItem.modifiedTime) : undefined,
+      createdTime: rawItem.createdTime ? String(rawItem.createdTime) : undefined,
+      parents: Array.isArray(rawItem.parents)
+        ? rawItem.parents.map((item) => String(item))
+        : [],
+      webViewLink: rawItem.webViewLink ? String(rawItem.webViewLink) : undefined,
+      webContentLink: rawItem.webContentLink ? String(rawItem.webContentLink) : undefined,
+      md5Checksum: rawItem.md5Checksum ? String(rawItem.md5Checksum) : undefined,
+      category: root.category,
+    });
+  };
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current?.folderId || visited.has(current.folderId)) continue;
+    visited.add(current.folderId);
+
+    const children = await listAllDriveChildren(accessToken, current.folderId, options);
+    for (const rawItem of children) {
+      const id = String(rawItem.id || "").trim();
+      if (!id) continue;
+
+      const ownMimeType = String(rawItem.mimeType || "").trim();
+      const parentDriveFileId = current.isCategoryRoot ? null : current.folderId;
+      if (ownMimeType === "application/vnd.google-apps.shortcut") {
+        const shortcutDetails = rawItem.shortcutDetails &&
+            typeof rawItem.shortcutDetails === "object"
+          ? rawItem.shortcutDetails as Record<string, unknown>
+          : null;
+        const targetId = String(shortcutDetails?.targetId || "").trim();
+        const targetMimeType = String(shortcutDetails?.targetMimeType || "").trim();
+        if (!targetId) continue;
+
+        if (targetMimeType === "application/vnd.google-apps.folder") {
+          pushEntry(
+            rawItem,
+            targetId,
+            targetMimeType || "application/vnd.google-apps.folder",
+            "pasta",
+            parentDriveFileId,
+          );
+          queue.push({ folderId: targetId, isCategoryRoot: false });
+          continue;
+        }
+
+        pushEntry(
+          rawItem,
+          targetId,
+          targetMimeType || "application/octet-stream",
+          "arquivo",
+          parentDriveFileId,
+        );
+        continue;
+      }
+
+      if (ownMimeType === "application/vnd.google-apps.folder") {
+        pushEntry(rawItem, id, ownMimeType, "pasta", parentDriveFileId);
+        queue.push({ folderId: id, isCategoryRoot: false });
+        continue;
+      }
+
+      pushEntry(rawItem, id, ownMimeType, "arquivo", parentDriveFileId);
+    }
+  }
+
+  return entries;
+};
+
+const getDriveFileMetadata = async (
+  accessToken: string,
+  fileId: string,
+) => {
+  const normalized = String(fileId || "").trim();
+  if (!normalized) {
+    throw new Error("ID de pasta inválido.");
+  }
+  const params = new URLSearchParams();
+  params.set("fields", "id,name,mimeType,driveId,trashed,parents");
+  params.set("supportsAllDrives", "true");
+  const response = await fetchGoogleWithRetry(
+    `${GOOGLE_DRIVE_FILES_API}/${encodeURIComponent(normalized)}?${params.toString()}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+    `ID de pasta ${normalized} não acessível`,
+  );
+  return await response.json() as {
+    id?: string;
+    name?: string;
+    mimeType?: string;
+    driveId?: string;
+    trashed?: boolean;
+    parents?: string[];
+  };
+};
+
+const getSharedDriveMetadata = async (
+  accessToken: string,
+  driveId: string,
+) => {
+  const normalized = String(driveId || "").trim();
+  if (!normalized) {
+    throw new Error("Shared Drive ID é obrigatório.");
+  }
+  const params = new URLSearchParams();
+  params.set("fields", "id,name");
+  const response = await fetchGoogleWithRetry(
+    `${GOOGLE_DRIVE_DRIVES_API}/${encodeURIComponent(normalized)}?${params.toString()}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+    `Shared Drive ${normalized} não acessível`,
+  );
+  return await response.json() as {
+    id?: string;
+    name?: string;
+  };
+};
+
+const validateCentralArquivosDriveConfig = async (
+  config: {
+    drive_id: string | null;
+    udocs_root_folder_id: string;
+    umarketing_root_folder_id: string | null;
+  },
+) => {
+  const driveId = normalizeDriveResourceId(config.drive_id);
+  const udocsRootFolderId = String(config.udocs_root_folder_id || "").trim();
+  const umarketingRootFolderId = String(config.umarketing_root_folder_id || "").trim();
+
+  if (!driveId) {
+    throw new Error("Informe o Shared Drive ID (U-Hub).");
+  }
+  if (!udocsRootFolderId) {
+    throw new Error("Informe a pasta raiz do UDocs.");
+  }
+  if (!umarketingRootFolderId) {
+    throw new Error("Informe a pasta raiz do UMkt.");
+  }
+  if (udocsRootFolderId === umarketingRootFolderId) {
+    throw new Error("As pastas raiz de UDocs e UMkt devem ser diferentes.");
+  }
+
+  const accessToken = await getDriveAccessToken();
+  const sharedDrive = await getSharedDriveMetadata(accessToken, driveId);
+  const udocsFolder = await getDriveFileMetadata(accessToken, udocsRootFolderId);
+  const umarketingFolder = await getDriveFileMetadata(accessToken, umarketingRootFolderId);
+
+  for (const [label, folder] of [
+    ["UDocs", udocsFolder],
+    ["UMkt", umarketingFolder],
+  ] as const) {
+    if (String(folder.mimeType || "") !== "application/vnd.google-apps.folder") {
+      throw new Error(`O ID informado para ${label} não é de pasta no Google Drive.`);
+    }
+    if (folder.trashed) {
+      throw new Error(`A pasta informada para ${label} está na lixeira.`);
+    }
+    const folderDriveId = normalizeDriveResourceId(folder.driveId);
+    if (!folderDriveId) {
+      throw new Error(
+        `A pasta de ${label} não está em um Shared Drive acessível pela Service Account.`,
+      );
+    }
+    if (folderDriveId !== driveId) {
+      throw new Error(`A pasta de ${label} não pertence ao Shared Drive informado (U-Hub).`);
+    }
+  }
+
+  return {
+    status: "valid" as const,
+    checked_at: nowIso(),
+    drive_name: normalizeDriveResourceId(sharedDrive.name),
+    udocs_folder_name: normalizeDriveResourceId(udocsFolder.name),
+    umarketing_folder_name: normalizeDriveResourceId(umarketingFolder.name),
+  };
+};
+
+const resolveArquivoAno = (title: string, modifiedAt?: string, category?: string) => {
+  const fromTitle = `${title || ""} ${category || ""}`.match(/\b(19|20)\d{2}\b/);
+  if (fromTitle?.[0]) return Number(fromTitle[0]);
+  if (modifiedAt) {
+    const year = new Date(modifiedAt).getUTCFullYear();
+    if (Number.isFinite(year) && year > 1900) return year;
+  }
+  return null;
+};
+
+const syncArquivosFromGoogleDrive = async (
+  modules: ArquivoModule[] = ["udocs", "umarketing"],
+) => {
+  const accessToken = await getDriveAccessToken();
+  const runtimeConfig = resolveCentralArquivosDriveRuntimeConfig();
+  const readOptions: DriveReadOptions = { driveId: runtimeConfig.driveId };
+  const synchronizedAt = nowIso();
+
+  const targetModules = Array.from(new Set(modules.map((item) =>
+    parseArquivoModule(item, "udocs")
+  )));
+  const moduleRoots: Array<{ module: ArquivoModule; rootFolderId: string }> = [];
+  for (const module of targetModules) {
+    const rootFolderId = module === "umarketing"
+      ? normalizeDriveResourceId(runtimeConfig.umarketingRootFolderId)
+      : normalizeDriveResourceId(runtimeConfig.udocsRootFolderId);
+    if (!rootFolderId) continue;
+    moduleRoots.push({ module, rootFolderId });
+  }
+  if (moduleRoots.length === 0) {
+      throw new Error(
+      "Pastas raiz não configuradas para sincronização. Configure UDocs/UMkt em Configurações > Hub.",
+      );
+  }
+
+  const categoryRoots: DriveCategoryRoot[] = [];
+  for (const moduleRoot of moduleRoots) {
+    const rootMetadata = await getDriveFileMetadata(accessToken, moduleRoot.rootFolderId);
+    if (String(rootMetadata.mimeType || "") !== "application/vnd.google-apps.folder") {
+      throw new Error(
+        `A pasta raiz configurada para ${getModuloLabel(moduleRoot.module)} não é uma pasta válida no Google Drive.`,
+      );
+    }
+    const rootDriveId = normalizeDriveResourceId(rootMetadata.driveId);
+    if (!rootDriveId) {
+      throw new Error(
+        `A pasta raiz de ${getModuloLabel(moduleRoot.module)} não está em um Shared Drive acessível pela Service Account.`,
+      );
+    }
+    if (runtimeConfig.driveId && rootDriveId !== runtimeConfig.driveId) {
+      throw new Error(
+        `A pasta raiz de ${getModuloLabel(moduleRoot.module)} não pertence ao Shared Drive configurado.`,
+      );
+    }
+
+    const discovered = await discoverDriveCategoryRoots(
+      accessToken,
+      moduleRoot.rootFolderId,
+      moduleRoot.module,
+      readOptions,
+    );
+    categoryRoots.push(...discovered);
+  }
+
+  const collectedEntries: DriveRepoEntry[] = [];
+  for (const root of categoryRoots) {
+    const files = await collectDriveEntriesByCategory(accessToken, root, readOptions);
+    collectedEntries.push(...files);
+  }
+
+  const seenByModule: Record<ArquivoModule, string[]> = {
+    udocs: [],
+    umarketing: [],
+  };
+  const orderByPath = new Map<string, number>();
+  for (const file of collectedEntries) {
+    const driveFileId = String(file.id || "").trim();
+    if (!driveFileId) continue;
+    seenByModule[file.module].push(driveFileId);
+
+    const title = String(file.name || driveFileId).trim() || driveFileId;
+    const category = normalizeArquivoCategoryLabel(file.category) || "Geral";
+    const isFolder = file.itemTipo === "pasta";
+    const year = isFolder ? null : resolveArquivoAno(title, file.modifiedTime, category);
+    const mimeType = String(file.mimeType || "").trim() || "application/octet-stream";
+    const size = isFolder ? 0 : Number(file.size || 0);
+    const modifiedAt = file.modifiedTime || null;
+    const createdAt = file.createdTime || null;
+    const checksum = isFolder ? null : (file.md5Checksum || null);
+    const previewUrl = isFolder ? null : (file.webViewLink || null);
+    const downloadUrl = isFolder ? null : (file.webContentLink || null);
+    const parentDriveFileId = String(file.parentDriveFileId || "").trim() || null;
+    const orderKey = `${file.module}::${parentDriveFileId || "__root__"}`;
+    const nextOrder = (orderByPath.get(orderKey) || 0) + 10;
+    orderByPath.set(orderKey, nextOrder);
+
+    db.query(
+      `INSERT INTO ${TBL("arquivos_itens")}
+        (id, drive_file_id, modulo, titulo, categoria, ano, mime_type, item_tipo, parent_drive_file_id, ordem_manual, tamanho_bytes, drive_modified_at, drive_created_at, preview_url, download_url, checksum, ativo, sincronizado_em, criado_em)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+       ON CONFLICT(drive_file_id) DO UPDATE SET
+         modulo = excluded.modulo,
+         titulo = excluded.titulo,
+         categoria = excluded.categoria,
+         ano = excluded.ano,
+         mime_type = excluded.mime_type,
+         item_tipo = excluded.item_tipo,
+         parent_drive_file_id = excluded.parent_drive_file_id,
+         ordem_manual = COALESCE(ordem_manual, excluded.ordem_manual),
+         tamanho_bytes = excluded.tamanho_bytes,
+         drive_modified_at = excluded.drive_modified_at,
+         drive_created_at = excluded.drive_created_at,
+         preview_url = excluded.preview_url,
+         download_url = excluded.download_url,
+         checksum = excluded.checksum,
+         ativo = 1,
+         sincronizado_em = excluded.sincronizado_em`,
+      [
+        safeRandomId("arq"),
+        driveFileId,
+        file.module,
+        title,
+        category,
+        year,
+        mimeType,
+        isFolder ? "pasta" : "arquivo",
+        parentDriveFileId,
+        nextOrder,
+        Number.isFinite(size) ? size : 0,
+        modifiedAt,
+        createdAt,
+        previewUrl,
+        downloadUrl,
+        checksum,
+        synchronizedAt,
+        synchronizedAt,
+      ],
+    );
+  }
+
+  for (const moduleRoot of moduleRoots) {
+    const seenIds = Array.from(new Set(seenByModule[moduleRoot.module]));
+    if (seenIds.length > 0) {
+      const placeholders = seenIds.map(() => "?").join(",");
+      db.query(
+        `UPDATE ${TBL("arquivos_itens")}
+            SET ativo = 0, sincronizado_em = ?
+          WHERE LOWER(COALESCE(modulo, 'udocs')) = LOWER(?)
+            AND drive_file_id NOT IN (${placeholders})`,
+        [synchronizedAt, moduleRoot.module, ...seenIds],
+      );
+    } else {
+      db.query(
+        `UPDATE ${TBL("arquivos_itens")}
+            SET ativo = 0, sincronizado_em = ?
+          WHERE LOWER(COALESCE(modulo, 'udocs')) = LOWER(?)`,
+        [synchronizedAt, moduleRoot.module],
+      );
+    }
+  }
+
+  db.query(
+    `INSERT INTO ${TBL("arquivos_sync_state")}
+      (provider, cursor_token, last_sync_at, last_status, last_error, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(provider) DO UPDATE SET
+       cursor_token = excluded.cursor_token,
+       last_sync_at = excluded.last_sync_at,
+       last_status = excluded.last_status,
+       last_error = excluded.last_error,
+       updated_at = excluded.updated_at`,
+    ["google_drive", null, synchronizedAt, "ok", null, synchronizedAt],
+  );
+
+  const moduleSummaries = moduleRoots.map(({ module, rootFolderId }) => ({
+    module,
+    root_folder_id: rootFolderId,
+    files: Array.from(new Set(seenByModule[module])).length,
+    categories: categoryRoots.filter((item) => item.module === module).length,
+  }));
+
+  return {
+    totalCategories: categoryRoots.length,
+    totalFiles: collectedEntries.length,
+    synchronizedAt,
+    drive: {
+      drive_id: runtimeConfig.driveId,
+      modules: moduleSummaries,
+    },
+  };
+};
+
+const mapArquivoItemRecord = (row: Record<string, unknown>): ArquivoItemRecord => ({
+  id: String(row.id || ""),
+  drive_file_id: String(row.drive_file_id || ""),
+  modulo: parseArquivoModule(row.modulo, "udocs"),
+  titulo: String(row.titulo || row.name || row.id || ""),
+  categoria: String(row.categoria || "Geral"),
+  ano: row.ano != null ? Number(row.ano) : null,
+  mime_type: String(row.mime_type || "application/octet-stream"),
+  item_tipo: String(row.item_tipo || "").trim().toLowerCase() === "pasta"
+    ? "pasta"
+    : resolveArquivoItemTipo({
+      mime_type: String(row.mime_type || "application/octet-stream"),
+      titulo: String(row.titulo || row.name || row.id || ""),
+    }),
+  parent_drive_file_id: row.parent_drive_file_id
+    ? String(row.parent_drive_file_id).trim() || null
+    : null,
+  ordem_manual: row.ordem_manual != null && Number.isFinite(Number(row.ordem_manual))
+    ? Number(row.ordem_manual)
+    : null,
+  tamanho_bytes: Number(row.tamanho_bytes || 0),
+  drive_modified_at: row.drive_modified_at ? String(row.drive_modified_at) : null,
+  drive_created_at: row.drive_created_at ? String(row.drive_created_at) : null,
+  preview_url: row.preview_url ? String(row.preview_url) : null,
+  download_url: row.download_url ? String(row.download_url) : null,
+  checksum: row.checksum ? String(row.checksum) : null,
+  cooperativa_scope: row.cooperativa_scope ? String(row.cooperativa_scope) : null,
+  ativo: Number(row.ativo ?? 1) !== 0,
+  sincronizado_em: row.sincronizado_em ? String(row.sincronizado_em) : null,
+  criado_em: row.criado_em ? String(row.criado_em) : null,
+});
+
+const getArquivoById = (id: string, module: ArquivoModule = "udocs") => {
+  const normalized = String(id || "").trim();
+  if (!normalized) return null;
+  const row = db.queryEntries<Record<string, unknown>>(
+    `SELECT *
+       FROM ${TBL("arquivos_itens")}
+      WHERE (id = ? OR drive_file_id = ?)
+        AND LOWER(COALESCE(modulo, 'udocs')) = LOWER(?)
+      LIMIT 1`,
+    [normalized, normalized, module],
+  )[0];
+  return row ? mapArquivoItemRecord(row) : null;
+};
+
+const getActiveArquivoAclRows = () => {
+  try {
+    return db.queryEntries<ArquivoAclRow>(
+      `SELECT *
+         FROM ${TBL("arquivos_acl")}
+        WHERE COALESCE(ativo, 1) = 1`,
+    ) || [];
+  } catch (error) {
+    console.warn("[arquivos] falha ao carregar ACL:", error);
+    return [] as ArquivoAclRow[];
+  }
+};
+
+const getArquivoUserGroups = (email?: string | null) => {
+  if (!email) return [] as string[];
+  try {
+    const rows = db.queryEntries<{ grupo_id: string }>(
+      `SELECT grupo_id
+         FROM ${TBL("arquivos_grupo_membros")}
+        WHERE LOWER(user_email) = LOWER(?)
+          AND COALESCE(ativo, 1) = 1`,
+      [email],
+    ) || [];
+    return rows.map((row) => String(row.grupo_id || "").trim()).filter(Boolean);
+  } catch (error) {
+    console.warn("[arquivos] falha ao carregar grupos do usuário:", error);
+    return [] as string[];
+  }
+};
+
+const buildArquivoAccessContext = (userData: any): ArquivoAccessContext => {
+  const email = String(userData?.email || "").trim().toLowerCase();
+  const role = String(userData?.papel || "operador").trim().toLowerCase();
+  const associated = normalizeCooperativaIdsInput(userData?.cooperativas_ids);
+  const primary = String(userData?.cooperativa_id || "").trim();
+  if (primary && !associated.includes(primary)) associated.push(primary);
+  const visible = getVisibleCooperativas(userData);
+  const allCooperativas = visible === null;
+  const cooperativas = new Set<string>(
+    (allCooperativas
+      ? associated
+      : Array.from(visible || new Set<string>()))
+      .map((item) => String(item || "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const groups = getArquivoUserGroups(email);
+  return {
+    email,
+    role,
+    cooperativas,
+    grupos: new Set(groups.map((item) => item.toLowerCase())),
+    allCooperativas,
+    isConfederacaoAdmin: isConfederacaoSystemAdmin(userData),
+  };
+};
+
+const aclPrincipalMatches = (
+  row: ArquivoAclRow,
+  ctx: ArquivoAccessContext,
+) => {
+  const principalType = String(row.principal_type || "").trim().toLowerCase();
+  const principalValue = String(row.principal_value || "").trim().toLowerCase();
+  if (!principalType || !principalValue) return false;
+  if (principalType === "all" || principalType === "*") return true;
+  if (principalType === "user" || principalType === "usuario") {
+    return ctx.email === principalValue;
+  }
+  if (principalType === "role" || principalType === "papel") {
+    return ctx.role === principalValue;
+  }
+  if (principalType === "cooperativa" || principalType === "singular") {
+    return ctx.cooperativas.has(principalValue);
+  }
+  if (principalType === "grupo" || principalType === "group") {
+    return ctx.grupos.has(principalValue);
+  }
+  return false;
+};
+
+const aclScopeMatches = (row: ArquivoAclRow, item: ArquivoItemRecord) => {
+  const scopeType = String(row.scope_type || "global").trim().toLowerCase();
+  const scopeValue = String(row.scope_value || "").trim();
+  if (scopeType === "global") return true;
+  if (scopeType === "categoria") {
+    return normalizeArquivoComparable(scopeValue) ===
+      normalizeArquivoComparable(item.categoria);
+  }
+  if (scopeType === "arquivo") {
+    return scopeValue === item.id || scopeValue === item.drive_file_id;
+  }
+  return false;
+};
+
+const aclActionAllowed = (row: ArquivoAclRow, action: ArquivoPermissionAction) => {
+  if (action === "download") {
+    return Number(row.can_download ?? 0) !== 0;
+  }
+  return Number(row.can_view ?? 0) !== 0;
+};
+
+const canAccessArquivo = (
+  item: ArquivoItemRecord,
+  action: ArquivoPermissionAction,
+  userData: any,
+  aclRows: ArquivoAclRow[],
+  accessContext?: ArquivoAccessContext,
+) => {
+  if (INSECURE_MODE) return true;
+  const ctx = accessContext || buildArquivoAccessContext(userData);
+  if (ctx.isConfederacaoAdmin) return true;
+
+  const coopScope = String(item.cooperativa_scope || "").trim().toLowerCase();
+  if (coopScope && !ctx.allCooperativas && !ctx.cooperativas.has(coopScope)) {
+    return false;
+  }
+
+  const scopedRows = aclRows.filter((row) => aclScopeMatches(row, item));
+  if (scopedRows.length === 0) {
+    return true;
+  }
+
+  const matchingRows = scopedRows.filter((row) => aclPrincipalMatches(row, ctx));
+  if (matchingRows.length === 0) {
+    return false;
+  }
+
+  const hasDeny = matchingRows.some((row) =>
+    String(row.effect || "allow").trim().toLowerCase() === "deny" &&
+    aclActionAllowed(row, action)
+  );
+  if (hasDeny) return false;
+
+  return matchingRows.some((row) =>
+    String(row.effect || "allow").trim().toLowerCase() !== "deny" &&
+    aclActionAllowed(row, action)
+  );
+};
+
+const resolveRequestIp = (c: any) => {
+  const forwardedFor = c.req.header("x-forwarded-for");
+  if (forwardedFor) {
+    return forwardedFor.split(",")[0]?.trim() || null;
+  }
+  return c.req.header("x-real-ip") || null;
+};
+
+const maybeCleanupArquivosAuditRetention = () => {
+  const now = Date.now();
+  if (arquivosAuditCleanupLastAt && now - arquivosAuditCleanupLastAt < 6 * 60 * 60 * 1000) {
+    return;
+  }
+  arquivosAuditCleanupLastAt = now;
+  try {
+    const cutoff = new Date(
+      Date.now() - ARQUIVOS_AUDIT_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    db.query(
+      `DELETE FROM ${TBL("arquivos_auditoria")} WHERE created_at < ?`,
+      [cutoff],
+    );
+  } catch (error) {
+    console.warn("[arquivos] falha ao aplicar retenção de auditoria:", error);
+  }
+};
+
+const registrarAuditoriaArquivos = (
+  c: any,
+  userData: any,
+  acao: string,
+  resultado: "ok" | "deny" | "error",
+  options: {
+    arquivoId?: string | null;
+    driveFileId?: string | null;
+    detalhes?: unknown;
+  } = {},
+) => {
+  try {
+    const detalhes = (() => {
+      if (options.detalhes == null) return null;
+      if (typeof options.detalhes === "string") return truncateText(options.detalhes, 1200);
+      try {
+        return truncateText(JSON.stringify(options.detalhes), 1200);
+      } catch {
+        return null;
+      }
+    })();
+    db.query(
+      `INSERT INTO ${TBL("arquivos_auditoria")}
+        (id, arquivo_id, drive_file_id, acao, resultado, usuario_email, usuario_nome, usuario_papel, cooperativa_id, ip, user_agent, detalhes, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        safeRandomId("arqaudit"),
+        options.arquivoId || null,
+        options.driveFileId || null,
+        acao,
+        resultado,
+        userData?.email || null,
+        userData?.display_name || userData?.nome || userData?.email || null,
+        userData?.papel || null,
+        userData?.cooperativa_id || null,
+        resolveRequestIp(c),
+        c.req.header("user-agent") || null,
+        detalhes,
+        nowIso(),
+      ],
+    );
+    maybeCleanupArquivosAuditRetention();
+  } catch (error) {
+    console.warn("[arquivos] falha ao registrar auditoria:", error);
+  }
+};
+
+const getMimeDefaultExtension = (mimeType: string) => {
+  const normalized = String(mimeType || "").toLowerCase();
+  if (normalized.includes("pdf")) return "pdf";
+  if (normalized.includes("msword")) return "doc";
+  if (normalized.includes("wordprocessingml")) return "docx";
+  if (normalized.includes("spreadsheetml")) return "xlsx";
+  if (normalized.includes("presentationml")) return "pptx";
+  if (normalized.includes("image/jpeg")) return "jpg";
+  if (normalized.includes("image/png")) return "png";
+  if (normalized.includes("video/mp4")) return "mp4";
+  if (normalized.includes("text/plain")) return "txt";
+  return "";
+};
+
+const resolveGoogleExportMimeType = (
+  sourceMimeType: string,
+  action: ArquivoPermissionAction,
+) => {
+  const mime = String(sourceMimeType || "");
+  if (!mime.startsWith("application/vnd.google-apps.")) return null;
+  if (mime === "application/vnd.google-apps.spreadsheet") {
+    return action === "download"
+      ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      : "application/pdf";
+  }
+  if (mime === "application/vnd.google-apps.presentation") {
+    return action === "download"
+      ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+      : "application/pdf";
+  }
+  if (mime === "application/vnd.google-apps.document") {
+    return action === "download"
+      ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      : "application/pdf";
+  }
+  if (mime === "application/vnd.google-apps.drawing") {
+    return "application/pdf";
+  }
+  return "application/pdf";
+};
+
+const buildArquivoFilename = (item: ArquivoItemRecord, fallbackMimeType?: string | null) => {
+  const baseName = String(item.titulo || item.drive_file_id || "arquivo")
+    .replace(/[\\/:*?"<>|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const safeBase = baseName || "arquivo";
+  if (/\.[A-Za-z0-9]{2,5}$/.test(safeBase)) {
+    return safeBase;
+  }
+  const extension = getMimeDefaultExtension(
+    String(fallbackMimeType || item.mime_type || ""),
+  );
+  return extension ? `${safeBase}.${extension}` : safeBase;
+};
+
+const sanitizeHttpHeaderValue = (value: unknown) =>
+  String(value ?? "")
+    // Evita header injection e caracteres inválidos para ByteString.
+    .replace(/[\r\n]+/g, " ")
+    .replace(/[\u0000-\u0008\u000A-\u001F\u007F]/g, "")
+    .replace(/[^\u0009\u0020-\u00FF]/g, "")
+    .trim();
+
+const buildContentDispositionHeader = (
+  disposition: "inline" | "attachment",
+  filename: string,
+) => {
+  const normalized = String(filename || "arquivo").trim() || "arquivo";
+  const asciiFallback = normalized
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/["\\]/g, "_")
+    .replace(/[^\x20-\x7E]+/g, "_")
+    .replace(/\s+/g, " ")
+    .trim() || "arquivo";
+  const encodedUtf8 = encodeURIComponent(normalized);
+  return `${disposition}; filename="${asciiFallback}"; filename*=UTF-8''${encodedUtf8}`;
+};
+
+const openDriveStream = async (
+  item: ArquivoItemRecord,
+  action: ArquivoPermissionAction,
+  rangeHeader?: string | null,
+) => {
+  const accessToken = await getDriveAccessToken();
+  let targetFileId = String(item.drive_file_id || "").trim();
+  let targetMimeType = String(item.mime_type || "").trim();
+  if (targetMimeType === "application/vnd.google-apps.shortcut") {
+    const params = new URLSearchParams();
+    params.set("fields", "id,mimeType,shortcutDetails(targetId,targetMimeType)");
+    params.set("supportsAllDrives", "true");
+    const metadataResponse = await fetchGoogleWithRetry(
+      `${GOOGLE_DRIVE_FILES_API}/${encodeURIComponent(targetFileId)}?${params.toString()}`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+      `[gdrive] falha ao resolver atalho ${targetFileId}`,
+    );
+    const metadata = await metadataResponse.json() as {
+      shortcutDetails?: {
+        targetId?: string;
+        targetMimeType?: string;
+      };
+    };
+    const resolvedId = String(metadata.shortcutDetails?.targetId || "").trim();
+    if (!resolvedId) {
+      throw new Error(`Atalho ${targetFileId} sem targetId válido.`);
+    }
+    targetFileId = resolvedId;
+    targetMimeType = String(
+      metadata.shortcutDetails?.targetMimeType || targetMimeType,
+    ).trim();
+  }
+
+  const exportMimeType = resolveGoogleExportMimeType(targetMimeType, action);
+  const url = (() => {
+    if (exportMimeType) {
+      const params = new URLSearchParams();
+      params.set("mimeType", exportMimeType);
+      return `${GOOGLE_DRIVE_FILES_API}/${encodeURIComponent(targetFileId)}/export?${params.toString()}`;
+    }
+    const params = new URLSearchParams();
+    params.set("alt", "media");
+    params.set("supportsAllDrives", "true");
+    return `${GOOGLE_DRIVE_FILES_API}/${encodeURIComponent(targetFileId)}?${params.toString()}`;
+  })();
+
+  const headers = new Headers({
+    Authorization: `Bearer ${accessToken}`,
+  });
+  if (rangeHeader) {
+    headers.set("Range", rangeHeader);
+  }
+
+  const upstream = await fetch(url, { headers });
+  return {
+    upstream,
+    effectiveMimeType: exportMimeType || targetMimeType || null,
+  };
 };
 
 const resolveAppBaseUrl = () => {
@@ -2847,9 +4875,11 @@ const requireAuth = async (c: any, next: any) => {
   }
 
   const authHeader = c.req.header("Authorization");
-  const token = authHeader?.startsWith("Bearer ")
+  const tokenFromHeader = authHeader?.startsWith("Bearer ")
     ? authHeader.split(" ")[1]
     : undefined;
+  const tokenFromQuery = c.req.query("token");
+  const token = tokenFromHeader || tokenFromQuery || undefined;
   if (!token) return c.json({ error: "Token de acesso não fornecido" }, 401);
 
   if (AUTH_PROVIDER === "local") {
@@ -2882,7 +4912,7 @@ const getUserData = async (userId: string, userEmail?: string | null) => {
       cooperativa_id: "",
       cooperativas_ids: [] as string[],
       papel: "confederacao",
-      modulos_acesso: ["hub", "urede"],
+      modulos_acesso: ["hub", "central_apps", "urede", "udocs", "umarketing", "ufast"],
       ativo: true,
       data_cadastro: new Date().toISOString(),
     } as any;
@@ -3788,6 +5818,239 @@ app.put("/configuracoes/sistema", requireAuth, async (c) => {
     return c.json({ error: "Falha ao salvar configurações" }, 500);
   }
 });
+
+app.get("/configuracoes/sistema/central-arquivos/google-drive", requireAuth, async (c) => {
+  const authUser = c.get("user");
+  const userData = await getUserData(
+    authUser.id,
+    authUser.email || authUser?.claims?.email,
+  );
+  if (!userData) return c.json({ error: "Usuário não encontrado" }, 401);
+  if (!canManageArquivosAdmin(userData)) {
+    return c.json({ error: "Acesso negado. Apenas administradores da Central podem acessar esta configuração." }, 403);
+  }
+
+  try {
+    const status = await buildCentralArquivosDriveCredentialStatus();
+    const drive = buildCentralArquivosDriveConfigStatus();
+    return c.json({
+      can_manage: true,
+      encryption_enabled: Boolean(CENTRAL_ARQUIVOS_ENCRYPTION_KEY),
+      ...status,
+      drive,
+    });
+  } catch (error) {
+    console.error("[settings] erro ao consultar credencial do Google Drive:", error);
+    return c.json({ error: "Erro ao consultar credencial do Google Drive" }, 500);
+  }
+});
+
+app.put("/configuracoes/sistema/central-arquivos/google-drive", requireAuth, async (c) => {
+  const authUser = c.get("user");
+  const userData = await getUserData(
+    authUser.id,
+    authUser.email || authUser?.claims?.email,
+  );
+  if (!userData) return c.json({ error: "Usuário não encontrado" }, 401);
+  if (!canManageArquivosAdmin(userData)) {
+    return c.json({ error: "Acesso negado. Apenas administradores da Central podem alterar esta configuração." }, 403);
+  }
+
+  let payload: any;
+  try {
+    payload = await c.req.json();
+  } catch {
+    return c.json({ error: "JSON inválido" }, 400);
+  }
+
+  try {
+    const now = nowIso();
+    const hasExplicitServiceAccount = Boolean(
+      payload && typeof payload === "object" && "service_account" in payload,
+    );
+    const hasExplicitDrive = Boolean(
+      payload && typeof payload === "object" && "drive" in payload,
+    );
+    const looksLikeDrivePayload = Boolean(
+      payload && typeof payload === "object" &&
+        (
+          "drive_id" in payload ||
+          "udocs_root_folder_id" in payload ||
+          "umarketing_root_folder_id" in payload
+        ),
+    );
+
+    const shouldUpdateServiceAccount = hasExplicitServiceAccount ||
+      (!hasExplicitServiceAccount && !hasExplicitDrive && !looksLikeDrivePayload);
+    const shouldUpdateDrive = hasExplicitDrive ||
+      (!hasExplicitServiceAccount && !hasExplicitDrive && looksLikeDrivePayload);
+
+    if (!shouldUpdateServiceAccount && !shouldUpdateDrive) {
+      return c.json({ error: "Nada para atualizar." }, 400);
+    }
+
+    if (shouldUpdateServiceAccount) {
+      let serviceAccount: GoogleServiceAccountPayload;
+      try {
+        const source = hasExplicitServiceAccount
+          ? payload?.service_account
+          : payload;
+        serviceAccount = normalizeGoogleServiceAccountPayload(source);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Arquivo inválido";
+        return c.json({ error: message }, 400);
+      }
+
+      const encrypted = await encryptCentralArquivosSecret({
+        service_account: serviceAccount,
+        updated_at: now,
+        updated_by_email: userData.email ? String(userData.email) : null,
+        updated_by_nome: userData.display_name || userData.nome || null,
+      });
+      persistSettingsValue(SETTINGS_KEY_CENTRAL_ARQUIVOS_GDRIVE_SECRET, encrypted);
+      gdriveTokenCache = null;
+
+      registrarAuditoriaArquivos(c, userData, "gdrive_secret_upsert", "ok", {
+        detalhes: {
+          source: "secure_store",
+          project_id: serviceAccount.project_id || null,
+          client_email_masked: maskEmail(serviceAccount.client_email),
+        },
+      });
+    }
+
+    if (shouldUpdateDrive) {
+      const baseConfig = readStoredCentralArquivosDriveConfig() || {
+        drive_id: normalizeDriveResourceId(GDRIVE_DRIVE_ID),
+        udocs_root_folder_id: GDRIVE_UDOCS_ROOT_FOLDER_ID,
+        umarketing_root_folder_id: normalizeDriveResourceId(
+          GDRIVE_UMARKETING_ROOT_FOLDER_ID,
+        ),
+      };
+      let driveConfig: {
+        drive_id: string | null;
+        udocs_root_folder_id: string;
+        umarketing_root_folder_id: string | null;
+      };
+      try {
+        driveConfig = normalizeCentralArquivosDriveConfigInput(
+          hasExplicitDrive ? payload?.drive : payload,
+          baseConfig,
+        );
+      } catch (error) {
+        const message = error instanceof Error
+          ? error.message
+          : "Configuração de pastas inválida.";
+        return c.json({ error: message }, 400);
+      }
+
+      let validationResult: {
+        status: "valid";
+        checked_at: string;
+        drive_name: string | null;
+        udocs_folder_name: string | null;
+        umarketing_folder_name: string | null;
+      };
+      try {
+        validationResult = await validateCentralArquivosDriveConfig(driveConfig);
+      } catch (error) {
+        const message = error instanceof Error
+          ? error.message
+          : "Não foi possível validar os IDs informados no Google Drive.";
+        return c.json({ error: message }, 400);
+      }
+
+      const persistedDriveConfig: CentralArquivosDriveConfigPayload = {
+        ...driveConfig,
+        validation: validationResult,
+        updated_at: now,
+        updated_by_email: userData.email ? String(userData.email) : null,
+        updated_by_nome: userData.display_name || userData.nome || null,
+      };
+      persistSettingsValue(
+        SETTINGS_KEY_CENTRAL_ARQUIVOS_GDRIVE_CONFIG,
+        JSON.stringify(persistedDriveConfig),
+      );
+
+      registrarAuditoriaArquivos(c, userData, "gdrive_config_upsert", "ok", {
+        detalhes: {
+          source: "secure_store",
+          drive_id: driveConfig.drive_id,
+          udocs_root_folder_id: driveConfig.udocs_root_folder_id,
+          umarketing_root_folder_id: driveConfig.umarketing_root_folder_id,
+        },
+      });
+    }
+
+    const status = await buildCentralArquivosDriveCredentialStatus();
+    const drive = buildCentralArquivosDriveConfigStatus();
+    return c.json({
+      ok: true,
+      encryption_enabled: Boolean(CENTRAL_ARQUIVOS_ENCRYPTION_KEY),
+      ...status,
+      drive,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Erro inesperado";
+    console.error("[settings] erro ao salvar configuração do Google Drive:", error);
+    return c.json({ error: `Falha ao salvar configuração: ${message.slice(0, 300)}` }, 500);
+  }
+});
+
+app.delete("/configuracoes/sistema/central-arquivos/google-drive", requireAuth, async (c) => {
+  const authUser = c.get("user");
+  const userData = await getUserData(
+    authUser.id,
+    authUser.email || authUser?.claims?.email,
+  );
+  if (!userData) return c.json({ error: "Usuário não encontrado" }, 401);
+  if (!canManageArquivosAdmin(userData)) {
+    return c.json({ error: "Acesso negado. Apenas administradores da Central podem alterar esta configuração." }, 403);
+  }
+
+  try {
+    deleteSettingsValue(SETTINGS_KEY_CENTRAL_ARQUIVOS_GDRIVE_SECRET);
+    gdriveTokenCache = null;
+
+    registrarAuditoriaArquivos(c, userData, "gdrive_secret_delete", "ok", {
+      detalhes: { source: "secure_store" },
+    });
+
+    const status = await buildCentralArquivosDriveCredentialStatus();
+    const drive = buildCentralArquivosDriveConfigStatus();
+    return c.json({
+      ok: true,
+      encryption_enabled: Boolean(CENTRAL_ARQUIVOS_ENCRYPTION_KEY),
+      ...status,
+      drive,
+    });
+  } catch (error) {
+    console.error("[settings] erro ao remover credencial do Google Drive:", error);
+    return c.json({ error: "Falha ao remover credencial do Google Drive" }, 500);
+  }
+});
+
+// Alias UDocs para configuração do Google Drive (legado: /configuracoes/sistema/central-arquivos/google-drive)
+app.get("/configuracoes/sistema/udocs/google-drive", requireAuth, async (c) =>
+  c.redirect(
+    buildRedirectTarget(c, "/configuracoes/sistema/central-arquivos/google-drive"),
+    307,
+  )
+);
+
+app.put("/configuracoes/sistema/udocs/google-drive", requireAuth, async (c) =>
+  c.redirect(
+    buildRedirectTarget(c, "/configuracoes/sistema/central-arquivos/google-drive"),
+    307,
+  )
+);
+
+app.delete("/configuracoes/sistema/udocs/google-drive", requireAuth, async (c) =>
+  c.redirect(
+    buildRedirectTarget(c, "/configuracoes/sistema/central-arquivos/google-drive"),
+    307,
+  )
+);
 
 app.put("/auth/me", requireAuth, async (c) => {
   try {
@@ -9612,6 +11875,1519 @@ app.post("/alertas/marcar-todos", requireAuth, async (c) => {
     console.error("Erro ao marcar alertas como lidos:", error);
     return c.json({ error: "Erro ao marcar alertas" }, 500);
   }
+});
+
+const getAuthenticatedUserData = async (c: any) => {
+  const authUser = c.get("user");
+  const email = authUser?.email || authUser?.claims?.email || null;
+  if (!authUser?.id && !email) return null;
+  return getUserData(authUser?.id || email || "", email);
+};
+
+const isCentralArquivosAdminByGroup = (email?: string | null) => {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  if (!normalizedEmail) return false;
+  try {
+    const row = db.queryEntries<{ total: number }>(
+      `SELECT COUNT(*) AS total
+         FROM ${TBL("arquivos_grupo_membros")}
+        WHERE LOWER(user_email) = LOWER(?)
+          AND LOWER(grupo_id) = LOWER(?)
+          AND COALESCE(ativo, 1) = 1`,
+      [normalizedEmail, CENTRAL_ARQUIVOS_ADMIN_GROUP_ID],
+    )[0];
+    return Number(row?.total || 0) > 0;
+  } catch (error) {
+    console.warn("[arquivos] falha ao validar grupo central_admin:", error);
+    return false;
+  }
+};
+
+const canAccessUDocsModule = (userData: any) => {
+  if (INSECURE_MODE || isConfederacaoSystemAdmin(userData)) return true;
+  if (!userData) return false;
+  const normalized = normalizeModuleAccess(
+    userData?.modulos_acesso ?? userData?.module_access,
+    ["hub"],
+  );
+  return normalized.includes("udocs");
+};
+
+const canAccessUMarketingModule = (userData: any) => {
+  if (INSECURE_MODE || isConfederacaoSystemAdmin(userData)) return true;
+  if (!userData) return false;
+  const normalized = normalizeModuleAccess(
+    userData?.modulos_acesso ?? userData?.module_access,
+    ["hub"],
+  );
+  return normalized.includes("umarketing");
+};
+
+const parseArquivoModule = (
+  value: unknown,
+  fallback: ArquivoModule = "udocs",
+): ArquivoModule => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "umarketing" || normalized === "marketing") {
+    return "umarketing";
+  }
+  if (normalized === "udocs") {
+    return "udocs";
+  }
+  return fallback;
+};
+
+const canAccessArquivosModule = (userData: any, module: ArquivoModule) => {
+  return module === "umarketing"
+    ? canAccessUMarketingModule(userData)
+    : canAccessUDocsModule(userData);
+};
+
+const getModuloLabel = (module: ArquivoModule) =>
+  module === "umarketing" ? "UMkt" : "UDocs";
+
+const canManageArquivosAdmin = (userData: any) => {
+  if (INSECURE_MODE || isConfederacaoSystemAdmin(userData)) return true;
+  if (!userData) return false;
+  if (!canAccessUDocsModule(userData) && !canAccessUMarketingModule(userData)) {
+    return false;
+  }
+  const papel = String(userData?.papel || "").trim().toLowerCase();
+  if (papel !== "admin") return false;
+  return isCentralArquivosAdminByGroup(userData?.email);
+};
+
+const parsePositiveInt = (value: string | undefined, fallback: number, max = 1000) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(Math.trunc(parsed), max);
+};
+
+type ArquivoShortcutRecord = {
+  id: string;
+  modulo: ArquivoModule;
+  folder_drive_file_id: string;
+  rotulo: string;
+  ordem: number;
+  ativo: number;
+  criado_em: string | null;
+  atualizado_em: string | null;
+};
+
+const normalizeShortcutLabel = (value: unknown) =>
+  String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+
+const mapArquivoShortcutRecord = (row: Record<string, unknown>): ArquivoShortcutRecord => ({
+  id: String(row.id || ""),
+  modulo: parseArquivoModule(row.modulo, "udocs"),
+  folder_drive_file_id: String(row.folder_drive_file_id || ""),
+  rotulo: normalizeShortcutLabel(row.rotulo),
+  ordem: Number(row.ordem || 0),
+  ativo: Number(row.ativo ?? 1),
+  criado_em: row.criado_em ? String(row.criado_em) : null,
+  atualizado_em: row.atualizado_em ? String(row.atualizado_em) : null,
+});
+
+const normalizeArquivoParentId = (value: unknown) => {
+  const normalized = String(value || "").trim();
+  return normalized || null;
+};
+
+const ensureArquivoSiblingOrder = (
+  module: ArquivoModule,
+  parentDriveFileId: string | null,
+) => {
+  const rows = db.queryEntries<{
+    drive_file_id: string;
+    ordem_manual: number | null;
+  }>(
+    `SELECT drive_file_id, ordem_manual
+       FROM ${TBL("arquivos_itens")}
+      WHERE COALESCE(ativo, 1) = 1
+        AND LOWER(COALESCE(modulo, 'udocs')) = LOWER(?)
+        AND COALESCE(parent_drive_file_id, '') = COALESCE(?, '')
+      ORDER BY
+        COALESCE(ordem_manual, 2147483647) ASC,
+        LOWER(COALESCE(titulo, '')) ASC`,
+    [module, parentDriveFileId || ""],
+  ) || [];
+
+  let order = 10;
+  for (const row of rows) {
+    db.query(
+      `UPDATE ${TBL("arquivos_itens")}
+          SET ordem_manual = ?
+        WHERE drive_file_id = ?
+          AND LOWER(COALESCE(modulo, 'udocs')) = LOWER(?)`,
+      [order, String(row.drive_file_id || "").trim(), module],
+    );
+    order += 10;
+  }
+};
+
+const reorderArquivoItem = (
+  module: ArquivoModule,
+  itemId: string,
+  direction: "up" | "down",
+) => {
+  const item = getArquivoById(itemId, module);
+  if (!item) {
+    return { moved: false, reason: "Arquivo não encontrado." };
+  }
+  const parentDriveFileId = normalizeArquivoParentId(item.parent_drive_file_id);
+  ensureArquivoSiblingOrder(module, parentDriveFileId);
+
+  const siblings = db.queryEntries<{
+    drive_file_id: string;
+    ordem_manual: number | null;
+  }>(
+    `SELECT drive_file_id, ordem_manual
+       FROM ${TBL("arquivos_itens")}
+      WHERE COALESCE(ativo, 1) = 1
+        AND LOWER(COALESCE(modulo, 'udocs')) = LOWER(?)
+        AND COALESCE(parent_drive_file_id, '') = COALESCE(?, '')
+      ORDER BY ordem_manual ASC, LOWER(COALESCE(titulo, '')) ASC`,
+    [module, parentDriveFileId || ""],
+  ) || [];
+  const index = siblings.findIndex((row) =>
+    String(row.drive_file_id || "").trim() === item.drive_file_id
+  );
+  if (index < 0) {
+    return { moved: false, reason: "Item não localizado na ordenação atual." };
+  }
+
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (targetIndex < 0 || targetIndex >= siblings.length) {
+    return { moved: false, reason: "Item já está no limite da ordenação." };
+  }
+
+  const current = siblings[index];
+  const target = siblings[targetIndex];
+  const currentOrder = Number(current.ordem_manual || (index + 1) * 10);
+  const targetOrder = Number(target.ordem_manual || (targetIndex + 1) * 10);
+
+  db.query(
+    `UPDATE ${TBL("arquivos_itens")}
+        SET ordem_manual = CASE
+          WHEN drive_file_id = ? THEN ?
+          WHEN drive_file_id = ? THEN ?
+          ELSE ordem_manual
+        END
+      WHERE LOWER(COALESCE(modulo, 'udocs')) = LOWER(?)
+        AND drive_file_id IN (?, ?)`,
+    [
+      current.drive_file_id,
+      targetOrder,
+      target.drive_file_id,
+      currentOrder,
+      module,
+      current.drive_file_id,
+      target.drive_file_id,
+    ],
+  );
+
+  return {
+    moved: true,
+    item_drive_file_id: item.drive_file_id,
+    parent_drive_file_id: parentDriveFileId,
+    direction,
+  };
+};
+
+const buildRedirectTarget = (c: any, path: string) => {
+  try {
+    const url = new URL(c.req.url);
+    return `${path}${url.search || ""}`;
+  } catch {
+    return path;
+  }
+};
+
+const buildRedirectTargetWithQuery = (
+  c: any,
+  path: string,
+  params: Record<string, string>,
+) => {
+  try {
+    const base = new URL(c.req.url);
+    const target = new URL(path, `${base.protocol}//${base.host}`);
+    // Preserva query original (ex.: token, filtros e paginação) e sobrescreve apenas as chaves informadas.
+    base.searchParams.forEach((value, key) => {
+      target.searchParams.set(key, value);
+    });
+    for (const [key, value] of Object.entries(params)) {
+      target.searchParams.set(key, value);
+    }
+    return `${target.pathname}${target.search}`;
+  } catch {
+    const qs = new URLSearchParams(params).toString();
+    return qs ? `${path}?${qs}` : path;
+  }
+};
+
+const handleArquivoStreamRequest = async (
+  c: any,
+  action: ArquivoPermissionAction,
+  disposition: "inline" | "attachment",
+) => {
+  const userData = await getAuthenticatedUserData(c);
+  const module = parseArquivoModule(c.req.query("module"), "udocs");
+  const moduleLabel = getModuloLabel(module);
+  if (!userData) {
+    return c.json({ error: "Usuário não autenticado" }, 401);
+  }
+
+  if (!canAccessArquivosModule(userData, module)) {
+    registrarAuditoriaArquivos(c, userData, action, "deny", {
+      arquivoId: String(c.req.param("id") || "").trim(),
+      detalhes: `Acesso negado ao módulo ${moduleLabel}.`,
+    });
+    return c.json({ error: `Acesso negado ao módulo ${moduleLabel}` }, 403);
+  }
+
+  const arquivoId = String(c.req.param("id") || "").trim();
+  const item = getArquivoById(arquivoId, module);
+  if (!item || !item.ativo) {
+    registrarAuditoriaArquivos(c, userData, action, "error", {
+      arquivoId,
+      detalhes: `Arquivo não encontrado no módulo ${moduleLabel}.`,
+    });
+    return c.json({ error: "Arquivo não encontrado" }, 404);
+  }
+
+  const aclRows = getActiveArquivoAclRows();
+  const accessContext = buildArquivoAccessContext(userData);
+  const allowed = canAccessArquivo(item, action, userData, aclRows, accessContext);
+  if (!allowed) {
+    registrarAuditoriaArquivos(c, userData, action, "deny", {
+      arquivoId: item.id,
+      driveFileId: item.drive_file_id,
+      detalhes: `Acesso negado por ACL (${moduleLabel}).`,
+    });
+    return c.json({ error: "Acesso negado para este arquivo" }, 403);
+  }
+
+  try {
+    const rangeHeader = c.req.header("range");
+    const { upstream, effectiveMimeType } = await openDriveStream(
+      item,
+      action,
+      rangeHeader,
+    );
+    if (!upstream.ok) {
+      const upstreamBody = await upstream.text().catch(() => "");
+      registrarAuditoriaArquivos(c, userData, action, "error", {
+        arquivoId: item.id,
+        driveFileId: item.drive_file_id,
+        detalhes: `Falha upstream (${upstream.status}): ${upstreamBody.slice(0, 300)}`,
+      });
+      const status = upstream.status === 404 ? 404 : 502;
+      return c.json(
+        { error: "Falha ao recuperar arquivo no Google Drive" },
+        status,
+      );
+    }
+
+    const headers = new Headers();
+    for (
+      const key of [
+        "content-type",
+        "content-length",
+        "content-range",
+        "accept-ranges",
+        "etag",
+        "last-modified",
+        "cache-control",
+      ]
+    ) {
+      const value = upstream.headers.get(key);
+      if (!value) continue;
+      const sanitized = sanitizeHttpHeaderValue(value);
+      if (!sanitized) continue;
+      headers.set(key, sanitized);
+    }
+    if (!headers.get("content-type") && effectiveMimeType) {
+      const sanitizedMime = sanitizeHttpHeaderValue(effectiveMimeType);
+      if (sanitizedMime) {
+        headers.set("content-type", sanitizedMime);
+      }
+    }
+    const contentDisposition = buildContentDispositionHeader(
+      disposition,
+      buildArquivoFilename(item, effectiveMimeType),
+    );
+    headers.set("content-disposition", contentDisposition);
+
+    registrarAuditoriaArquivos(c, userData, action, "ok", {
+      arquivoId: item.id,
+      driveFileId: item.drive_file_id,
+      detalhes: { disposition, status: upstream.status, module },
+    });
+
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    registrarAuditoriaArquivos(c, userData, action, "error", {
+      arquivoId: item.id,
+      driveFileId: item.drive_file_id,
+      detalhes: message,
+    });
+    const status = /não configuradas|desativada/i.test(message) ? 400 : 500;
+    return c.json(
+      { error: "Erro ao processar arquivo", details: message.slice(0, 300) },
+      status,
+    );
+  }
+};
+
+app.get("/arquivos/auditoria", requireAuth, async (c) => {
+  try {
+    const userData = await getAuthenticatedUserData(c);
+    if (!userData) {
+      return c.json({ error: "Usuário não autenticado" }, 401);
+    }
+    if (!canManageArquivosAdmin(userData)) {
+      return c.json({ error: "Acesso negado" }, 403);
+    }
+
+    const q = String(c.req.query("q") || "").trim();
+    const page = parsePositiveInt(c.req.query("page"), 1, 10000);
+    const pageSize = parsePositiveInt(c.req.query("page_size"), 50, 500);
+    const offset = (page - 1) * pageSize;
+
+    const whereClauses: string[] = ["1=1"];
+    const params: unknown[] = [];
+    if (q) {
+      const like = `%${q}%`;
+      whereClauses.push(
+        "(LOWER(COALESCE(a.usuario_email, '')) LIKE LOWER(?) OR LOWER(COALESCE(a.usuario_nome, '')) LIKE LOWER(?) OR LOWER(COALESCE(i.titulo, '')) LIKE LOWER(?) OR LOWER(COALESCE(a.acao, '')) LIKE LOWER(?))",
+      );
+      params.push(like, like, like, like);
+    }
+
+    const whereSql = whereClauses.join(" AND ");
+    const countRow = db.queryEntries<{ total: number }>(
+      `SELECT COUNT(*) AS total
+         FROM ${TBL("arquivos_auditoria")} a
+         LEFT JOIN ${TBL("arquivos_itens")} i ON i.id = a.arquivo_id
+        WHERE ${whereSql}`,
+      params,
+    )[0];
+    const total = Number(countRow?.total || 0);
+
+    const rows = db.queryEntries<Record<string, unknown>>(
+      `SELECT a.*, i.titulo AS arquivo_titulo, i.categoria AS arquivo_categoria
+         FROM ${TBL("arquivos_auditoria")} a
+         LEFT JOIN ${TBL("arquivos_itens")} i ON i.id = a.arquivo_id
+        WHERE ${whereSql}
+        ORDER BY
+          CASE
+            WHEN a.created_at IS NULL OR a.created_at = '' THEN ''
+            ELSE a.created_at
+          END DESC
+        LIMIT ? OFFSET ?`,
+      [...params, pageSize, offset],
+    ) || [];
+
+    return c.json({
+      items: rows,
+      total,
+      page,
+      page_size: pageSize,
+    });
+  } catch (error) {
+    console.error("[arquivos] erro ao listar auditoria:", error);
+    return c.json({ error: "Erro ao listar auditoria de arquivos" }, 500);
+  }
+});
+
+app.get("/arquivos/acl", requireAuth, async (c) => {
+  try {
+    const userData = await getAuthenticatedUserData(c);
+    if (!userData) return c.json({ error: "Usuário não autenticado" }, 401);
+    if (!canManageArquivosAdmin(userData)) {
+      return c.json({ error: "Acesso negado" }, 403);
+    }
+
+    const rows = db.queryEntries<Record<string, unknown>>(
+      `SELECT *
+         FROM ${TBL("arquivos_acl")}
+        WHERE COALESCE(ativo, 1) = 1
+        ORDER BY scope_type ASC, scope_value ASC, principal_type ASC, principal_value ASC`,
+    ) || [];
+
+    return c.json({ items: rows });
+  } catch (error) {
+    console.error("[arquivos] erro ao listar ACL:", error);
+    return c.json({ error: "Erro ao carregar ACL de arquivos" }, 500);
+  }
+});
+
+app.put("/arquivos/acl", requireAuth, async (c) => {
+  try {
+    const userData = await getAuthenticatedUserData(c);
+    if (!userData) return c.json({ error: "Usuário não autenticado" }, 401);
+    if (!canManageArquivosAdmin(userData)) {
+      return c.json({ error: "Acesso negado" }, 403);
+    }
+
+    const payload = await c.req.json().catch(() => ({} as any));
+    const rulesInput = Array.isArray(payload?.rules) ? payload.rules : [];
+    const replace = payload?.replace === true;
+    const now = nowIso();
+
+    if (replace) {
+      db.query(`DELETE FROM ${TBL("arquivos_acl")}`);
+    }
+
+    let processed = 0;
+    for (const rawRule of rulesInput as Array<Record<string, unknown>>) {
+      const scopeType = String(rawRule.scope_type || "global").trim().toLowerCase();
+      const principalType = String(rawRule.principal_type || "").trim().toLowerCase();
+      const principalValueRaw = String(rawRule.principal_value || "").trim();
+      const effect = String(rawRule.effect || "allow").trim().toLowerCase() === "deny"
+        ? "deny"
+        : "allow";
+      const canView = rawRule.can_view === false || rawRule.can_view === 0 ? 0 : 1;
+      const canDownload = rawRule.can_download === false || rawRule.can_download === 0 ? 0 : 1;
+      const ativo = rawRule.ativo === false || rawRule.ativo === 0 ? 0 : 1;
+      const scopeValue = (() => {
+        const value = String(rawRule.scope_value || "").trim();
+        if (!value) return null;
+        if (scopeType === "categoria") return normalizeArquivoCategoryLabel(value);
+        return value;
+      })();
+
+      if (!["global", "categoria", "arquivo"].includes(scopeType)) continue;
+      if (!["all", "*", "user", "usuario", "role", "papel", "cooperativa", "singular", "grupo", "group"].includes(principalType)) {
+        continue;
+      }
+      const principalValue = (principalType === "all" || principalType === "*")
+        ? "*"
+        : principalValueRaw.toLowerCase();
+      if (!principalValue) continue;
+
+      const id = String(rawRule.id || "").trim() || safeRandomId("acl");
+      db.query(
+        `INSERT INTO ${TBL("arquivos_acl")}
+          (id, scope_type, scope_value, principal_type, principal_value, can_view, can_download, effect, ativo, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           scope_type = excluded.scope_type,
+           scope_value = excluded.scope_value,
+           principal_type = excluded.principal_type,
+           principal_value = excluded.principal_value,
+           can_view = excluded.can_view,
+           can_download = excluded.can_download,
+           effect = excluded.effect,
+           ativo = excluded.ativo,
+           updated_at = excluded.updated_at`,
+        [
+          id,
+          scopeType,
+          scopeValue,
+          principalType,
+          principalValue,
+          canView,
+          canDownload,
+          effect,
+          ativo,
+          now,
+          now,
+        ],
+      );
+      processed += 1;
+    }
+
+    registrarAuditoriaArquivos(c, userData, "acl_update", "ok", {
+      detalhes: { replace, processed },
+    });
+
+    return c.json({ ok: true, processed, replace });
+  } catch (error) {
+    console.error("[arquivos] erro ao atualizar ACL:", error);
+    return c.json({ error: "Erro ao atualizar ACL de arquivos" }, 500);
+  }
+});
+
+app.get("/arquivos/grupos", requireAuth, async (c) => {
+  try {
+    const userData = await getAuthenticatedUserData(c);
+    if (!userData) return c.json({ error: "Usuário não autenticado" }, 401);
+    if (!canManageArquivosAdmin(userData)) {
+      return c.json({ error: "Acesso negado" }, 403);
+    }
+
+    const rows = db.queryEntries<Record<string, unknown>>(
+      `SELECT g.*,
+              COALESCE(COUNT(m.user_email), 0) AS members_count
+         FROM ${TBL("arquivos_grupos")} g
+         LEFT JOIN ${TBL("arquivos_grupo_membros")} m
+           ON m.grupo_id = g.id
+          AND COALESCE(m.ativo, 1) = 1
+        WHERE COALESCE(g.ativo, 1) = 1
+        GROUP BY g.id, g.nome, g.descricao, g.ativo, g.created_at, g.updated_at
+        ORDER BY g.nome ASC`,
+    ) || [];
+
+    return c.json({ items: rows });
+  } catch (error) {
+    console.error("[arquivos] erro ao listar grupos:", error);
+    return c.json({ error: "Erro ao listar grupos de arquivos" }, 500);
+  }
+});
+
+app.post("/arquivos/grupos", requireAuth, async (c) => {
+  try {
+    const userData = await getAuthenticatedUserData(c);
+    if (!userData) return c.json({ error: "Usuário não autenticado" }, 401);
+    if (!canManageArquivosAdmin(userData)) {
+      return c.json({ error: "Acesso negado" }, 403);
+    }
+
+    const payload = await c.req.json().catch(() => ({} as any));
+    const nome = String(payload?.nome || "").trim();
+    if (!nome) {
+      return c.json({ error: "Nome do grupo é obrigatório" }, 400);
+    }
+
+    const id = String(payload?.id || "").trim() || safeRandomId("agr");
+    const descricao = String(payload?.descricao || "").trim() || null;
+    const ativo = payload?.ativo === false || payload?.ativo === 0 ? 0 : 1;
+    const now = nowIso();
+
+    db.query(
+      `INSERT INTO ${TBL("arquivos_grupos")}
+        (id, nome, descricao, ativo, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         nome = excluded.nome,
+         descricao = excluded.descricao,
+         ativo = excluded.ativo,
+         updated_at = excluded.updated_at`,
+      [id, nome, descricao, ativo, now, now],
+    );
+
+    registrarAuditoriaArquivos(c, userData, "grupo_upsert", "ok", {
+      detalhes: { id, nome, ativo },
+    });
+
+    return c.json({ ok: true, id, nome, ativo });
+  } catch (error) {
+    console.error("[arquivos] erro ao salvar grupo:", error);
+    return c.json({ error: "Erro ao salvar grupo de arquivos" }, 500);
+  }
+});
+
+app.put("/arquivos/grupos/:id/membros", requireAuth, async (c) => {
+  try {
+    const userData = await getAuthenticatedUserData(c);
+    if (!userData) return c.json({ error: "Usuário não autenticado" }, 401);
+    if (!canManageArquivosAdmin(userData)) {
+      return c.json({ error: "Acesso negado" }, 403);
+    }
+
+    const groupId = String(c.req.param("id") || "").trim();
+    if (!groupId) {
+      return c.json({ error: "Grupo inválido" }, 400);
+    }
+
+    const payload = await c.req.json().catch(() => ({} as any));
+    const replace = payload?.replace !== false;
+    const rawEmails = Array.isArray(payload?.emails) ? payload.emails : [];
+    const emails = Array.from(
+      new Set(
+        rawEmails
+          .map((item: unknown) => String(item || "").trim().toLowerCase())
+          .filter((item: string) => item.includes("@")),
+      ),
+    );
+    const now = nowIso();
+
+    if (replace) {
+      db.query(`DELETE FROM ${TBL("arquivos_grupo_membros")} WHERE grupo_id = ?`, [
+        groupId,
+      ]);
+    }
+
+    for (const email of emails) {
+      db.query(
+        `INSERT INTO ${TBL("arquivos_grupo_membros")}
+          (grupo_id, user_email, ativo, created_at, updated_at)
+         VALUES (?, ?, 1, ?, ?)
+         ON CONFLICT(grupo_id, user_email) DO UPDATE SET
+           ativo = 1,
+           updated_at = excluded.updated_at`,
+        [groupId, email, now, now],
+      );
+    }
+
+    registrarAuditoriaArquivos(c, userData, "grupo_membros_update", "ok", {
+      detalhes: { groupId, replace, members: emails.length },
+    });
+
+    return c.json({ ok: true, group_id: groupId, members: emails.length });
+  } catch (error) {
+    console.error("[arquivos] erro ao atualizar membros do grupo:", error);
+    return c.json({ error: "Erro ao atualizar membros do grupo" }, 500);
+  }
+});
+
+app.get("/arquivos/atalhos", requireAuth, async (c) => {
+  try {
+    const userData = await getAuthenticatedUserData(c);
+    const module = parseArquivoModule(c.req.query("module"), "udocs");
+    const moduleLabel = getModuloLabel(module);
+    if (!userData) return c.json({ error: "Usuário não autenticado" }, 401);
+    if (!canAccessArquivosModule(userData, module)) {
+      return c.json({ error: `Acesso negado ao módulo ${moduleLabel}` }, 403);
+    }
+
+    const rows = db.queryEntries<Record<string, unknown>>(
+      `SELECT a.*, i.titulo AS folder_titulo, i.categoria AS folder_categoria
+         FROM ${TBL("arquivos_atalhos")} a
+         LEFT JOIN ${TBL("arquivos_itens")} i
+           ON i.drive_file_id = a.folder_drive_file_id
+          AND LOWER(COALESCE(i.modulo, 'udocs')) = LOWER(a.modulo)
+        WHERE COALESCE(a.ativo, 1) = 1
+          AND LOWER(COALESCE(a.modulo, 'udocs')) = LOWER(?)
+        ORDER BY a.ordem ASC, LOWER(COALESCE(a.rotulo, '')) ASC`,
+      [module],
+    ) || [];
+
+    return c.json({
+      items: rows.map((row) => {
+        const mapped = mapArquivoShortcutRecord(row);
+        return {
+          id: mapped.id,
+          modulo: mapped.modulo,
+          folder_drive_file_id: mapped.folder_drive_file_id,
+          rotulo: mapped.rotulo,
+          ordem: mapped.ordem,
+          folder_titulo: String(row.folder_titulo || ""),
+          folder_categoria: String(row.folder_categoria || ""),
+        };
+      }),
+      module,
+    });
+  } catch (error) {
+    console.error("[arquivos] erro ao listar atalhos:", error);
+    return c.json({ error: "Erro ao listar atalhos" }, 500);
+  }
+});
+
+app.put("/arquivos/atalhos", requireAuth, async (c) => {
+  try {
+    const userData = await getAuthenticatedUserData(c);
+    if (!userData) return c.json({ error: "Usuário não autenticado" }, 401);
+    if (!canManageArquivosAdmin(userData)) {
+      return c.json({ error: "Acesso negado. Apenas administradores podem gerenciar atalhos." }, 403);
+    }
+
+    const payload = await c.req.json().catch(() => ({} as any));
+    const module = parseArquivoModule(payload?.module, "udocs");
+    if (!canAccessArquivosModule(userData, module)) {
+      return c.json({ error: `Acesso negado ao módulo ${getModuloLabel(module)}.` }, 403);
+    }
+
+    const folderDriveFileId = String(payload?.folder_drive_file_id || "").trim();
+    const requestedLabel = normalizeShortcutLabel(payload?.rotulo);
+    if (!folderDriveFileId) {
+      return c.json({ error: "folder_drive_file_id é obrigatório." }, 400);
+    }
+
+    const folder = db.queryEntries<Record<string, unknown>>(
+      `SELECT drive_file_id, titulo, item_tipo
+         FROM ${TBL("arquivos_itens")}
+        WHERE drive_file_id = ?
+          AND LOWER(COALESCE(modulo, 'udocs')) = LOWER(?)
+          AND COALESCE(ativo, 1) = 1
+        LIMIT 1`,
+      [folderDriveFileId, module],
+    )[0];
+    if (!folder) {
+      return c.json({ error: "Pasta não encontrada no repositório." }, 404);
+    }
+    const folderTipo = String(folder.item_tipo || "").trim().toLowerCase();
+    if (folderTipo !== "pasta") {
+      return c.json({ error: "Somente pastas podem ser adicionadas como atalho." }, 400);
+    }
+    const rotulo = requestedLabel || String(folder.titulo || "Atalho");
+    const now = nowIso();
+
+    const existing = db.queryEntries<{ id: string; ordem: number }>(
+      `SELECT id, ordem
+         FROM ${TBL("arquivos_atalhos")}
+        WHERE folder_drive_file_id = ?
+          AND LOWER(COALESCE(modulo, 'udocs')) = LOWER(?)
+        LIMIT 1`,
+      [folderDriveFileId, module],
+    )[0];
+
+    let id = existing?.id || safeRandomId("ash");
+    let ordem = Number(existing?.ordem || 0);
+    if (!existing) {
+      const maxRow = db.queryEntries<{ max_ordem: number }>(
+        `SELECT COALESCE(MAX(ordem), 0) AS max_ordem
+           FROM ${TBL("arquivos_atalhos")}
+          WHERE LOWER(COALESCE(modulo, 'udocs')) = LOWER(?)`,
+        [module],
+      )[0];
+      ordem = Number(maxRow?.max_ordem || 0) + 10;
+    }
+
+    db.query(
+      `INSERT INTO ${TBL("arquivos_atalhos")}
+        (id, modulo, folder_drive_file_id, rotulo, ordem, ativo, criado_em, atualizado_em)
+       VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+       ON CONFLICT(modulo, folder_drive_file_id) DO UPDATE SET
+         rotulo = excluded.rotulo,
+         ativo = 1,
+         atualizado_em = excluded.atualizado_em`,
+      [id, module, folderDriveFileId, rotulo, ordem, now, now],
+    );
+
+    registrarAuditoriaArquivos(c, userData, "atalho_upsert", "ok", {
+      detalhes: { module, folder_drive_file_id: folderDriveFileId, rotulo },
+    });
+
+    return c.json({
+      ok: true,
+      id,
+      module,
+      folder_drive_file_id: folderDriveFileId,
+      rotulo,
+      ordem,
+    });
+  } catch (error) {
+    console.error("[arquivos] erro ao salvar atalho:", error);
+    return c.json({ error: "Erro ao salvar atalho" }, 500);
+  }
+});
+
+app.delete("/arquivos/atalhos/:folderId", requireAuth, async (c) => {
+  try {
+    const userData = await getAuthenticatedUserData(c);
+    if (!userData) return c.json({ error: "Usuário não autenticado" }, 401);
+    if (!canManageArquivosAdmin(userData)) {
+      return c.json({ error: "Acesso negado. Apenas administradores podem gerenciar atalhos." }, 403);
+    }
+
+    const module = parseArquivoModule(c.req.query("module"), "udocs");
+    if (!canAccessArquivosModule(userData, module)) {
+      return c.json({ error: `Acesso negado ao módulo ${getModuloLabel(module)}.` }, 403);
+    }
+    const folderDriveFileId = String(c.req.param("folderId") || "").trim();
+    if (!folderDriveFileId) {
+      return c.json({ error: "folderId inválido." }, 400);
+    }
+
+    db.query(
+      `UPDATE ${TBL("arquivos_atalhos")}
+          SET ativo = 0,
+              atualizado_em = ?
+        WHERE folder_drive_file_id = ?
+          AND LOWER(COALESCE(modulo, 'udocs')) = LOWER(?)`,
+      [nowIso(), folderDriveFileId, module],
+    );
+
+    registrarAuditoriaArquivos(c, userData, "atalho_remove", "ok", {
+      detalhes: { module, folder_drive_file_id: folderDriveFileId },
+    });
+
+    return c.json({ ok: true, folder_drive_file_id: folderDriveFileId, module });
+  } catch (error) {
+    console.error("[arquivos] erro ao remover atalho:", error);
+    return c.json({ error: "Erro ao remover atalho" }, 500);
+  }
+});
+
+app.post("/arquivos/:id/move", requireAuth, async (c) => {
+  try {
+    const userData = await getAuthenticatedUserData(c);
+    if (!userData) return c.json({ error: "Usuário não autenticado" }, 401);
+    if (!canManageArquivosAdmin(userData)) {
+      return c.json({ error: "Acesso negado. Apenas administradores podem organizar a ordem." }, 403);
+    }
+
+    const payload = await c.req.json().catch(() => ({} as any));
+    const module = parseArquivoModule(payload?.module || c.req.query("module"), "udocs");
+    if (!canAccessArquivosModule(userData, module)) {
+      return c.json({ error: `Acesso negado ao módulo ${getModuloLabel(module)}.` }, 403);
+    }
+
+    const itemId = String(c.req.param("id") || "").trim();
+    const directionRaw = String(payload?.direction || "").trim().toLowerCase();
+    const direction = directionRaw === "up" || directionRaw === "down"
+      ? directionRaw
+      : null;
+    if (!itemId || !direction) {
+      return c.json({ error: "Parâmetros inválidos. Use direction=up|down." }, 400);
+    }
+
+    const result = reorderArquivoItem(module, itemId, direction);
+    registrarAuditoriaArquivos(c, userData, "reorder", result.moved ? "ok" : "error", {
+      arquivoId: itemId,
+      detalhes: { module, ...result },
+    });
+
+    if (!result.moved) {
+      return c.json({ ok: false, ...result }, 200);
+    }
+    return c.json({ ok: true, ...result });
+  } catch (error) {
+    console.error("[arquivos] erro ao reordenar item:", error);
+    return c.json({ error: "Erro ao reordenar item" }, 500);
+  }
+});
+
+app.get("/arquivos/search", requireAuth, async (c) => {
+  try {
+    const userData = await getAuthenticatedUserData(c);
+    if (!userData) return c.json({ error: "Usuário não autenticado" }, 401);
+
+    const moduleRaw = String(c.req.query("module") || "udocs").trim().toLowerCase();
+    const modules: ArquivoModule[] = moduleRaw === "all"
+      ? ["udocs", "umarketing"]
+      : [parseArquivoModule(moduleRaw, "udocs")];
+    for (const module of modules) {
+      if (!canAccessArquivosModule(userData, module)) {
+        return c.json({ error: `Acesso negado ao módulo ${getModuloLabel(module)}.` }, 403);
+      }
+    }
+
+    const q = String(c.req.query("q") || "").trim();
+    if (q.length < 2) {
+      return c.json({ error: "Informe ao menos 2 caracteres para busca global." }, 400);
+    }
+
+    const categoria = normalizeArquivoCategoryLabel(c.req.query("categoria"));
+    const tipo = String(c.req.query("tipo") || "").trim().toLowerCase();
+    const anoInput = String(c.req.query("ano") || "").trim();
+    const year = Number(anoInput);
+    const page = parsePositiveInt(c.req.query("page"), 1, 10000);
+    const pageSize = parsePositiveInt(c.req.query("page_size"), 20, 200);
+
+    const modulePlaceholders = modules.map(() => "LOWER(COALESCE(modulo, 'udocs')) = LOWER(?)").join(" OR ");
+    const whereClauses: string[] = [
+      "COALESCE(ativo, 1) = 1",
+      `(${modulePlaceholders})`,
+    ];
+    const params: unknown[] = [...modules];
+    if (categoria) {
+      whereClauses.push("LOWER(COALESCE(categoria, '')) = LOWER(?)");
+      params.push(categoria);
+    }
+    if (tipo === "pasta" || tipo === "arquivo") {
+      whereClauses.push("LOWER(COALESCE(item_tipo, 'arquivo')) = LOWER(?)");
+      params.push(tipo);
+    }
+    if (anoInput && Number.isFinite(year) && year > 1900) {
+      whereClauses.push("ano = ?");
+      params.push(Math.trunc(year));
+    }
+
+    const rows = db.queryEntries<Record<string, unknown>>(
+      `SELECT *
+         FROM ${TBL("arquivos_itens")}
+        WHERE ${whereClauses.join(" AND ")}`,
+      params,
+    ) || [];
+
+    const aclRows = getActiveArquivoAclRows();
+    const accessContext = buildArquivoAccessContext(userData);
+    const allowedItems = rows
+      .map((row) => mapArquivoItemRecord(row))
+      .filter((item) => canAccessArquivo(item, "view", userData, aclRows, accessContext));
+
+    let contentMatchedIds = new Set<string>();
+    try {
+      const accessToken = await getDriveAccessToken();
+      const runtimeConfig = resolveCentralArquivosDriveRuntimeConfig();
+      contentMatchedIds = await searchDriveFullTextIds(accessToken, q, {
+        driveId: runtimeConfig.driveId,
+      });
+    } catch (error) {
+      console.warn("[arquivos/search] busca fullText indisponível, mantendo apenas metadados:", error);
+    }
+
+    const queryTokens = tokenizeSearchQuery(q);
+    const queryNormalized = normalizeArquivoComparable(q);
+    const scored = allowedItems.map((item) => {
+      const title = String(item.titulo || "");
+      const categoriaItem = String(item.categoria || "");
+      const titleNorm = normalizeArquivoComparable(title);
+      const categoriaNorm = normalizeArquivoComparable(categoriaItem);
+      const mimeNorm = normalizeArquivoComparable(item.mime_type || "");
+
+      let score = 0;
+      let matchSource: "titulo" | "metadado" | "conteudo" | null = null;
+      if (titleNorm === queryNormalized) {
+        score += 140;
+        matchSource = "titulo";
+      } else if (titleNorm.startsWith(queryNormalized)) {
+        score += 100;
+        matchSource = "titulo";
+      } else if (titleNorm.includes(queryNormalized)) {
+        score += 72;
+        matchSource = "titulo";
+      }
+      if (categoriaNorm.includes(queryNormalized)) {
+        score += 28;
+        if (!matchSource) matchSource = "metadado";
+      }
+      if (mimeNorm.includes(queryNormalized)) {
+        score += 10;
+        if (!matchSource) matchSource = "metadado";
+      }
+
+      for (const token of queryTokens) {
+        if (!token) continue;
+        if (titleNorm.includes(token)) score += 12;
+        if (categoriaNorm.includes(token)) score += 6;
+      }
+
+      const driveId = String(item.drive_file_id || "").trim();
+      const contentHit = Boolean(driveId && contentMatchedIds.has(driveId));
+      if (contentHit) {
+        score += 110;
+        if (!matchSource) matchSource = "conteudo";
+      }
+
+      const matches = score > 0;
+      const snippet = matchSource === "conteudo" && !titleNorm.includes(queryNormalized) && !categoriaNorm.includes(queryNormalized)
+        ? "Termo encontrado no conteúdo indexado do arquivo no Google Drive."
+        : buildSearchSnippet(`${title} ${categoriaItem}`, queryTokens);
+
+      return {
+        ...item,
+        matches,
+        relevance_score: score,
+        snippet,
+        match_source: matchSource,
+      };
+    }).filter((item) => item.matches);
+
+    scored.sort((a, b) => {
+      if (b.relevance_score !== a.relevance_score) return b.relevance_score - a.relevance_score;
+      const tA = new Date(a.drive_modified_at || a.sincronizado_em || a.criado_em || 0).getTime();
+      const tB = new Date(b.drive_modified_at || b.sincronizado_em || b.criado_em || 0).getTime();
+      return tB - tA;
+    });
+
+    const total = scored.length;
+    const start = (page - 1) * pageSize;
+    const pagedItems = scored.slice(start, start + pageSize);
+
+    const categorias = Array.from(
+      new Set(
+        scored
+          .map((item) => normalizeArquivoCategoryLabel(item.categoria))
+          .filter(Boolean),
+      ),
+    ).sort((a, b) => a.localeCompare(b, "pt-BR"));
+
+    const anos = Array.from(
+      new Set(
+        scored
+          .map((item) => Number(item.ano))
+          .filter((item) => Number.isFinite(item) && item > 1900),
+      ),
+    ).sort((a, b) => b - a);
+
+    registrarAuditoriaArquivos(c, userData, "search", "ok", {
+      detalhes: {
+        module: moduleRaw,
+        q,
+        categoria: categoria || null,
+        tipo: tipo || null,
+        ano: anoInput || null,
+        total,
+        page,
+        page_size: pageSize,
+      },
+    });
+
+    return c.json({
+      items: pagedItems.map((item) => ({
+        id: item.id,
+        drive_file_id: item.drive_file_id,
+        titulo: item.titulo,
+        categoria: item.categoria,
+        ano: item.ano,
+        mime_type: item.mime_type,
+        item_tipo: item.item_tipo,
+        parent_drive_file_id: item.parent_drive_file_id,
+        ordem_manual: item.ordem_manual,
+        tamanho_bytes: item.tamanho_bytes,
+        criado_em: item.drive_created_at || item.criado_em || item.sincronizado_em,
+        atualizado_em: item.drive_modified_at || item.sincronizado_em || item.criado_em,
+        preview_url: item.preview_url,
+        download_url: item.download_url,
+        snippet: item.snippet,
+        relevance_score: item.relevance_score,
+        match_source: item.match_source,
+      })),
+      total,
+      categorias,
+      anos,
+      page,
+      page_size: pageSize,
+      modules,
+      search_mode: "global_no_ocr",
+      source: "api",
+    });
+  } catch (error) {
+    console.error("[arquivos] erro na busca global:", error);
+    return c.json({ error: "Erro ao executar busca global" }, 500);
+  }
+});
+
+app.get("/arquivos", requireAuth, async (c) => {
+  try {
+    const userData = await getAuthenticatedUserData(c);
+    const module = parseArquivoModule(c.req.query("module"), "udocs");
+    const moduleLabel = getModuloLabel(module);
+    if (!userData) {
+      return c.json({ error: "Usuário não autenticado" }, 401);
+    }
+    if (!canAccessArquivosModule(userData, module)) {
+      registrarAuditoriaArquivos(c, userData, "list", "deny", {
+        detalhes: `Acesso negado ao módulo ${moduleLabel}.`,
+      });
+      return c.json({ error: `Acesso negado ao módulo ${moduleLabel}` }, 403);
+    }
+
+    const q = String(c.req.query("q") || "").trim();
+    const categoria = normalizeArquivoCategoryLabel(c.req.query("categoria"));
+    const anoInput = String(c.req.query("ano") || "").trim();
+    const year = Number(anoInput);
+    const page = parsePositiveInt(c.req.query("page"), 1, 10000);
+    const pageSize = parsePositiveInt(c.req.query("page_size"), 20, 2000);
+
+    const whereClauses: string[] = [
+      "COALESCE(ativo, 1) = 1",
+      "LOWER(COALESCE(modulo, 'udocs')) = LOWER(?)",
+    ];
+    const params: unknown[] = [module];
+    if (q) {
+      const like = `%${q}%`;
+      whereClauses.push(
+        "(LOWER(COALESCE(titulo, '')) LIKE LOWER(?) OR LOWER(COALESCE(categoria, '')) LIKE LOWER(?) OR LOWER(COALESCE(mime_type, '')) LIKE LOWER(?))",
+      );
+      params.push(like, like, like);
+    }
+    if (categoria) {
+      whereClauses.push("LOWER(COALESCE(categoria, '')) = LOWER(?)");
+      params.push(categoria);
+    }
+    if (anoInput && Number.isFinite(year) && year > 1900) {
+      whereClauses.push("ano = ?");
+      params.push(Math.trunc(year));
+    }
+
+    const rows = db.queryEntries<Record<string, unknown>>(
+      `SELECT *
+         FROM ${TBL("arquivos_itens")}
+        WHERE ${whereClauses.join(" AND ")}
+        ORDER BY
+          COALESCE(parent_drive_file_id, '') ASC,
+          COALESCE(ordem_manual, 2147483647) ASC,
+          CASE WHEN LOWER(COALESCE(item_tipo, 'arquivo')) = 'pasta' THEN 0 ELSE 1 END ASC,
+          LOWER(COALESCE(titulo, '')) ASC`,
+      params,
+    ) || [];
+
+    const aclRows = getActiveArquivoAclRows();
+    const accessContext = buildArquivoAccessContext(userData);
+    const allItems = rows.map((row) => mapArquivoItemRecord(row));
+    const allowedItems = allItems.filter((item) =>
+      canAccessArquivo(item, "view", userData, aclRows, accessContext)
+    );
+
+    const enrichedItems = allowedItems.map((item) => {
+      const parsed = extractArquivoCodeAndLabel(item.titulo);
+      return {
+        ...item,
+        item_tipo: item.item_tipo || resolveArquivoItemTipo(item),
+        pasta_codigo: parsed.code,
+        pasta_nome: parsed.label,
+      };
+    });
+
+    const folderByCode = new Map<string, { id: string; drive_file_id: string; pasta_nome: string }>();
+    const folderByLabel = new Map<string, { id: string; drive_file_id: string; pasta_nome: string }>();
+    for (const item of enrichedItems) {
+      if (item.item_tipo !== "pasta") continue;
+      if (item.pasta_codigo) {
+        folderByCode.set(item.pasta_codigo, {
+          id: item.id,
+          drive_file_id: item.drive_file_id,
+          pasta_nome: item.pasta_nome,
+        });
+      }
+      const normalizedLabel = normalizeArquivoCategoryLabel(item.pasta_nome).toLowerCase();
+      if (normalizedLabel) {
+        folderByLabel.set(normalizedLabel, {
+          id: item.id,
+          drive_file_id: item.drive_file_id,
+          pasta_nome: item.pasta_nome,
+        });
+      }
+    }
+
+    const resolvedItems = enrichedItems.map((item) => {
+      if (item.item_tipo === "pasta") {
+        return { ...item, parent_drive_file_id: normalizeArquivoParentId(item.parent_drive_file_id) };
+      }
+
+      let parentDriveFileId: string | null = normalizeArquivoParentId(item.parent_drive_file_id);
+      // Só usa inferência por código/categoria quando não existe pai real vindo do Drive.
+      if (!parentDriveFileId && item.pasta_codigo && folderByCode.has(item.pasta_codigo)) {
+        parentDriveFileId = folderByCode.get(item.pasta_codigo)?.drive_file_id || null;
+      } else if (!parentDriveFileId) {
+        const categoriaNormalized = normalizeArquivoCategoryLabel(item.categoria).toLowerCase();
+        const byCategory = categoriaNormalized ? folderByLabel.get(categoriaNormalized) : null;
+        if (byCategory) {
+          parentDriveFileId = byCategory.drive_file_id;
+        }
+      }
+
+      return {
+        ...item,
+        parent_drive_file_id: parentDriveFileId,
+      };
+    });
+
+    const sortedItems = [...resolvedItems].sort((a, b) => {
+      const parentA = String(a.parent_drive_file_id || "").toLowerCase();
+      const parentB = String(b.parent_drive_file_id || "").toLowerCase();
+      if (parentA !== parentB) return parentA.localeCompare(parentB, "pt-BR");
+      const orderA = Number.isFinite(Number(a.ordem_manual)) ? Number(a.ordem_manual) : Number.MAX_SAFE_INTEGER;
+      const orderB = Number.isFinite(Number(b.ordem_manual)) ? Number(b.ordem_manual) : Number.MAX_SAFE_INTEGER;
+      if (orderA !== orderB) return orderA - orderB;
+      if (a.item_tipo !== b.item_tipo) return a.item_tipo === "pasta" ? -1 : 1;
+      return String(a.titulo || "").localeCompare(String(b.titulo || ""), "pt-BR");
+    });
+
+    const total = sortedItems.length;
+    const start = (page - 1) * pageSize;
+    const pagedItems = sortedItems.slice(start, start + pageSize);
+
+    const categorias = Array.from(
+      new Set(
+        sortedItems
+          .map((item) => normalizeArquivoCategoryLabel(item.categoria))
+          .filter(Boolean),
+      ),
+    ).sort((a, b) => a.localeCompare(b, "pt-BR"));
+
+    const anos = Array.from(
+      new Set(
+        sortedItems
+          .map((item) => Number(item.ano))
+          .filter((item) => Number.isFinite(item) && item > 1900),
+      ),
+    ).sort((a, b) => b - a);
+
+    registrarAuditoriaArquivos(c, userData, "list", "ok", {
+      detalhes: {
+        module,
+        q: q || null,
+        categoria: categoria || null,
+        ano: anoInput || null,
+        total,
+        page,
+        page_size: pageSize,
+      },
+    });
+
+    return c.json({
+      items: pagedItems.map((item) => ({
+        id: item.id,
+        drive_file_id: item.drive_file_id,
+        titulo: item.titulo,
+        categoria: item.categoria,
+        ano: item.ano,
+        mime_type: item.mime_type,
+        item_tipo: item.item_tipo,
+        pasta_codigo: item.pasta_codigo,
+        pasta_nome: item.pasta_nome,
+        parent_drive_file_id: item.parent_drive_file_id,
+        ordem_manual: item.ordem_manual,
+        tamanho_bytes: item.tamanho_bytes,
+        criado_em: item.drive_created_at || item.criado_em || item.sincronizado_em,
+        atualizado_em: item.drive_modified_at || item.sincronizado_em || item.criado_em,
+        preview_url: item.preview_url,
+        download_url: item.download_url,
+      })),
+      total,
+      categorias,
+      anos,
+      page,
+      page_size: pageSize,
+      module,
+      source: "api",
+    });
+  } catch (error) {
+    console.error("[arquivos] erro ao listar:", error);
+    return c.json({ error: "Erro ao carregar arquivos" }, 500);
+  }
+});
+
+app.post("/arquivos/sync", requireAuth, async (c) => {
+  const userData = await getAuthenticatedUserData(c);
+  const queryModule = String(c.req.query("module") || "").trim();
+  const targetModules = queryModule
+    ? [parseArquivoModule(queryModule, "udocs")]
+    : ["udocs" as ArquivoModule];
+  if (!userData) {
+    return c.json({ error: "Usuário não autenticado" }, 401);
+  }
+  if (!canManageArquivosAdmin(userData)) {
+    registrarAuditoriaArquivos(c, userData, "sync", "deny", {
+      detalhes: "Tentativa de sync sem permissão.",
+    });
+    return c.json({ error: "Acesso negado. Apenas administradores da Central podem sincronizar." }, 403);
+  }
+  for (const module of targetModules) {
+    if (!canAccessArquivosModule(userData, module)) {
+      return c.json({ error: `Acesso negado ao módulo ${getModuloLabel(module)}.` }, 403);
+    }
+  }
+
+  try {
+    const result = await syncArquivosFromGoogleDrive(targetModules);
+    registrarAuditoriaArquivos(c, userData, "sync", "ok", {
+      detalhes: { ...result, target_modules: targetModules },
+    });
+    return c.json({
+      message: `Sincronização concluída com sucesso (${targetModules.map(getModuloLabel).join(", ")}).`,
+      ...result,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const now = nowIso();
+    try {
+      db.query(
+        `INSERT INTO ${TBL("arquivos_sync_state")}
+          (provider, cursor_token, last_sync_at, last_status, last_error, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(provider) DO UPDATE SET
+           last_sync_at = excluded.last_sync_at,
+           last_status = excluded.last_status,
+           last_error = excluded.last_error,
+           updated_at = excluded.updated_at`,
+        ["google_drive", null, now, "error", truncateText(message, 600), now],
+      );
+    } catch (syncError) {
+      console.warn("[arquivos] falha ao registrar status de sync:", syncError);
+    }
+    registrarAuditoriaArquivos(c, userData, "sync", "error", {
+      detalhes: message,
+    });
+    const status = /não configuradas|desativada/i.test(message) ? 400 : 500;
+    return c.json({ error: "Falha ao sincronizar arquivos", details: message }, status);
+  }
+});
+
+app.get("/arquivos/:id/preview", requireAuth, async (c) =>
+  handleArquivoStreamRequest(c, "view", "inline")
+);
+
+app.get("/arquivos/:id/download", requireAuth, async (c) =>
+  handleArquivoStreamRequest(c, "download", "attachment")
+);
+
+// Aliases canônicos da UDocs (mantém endpoints /marketing e /arquivos para retrocompatibilidade)
+app.get("/udocs/auditoria", requireAuth, async (c) =>
+  c.redirect(buildRedirectTarget(c, "/arquivos/auditoria"), 307)
+);
+
+app.get("/udocs/acl", requireAuth, async (c) =>
+  c.redirect(buildRedirectTarget(c, "/arquivos/acl"), 307)
+);
+
+app.put("/udocs/acl", requireAuth, async (c) =>
+  c.redirect(buildRedirectTarget(c, "/arquivos/acl"), 307)
+);
+
+app.get("/udocs/grupos", requireAuth, async (c) =>
+  c.redirect(buildRedirectTarget(c, "/arquivos/grupos"), 307)
+);
+
+app.post("/udocs/grupos", requireAuth, async (c) =>
+  c.redirect(buildRedirectTarget(c, "/arquivos/grupos"), 307)
+);
+
+app.put("/udocs/grupos/:id/membros", requireAuth, async (c) => {
+  const groupId = encodeURIComponent(String(c.req.param("id") || "").trim());
+  return c.redirect(
+    buildRedirectTarget(c, `/arquivos/grupos/${groupId}/membros`),
+    307,
+  );
+});
+
+app.get("/udocs/assets", requireAuth, async (c) =>
+  c.redirect(buildRedirectTargetWithQuery(c, "/arquivos", { module: "udocs" }), 307)
+);
+
+app.get("/udocs/assets/search", requireAuth, async (c) =>
+  c.redirect(buildRedirectTargetWithQuery(c, "/arquivos/search", { module: "udocs" }), 307)
+);
+
+app.post("/udocs/assets/sync", requireAuth, async (c) =>
+  c.redirect(buildRedirectTargetWithQuery(c, "/arquivos/sync", { module: "udocs" }), 307)
+);
+
+app.get("/udocs/assets/atalhos", requireAuth, async (c) =>
+  c.redirect(buildRedirectTargetWithQuery(c, "/arquivos/atalhos", { module: "udocs" }), 307)
+);
+
+app.put("/udocs/assets/atalhos", requireAuth, async (c) =>
+  c.redirect(buildRedirectTargetWithQuery(c, "/arquivos/atalhos", { module: "udocs" }), 307)
+);
+
+app.delete("/udocs/assets/atalhos/:folderId", requireAuth, async (c) => {
+  const folderId = encodeURIComponent(String(c.req.param("folderId") || "").trim());
+  return c.redirect(
+    buildRedirectTargetWithQuery(c, `/arquivos/atalhos/${folderId}`, { module: "udocs" }),
+    307,
+  );
+});
+
+app.post("/udocs/assets/:id/move", requireAuth, async (c) => {
+  const itemId = encodeURIComponent(String(c.req.param("id") || "").trim());
+  return c.redirect(
+    buildRedirectTargetWithQuery(c, `/arquivos/${itemId}/move`, { module: "udocs" }),
+    307,
+  );
+});
+
+app.get("/udocs/assets/:id/preview", requireAuth, async (c) => {
+  const assetId = encodeURIComponent(String(c.req.param("id") || "").trim());
+  return c.redirect(
+    buildRedirectTargetWithQuery(c, `/arquivos/${assetId}/preview`, { module: "udocs" }),
+    307,
+  );
+});
+
+app.get("/udocs/assets/:id/download", requireAuth, async (c) => {
+  const assetId = encodeURIComponent(String(c.req.param("id") || "").trim());
+  return c.redirect(
+    buildRedirectTargetWithQuery(c, `/arquivos/${assetId}/download`, { module: "udocs" }),
+    307,
+  );
+});
+
+// Aliases legados do namespace /marketing para a API de arquivos
+app.get("/marketing/auditoria", requireAuth, async (c) =>
+  c.redirect(buildRedirectTarget(c, "/arquivos/auditoria"), 307)
+);
+
+app.get("/marketing/acl", requireAuth, async (c) =>
+  c.redirect(buildRedirectTarget(c, "/arquivos/acl"), 307)
+);
+
+app.put("/marketing/acl", requireAuth, async (c) =>
+  c.redirect(buildRedirectTarget(c, "/arquivos/acl"), 307)
+);
+
+app.get("/marketing/grupos", requireAuth, async (c) =>
+  c.redirect(buildRedirectTarget(c, "/arquivos/grupos"), 307)
+);
+
+app.post("/marketing/grupos", requireAuth, async (c) =>
+  c.redirect(buildRedirectTarget(c, "/arquivos/grupos"), 307)
+);
+
+app.put("/marketing/grupos/:id/membros", requireAuth, async (c) => {
+  const groupId = encodeURIComponent(String(c.req.param("id") || "").trim());
+  return c.redirect(
+    buildRedirectTarget(c, `/arquivos/grupos/${groupId}/membros`),
+    307,
+  );
+});
+
+app.get("/marketing/assets", requireAuth, async (c) =>
+  c.redirect(
+    buildRedirectTargetWithQuery(c, "/arquivos", { module: "umarketing" }),
+    307,
+  )
+);
+
+app.get("/marketing/assets/search", requireAuth, async (c) =>
+  c.redirect(
+    buildRedirectTargetWithQuery(c, "/arquivos/search", { module: "umarketing" }),
+    307,
+  )
+);
+
+app.post("/marketing/assets/sync", requireAuth, async (c) =>
+  c.redirect(
+    buildRedirectTargetWithQuery(c, "/arquivos/sync", { module: "umarketing" }),
+    307,
+  )
+);
+
+app.get("/marketing/assets/atalhos", requireAuth, async (c) =>
+  c.redirect(
+    buildRedirectTargetWithQuery(c, "/arquivos/atalhos", { module: "umarketing" }),
+    307,
+  )
+);
+
+app.put("/marketing/assets/atalhos", requireAuth, async (c) =>
+  c.redirect(
+    buildRedirectTargetWithQuery(c, "/arquivos/atalhos", { module: "umarketing" }),
+    307,
+  )
+);
+
+app.delete("/marketing/assets/atalhos/:folderId", requireAuth, async (c) => {
+  const folderId = encodeURIComponent(String(c.req.param("folderId") || "").trim());
+  return c.redirect(
+    buildRedirectTargetWithQuery(c, `/arquivos/atalhos/${folderId}`, {
+      module: "umarketing",
+    }),
+    307,
+  );
+});
+
+app.post("/marketing/assets/:id/move", requireAuth, async (c) => {
+  const itemId = encodeURIComponent(String(c.req.param("id") || "").trim());
+  return c.redirect(
+    buildRedirectTargetWithQuery(c, `/arquivos/${itemId}/move`, {
+      module: "umarketing",
+    }),
+    307,
+  );
+});
+
+app.get("/marketing/assets/:id/preview", requireAuth, async (c) => {
+  const assetId = encodeURIComponent(String(c.req.param("id") || "").trim());
+  return c.redirect(
+    buildRedirectTargetWithQuery(c, `/arquivos/${assetId}/preview`, {
+      module: "umarketing",
+    }),
+    307,
+  );
+});
+
+app.get("/marketing/assets/:id/download", requireAuth, async (c) => {
+  const assetId = encodeURIComponent(String(c.req.param("id") || "").trim());
+  return c.redirect(
+    buildRedirectTargetWithQuery(c, `/arquivos/${assetId}/download`, {
+      module: "umarketing",
+    }),
+    307,
+  );
 });
 
 // Dashboard - Estatísticas
