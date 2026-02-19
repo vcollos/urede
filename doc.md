@@ -166,6 +166,8 @@ Status atual da Central de Apps:
 - `3501` fica reservado para rodar `sub_apps/proposta` em modo standalone quando necessário.
 - `Gerador de Assinaturas de Email` está integrado em `/hub/apps/assinatura-email`.
 - `3502` fica reservado para rodar `sub_apps/email_signature` em modo standalone quando necessário.
+- `UDocs` está integrada como módulo `UDocs` em `/udocs/dashboard`.
+- `3503` fica reservado para rodar `sub_apps/central_arquivos` em modo standalone quando necessário.
 
 Regra para novos apps:
 1. Integrar primeiro no shell do UHub em `/hub/apps/<slug>`, mantendo layout e Tailwind do UHub.
@@ -186,6 +188,7 @@ Opcional (somente manutenção standalone do app externo):
 ```bash
 npm --prefix sub_apps/proposta run dev
 npm --prefix sub_apps/email_signature run dev
+npm --prefix sub_apps/central_arquivos run dev
 ```
 
 ---
@@ -198,6 +201,7 @@ VITE_API_BASE_URL=http://127.0.0.1:8300
 # opcional (apenas para manutenção standalone de sub app):
 # VITE_SUBAPP_PROPOSTA_URL=http://127.0.0.1:3501
 # VITE_SUBAPP_EMAIL_SIGNATURE_URL=http://127.0.0.1:3502
+# VITE_SUBAPP_CENTRAL_ARQUIVOS_URL=http://127.0.0.1:3503
 ```
 Outros valores poderão ser adicionados conforme integração com serviços externos.
 
@@ -207,13 +211,15 @@ JWT_SECRET=dev-secret-change-me
 SQLITE_PATH=./data/urede.db
 TABLE_PREFIX=urede_
 INSECURE_MODE=false
-ALLOWED_ORIGINS=http://localhost:3400,http://127.0.0.1:3400,http://localhost:3501,http://127.0.0.1:3501,http://localhost:3502,http://127.0.0.1:3502
+ALLOWED_ORIGINS=http://localhost:3400,http://127.0.0.1:3400,http://localhost:3501,http://127.0.0.1:3501,http://localhost:3502,http://127.0.0.1:3502,http://localhost:3503,http://127.0.0.1:3503
 PORT=8300
 PORT_FALLBACKS=8301,8302,8303
 ```
 - `INSECURE_MODE=true` libera autenticação para desenvolvimento.
 - Ajuste `ALLOWED_ORIGINS` para ambientes adicionais (app em produção, etc.).
 - `PORT` define a porta preferencial e `PORT_FALLBACKS` lista alternativas caso alguma já esteja em uso.
+- Para a UDocs, configure `GDRIVE_*` (service account + drive id) conforme `database/functions/server/.env.example`.
+- Para salvar o JSON de Service Account via tela (`Hub > Configurações`), defina também `CENTRAL_ARQUIVOS_ENCRYPTION_KEY` no backend.
 
 ---
 
@@ -245,8 +251,9 @@ bash scripts/import-csv-sqlite.sh
 - Na UI de usuários, o contato é exibido em uma única linha de telefone com ícone do WhatsApp quando `wpp=true`.
 - O menu `Responsáveis` foi renomeado para `Usuários`.
 - `Usuários` e `Gestão de dados` agora aparecem como subitens de `Configurações`, somente para administradores.
-- Navegação modular ativada: UHub concentra homepage e menus globais (`Cooperativas`, `Cidades`), enquanto URede concentra `Dashboard`, `Relatórios`, `Pedidos` e `Pedidos em lote`.
-- Branding por contexto: o topo alterna identidade visual entre UHub e URede conforme o módulo ativo.
+- Navegação modular ativada: UHub concentra homepage e menus globais (`Cooperativas`, `Cidades`), Central de Apps, URede concentra `Dashboard`, `Relatórios`, `Pedidos` e `Pedidos em lote`, UDocs concentra a biblioteca digital institucional, UMarketing concentra comunicação institucional e Ufast concentra o acesso à Câmara.
+- O controle de acesso por usuário passou a respeitar `modulos_acesso` com os módulos `central_apps`, `urede`, `udocs`, `umarketing` e `ufast`.
+- Branding por contexto: o topo alterna identidade visual conforme o módulo ativo.
 - Tela de autenticação atualizada para identidade UHub; na homepage do hub, o card de boas-vindas foi simplificado para reduzir redundância visual.
 - Configurações agora são contextuais por módulo: Hub (`/hub/configuracoes`) e URede (`/urede/configuracoes`) usam a mesma tela com seções diferentes.
 - Alteração de configurações de módulo é restrita a Administrador da Confederação (validação no frontend e backend).
@@ -315,6 +322,9 @@ bash scripts/import-csv-sqlite.sh
 ### 10.4 Navegação Modular (fase atual)
 - **UHub**: `/hub`, `/hub/apps`, `/hub/apps/propostas`, `/hub/apps/assinatura-email`, `/hub/cooperativas`, `/hub/cidades`, `/hub/configuracoes`, `/hub/usuarios`, `/hub/gestao-dados`.
 - **URede**: `/urede/dashboard`, `/urede/relatorios`, `/urede/pedidos`, `/urede/importacao`, `/urede/configuracoes`.
+- **UDocs**: `/udocs/dashboard`.
+- **UMarketing**: `/umarketing/dashboard`.
+- **Ufast**: `/ufast/dashboard`.
 - O shell principal alterna menu, atalhos e marca conforme o módulo ativo.
 - A Central de Apps é tratada como recurso global do UHub; apps externos devem ser incorporados por essa rota antes de considerar execução isolada.
 - Rotas legadas continuam com fallback para preservar deep links existentes.

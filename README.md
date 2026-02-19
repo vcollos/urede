@@ -29,6 +29,8 @@ Testes rápidos:
 Notas:
 - Rotas protegidas usam JWT local (gerado pelo próprio backend em `/auth/register` e `/auth/login`).
 - Tabelas do SQLite usam prefixo `urede_`. Os CSVs em `bases_csv/` alimentam `urede_cooperativas`, `urede_cidades` e `urede_operadores`.
+- A `UDocs` usa endpoints canônicos `/udocs/assets*` com retrocompatibilidade em `/marketing/assets*` e `/arquivos*`, além de integração com Google Drive via variáveis `GDRIVE_*` (veja `database/functions/server/.env.example`).
+- O JSON de Service Account do Google Drive pode ser cadastrado em `Hub > Configurações` (somente administradores da Central); o armazenamento em banco usa criptografia AES-GCM com chave `CENTRAL_ARQUIVOS_ENCRYPTION_KEY`.
 
 ## Política de Portas (UHub + Sub Apps)
 
@@ -44,6 +46,8 @@ Status atual:
 - `sub_apps/proposta` permanece como fonte externa para referência/evolução e pode ser rodado standalone em `3501` quando necessário.
 - `Gerador de Assinaturas de Email` está **integrado no UHub** em `/hub/apps/assinatura-email`.
 - `sub_apps/email_signature` pode ser rodado standalone em `3502` quando necessário.
+- `UDocs` está **integrada como módulo UDocs** em `/udocs/dashboard`.
+- `sub_apps/central_arquivos` pode ser rodado standalone em `3503` quando necessário.
 
 Regra para novos apps:
 
@@ -90,12 +94,16 @@ Regra para novos apps:
 - O projeto não depende mais de serviços externos. Todo acesso é local (SQLite).
 - Para agendamentos, use um scheduler externo que faça POST `/` com header `x-cron: true` e body `{ "task": "escalar" }`.
 
-## Navegação Modular (UHub / URede)
+## Navegação Modular (UHub / URede / UDocs / UMarketing / Ufast)
 
 Escopo vigente da separação modular:
 - **UHub (compartilhado/global)**: Homepage do hub, `Central de Apps`, `Cooperativas`, `Cidades`.
 - **UHub (admin)**: `Usuários` (`operadores`) e `Gestão de dados` (`gestao_dados`) como subitens de `Configurações`.
 - **Módulo URede (específico)**: `Dashboard`, `Relatórios`, `Pedidos` e `Pedidos em lote` (`importacao`), incluindo ações de `Novo pedido`.
+- **Módulo UDocs (específico)**: biblioteca digital institucional para consumo de arquivos e registros históricos.
+- **Módulo UMarketing (específico)**: frente institucional de comunicação e marketing.
+- **Módulo Ufast (específico)**: acesso à Câmara de Compensação.
+- O controle de acesso por usuário usa `modulos_acesso` com os módulos: `central_apps`, `urede`, `udocs`, `umarketing` e `ufast`.
 - `Configurações` é contextual por módulo:
   - Hub: `/hub/configuracoes` (cadastros globais de dados cadastrais).
   - URede: `/urede/configuracoes` (fluxo de aprovação e categorias de pedidos).
@@ -105,6 +113,9 @@ Escopo vigente da separação modular:
 Rotas canônicas desta fase:
 - Hub: `/hub`, `/hub/apps`, `/hub/apps/propostas`, `/hub/apps/assinatura-email`, `/hub/cooperativas`, `/hub/cidades`, `/hub/configuracoes`, `/hub/usuarios`, `/hub/gestao-dados`
 - URede: `/urede/dashboard`, `/urede/relatorios`, `/urede/pedidos`, `/urede/importacao`, `/urede/configuracoes`
+- UDocs: `/udocs/dashboard`
+- UMarketing: `/umarketing/dashboard`
+- Ufast: `/ufast/dashboard`
 - Compatibilidade: rotas legadas continuam sendo aceitas e mapeadas para o módulo correspondente.
 - Branding da autenticação: a tela de login usa identidade visual UHub.
 

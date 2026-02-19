@@ -8,7 +8,10 @@ interface CentralAppsPageProps {
   onOpenEmailSignatureModule: () => void;
 }
 
-export function CentralAppsPage({ onOpenPropostasModule, onOpenEmailSignatureModule }: CentralAppsPageProps) {
+export function CentralAppsPage({
+  onOpenPropostasModule,
+  onOpenEmailSignatureModule,
+}: CentralAppsPageProps) {
   return (
     <div className="space-y-6">
       <section className="rounded-3xl border border-[#E7E4FB] bg-gradient-to-r from-[#F6F3FF] via-white to-[#F2FAFF] px-6 py-6">
@@ -75,6 +78,7 @@ export function CentralAppsPage({ onOpenPropostasModule, onOpenEmailSignatureMod
             </Button>
           </CardContent>
         </Card>
+
       </section>
     </div>
   );

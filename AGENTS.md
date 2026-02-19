@@ -40,11 +40,15 @@
 4. Novos fluxos de CRUD devem priorizar `urede_pessoas` + `urede_pessoa_vinculos`.
 5. `Contatos` (`urede_cooperativa_contatos`) não fazem parte dessa unificação.
 
-## Navegação modular (UHub / URede)
+## Navegação modular (UHub / URede / UDocs)
 
 - Funcionalidades globais devem ficar no contexto **UHub** (homepage, cooperativas, cidades, central de apps).
 - Funcionalidades de operação de pedidos devem ficar no contexto **módulo URede** (dashboard, relatórios, pedidos, pedidos em lote, novo pedido).
-- Rotas legadas podem ser mantidas apenas para compatibilidade; novos fluxos devem priorizar rotas com prefixo de módulo (`/hub/*`, `/urede/*`).
+- Funcionalidades da biblioteca digital devem ficar no contexto **módulo UDocs** (`/udocs/*`), com dashboard em `/udocs/dashboard`.
+- Funcionalidades de comunicação institucional devem ficar no contexto **módulo UMarketing** (`/umarketing/*`), com dashboard em `/umarketing/dashboard`.
+- Funcionalidades da Câmara de Compensação devem ficar no contexto **módulo Ufast** (`/ufast/*`), com dashboard em `/ufast/dashboard`.
+- O acesso por usuário deve respeitar `modulos_acesso` com os módulos: `central_apps`, `urede`, `udocs`, `umarketing`, `ufast`.
+- Rotas legadas podem ser mantidas apenas para compatibilidade; novos fluxos devem priorizar rotas com prefixo de módulo (`/hub/*`, `/urede/*`, `/udocs/*`, `/umarketing/*`, `/ufast/*`).
 - Rotas canônicas do Hub para apps integrados: `/hub/apps` e `/hub/apps/<slug>` (ex.: `/hub/apps/propostas`, `/hub/apps/assinatura-email`).
 - Configurações são contextuais por módulo:
   - Hub: `/hub/configuracoes` (cadastros globais de dados cadastrais)
@@ -54,13 +58,14 @@
 ## Central de Apps e sub_apps (obrigatório)
 
 1. Novos apps em `sub_apps/*` devem priorizar integração dentro do shell do UHub, mantendo layout e Tailwind do UHub.
-2. A rota preferencial para consumo é sempre `/hub/apps/<slug>`.
+2. A rota preferencial para consumo é `/hub/apps/<slug>`; exceção quando o app evoluir para módulo próprio (ex.: UDocs em `/udocs/dashboard`).
 3. Execução standalone de sub app é opcional e usada apenas para manutenção isolada quando necessário.
 4. Quando houver standalone local, usar a faixa de portas `3501-3599`.
 5. Ao integrar novo app, atualizar `README.md`, `doc.md` e este `AGENTS.md` com rota canônica e porta reservada (se houver standalone).
 6. Mapeamento atual:
    - `sub_apps/proposta` => rota canônica `/hub/apps/propostas` (standalone `3501`).
    - `sub_apps/email_signature` => rota canônica `/hub/apps/assinatura-email` (standalone `3502`).
+   - `sub_apps/central_arquivos` => rota canônica `/udocs/dashboard` (standalone `3503`; legado `/hub/apps/central-arquivos`).
 
 ## Vínculo de usuários e singulares
 

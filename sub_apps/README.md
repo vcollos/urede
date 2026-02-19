@@ -15,6 +15,7 @@ Quando necessário, também podem rodar em modo standalone para manutenção.
 |---|---|---:|---|
 | Gerador de Propostas | `sub_apps/proposta` | 3501 | `http://localhost:3501` (standalone opcional) |
 | Gerador de Assinaturas de Email | `sub_apps/email_signature` | 3502 | `http://localhost:3502` (standalone opcional) |
+| UDocs | `sub_apps/central_arquivos` | 3503 | `http://localhost:3503` (standalone opcional; canônico em `/udocs/dashboard`, com legado `/hub/apps/central-arquivos`) |
 
 ## Checklist para adicionar um novo sub app
 

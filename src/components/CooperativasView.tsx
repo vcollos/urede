@@ -76,6 +76,23 @@ const formatCooperativaTipo = (tipo: string) => {
   return tipo || '—';
 };
 
+const formatCooperativaPapel = (value: unknown) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '—';
+  const normalized = raw.toLowerCase();
+  if (normalized === 'operadora') return 'Operadora';
+  if (normalized === 'institucional') return 'Institucional';
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+};
+
+const cooperativaPapelBadgeClass = (value: unknown) => {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === 'operadora') return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+  if (normalized === 'institucional') return 'bg-blue-100 text-blue-800 border-blue-200';
+  if (normalized) return 'bg-amber-100 text-amber-800 border-amber-200';
+  return 'bg-slate-100 text-slate-700 border-slate-200';
+};
+
 // Formata datas para o padrão brasileiro DD/MM/AAAA.
 const formatDateBR = (value: unknown) => {
   const raw = String(value ?? '').trim();
@@ -496,14 +513,40 @@ export function CooperativasView() {
     const sorted = [...cooperativas].sort((a, b) =>
       a.uniodonto.localeCompare(b.uniodonto, 'pt-BR', { sensitivity: 'base' })
     );
-    if (!searchTerm) return sorted;
-    const query = searchTerm.toLowerCase();
-    return sorted.filter((coop) =>
-      coop.uniodonto.toLowerCase().includes(query) ||
-      coop.raz_social.toLowerCase().includes(query) ||
-      coop.id_singular.toLowerCase().includes(query)
-    );
-  }, [cooperativas, searchTerm]);
+    const normalizedQuery = searchTerm
+      .trim()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+    if (!normalizedQuery) return sorted;
+
+    const queryTerms = normalizedQuery.split(/\s+/).filter(Boolean);
+
+    return sorted.filter((coop) => {
+      const cidadesCount = cidadeCountMap.get(coop.id_singular) ?? 0;
+      const operadoresCount = operadorCountMap.get(coop.id_singular) ?? 0;
+
+      const searchableRow = [
+        coop.uniodonto,
+        coop.raz_social,
+        coop.id_singular,
+        coop.tipo_label ?? formatCooperativaTipo(coop.tipo),
+        formatCooperativaPapel(coop.op_pr),
+        cidadesCount,
+        operadoresCount,
+        coop.software,
+        coop.cnpj,
+        coop.codigo_ans,
+        coop.federacao,
+      ]
+        .join(' ')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+
+      return queryTerms.every((term) => searchableRow.includes(term));
+    });
+  }, [cooperativas, searchTerm, cidadeCountMap, operadorCountMap]);
 
   // Calcula o escopo de edição sempre que usuário ou cooperativas mudarem.
   const scope = useMemo(() => resolveScope(user?.papel, user?.cooperativa_id, cooperativas), [user?.papel, user?.cooperativa_id, cooperativas]);
@@ -1166,6 +1209,17 @@ export function CooperativasView() {
                     <div>
                       <span className="text-gray-500">Tipo</span>
                       <p className="font-medium text-gray-900">{selectedCoop.tipo_label ?? formatCooperativaTipo(selectedCoop.tipo)}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Papel</span>
+                      <div className="pt-1">
+                        <Badge
+                          variant="outline"
+                          className={cn('text-xs', cooperativaPapelBadgeClass(selectedCoop.op_pr))}
+                        >
+                          {formatCooperativaPapel(selectedCoop.op_pr)}
+                        </Badge>
+                      </div>
                     </div>
                     <div>
                       <span className="text-gray-500">Federação</span>
@@ -1908,7 +1962,7 @@ export function CooperativasView() {
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             <Input
-              placeholder="Buscar cooperativa..."
+              placeholder="Buscar em qualquer campo..."
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
               className="pl-10"
@@ -1932,17 +1986,18 @@ export function CooperativasView() {
                 <TableRow>
                   <TableHead>Cooperativa</TableHead>
                   <TableHead>Tipo</TableHead>
-                  <TableHead className="hidden md:table-cell">Cidades</TableHead>
-                <TableHead className="hidden md:table-cell">Responsáveis</TableHead>
-                  <TableHead className="hidden lg:table-cell">Software</TableHead>
-                  <TableHead className="hidden lg:table-cell">CNPJ</TableHead>
+                  <TableHead className="hidden md:table-cell">Papel</TableHead>
+                  <TableHead>Cidades</TableHead>
+                  <TableHead className="hidden md:table-cell">Responsáveis</TableHead>
+                  <TableHead className="hidden md:table-cell">Software</TableHead>
+                  <TableHead className="hidden md:table-cell">CNPJ</TableHead>
                   <TableHead className="w-28 text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredCooperativas.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-6 text-gray-500">
+                    <TableCell colSpan={8} className="text-center py-6 text-gray-500">
                       Nenhuma cooperativa encontrada
                     </TableCell>
                   </TableRow>
@@ -1976,6 +2031,14 @@ export function CooperativasView() {
                           </Badge>
                         </TableCell>
                         <TableCell className="hidden md:table-cell">
+                          <Badge
+                            variant="outline"
+                            className={cn('text-xs', cooperativaPapelBadgeClass(coop.op_pr))}
+                          >
+                            {formatCooperativaPapel(coop.op_pr)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
                           <div className="flex items-center gap-1">
                             <MapPin className="w-4 h-4 text-gray-400" />
                             <span className="font-medium">{cidadesCount}</span>
@@ -1987,10 +2050,10 @@ export function CooperativasView() {
                             <span className="font-medium">{operadoresCount}</span>
                           </div>
                         </TableCell>
-                        <TableCell className="hidden lg:table-cell text-gray-600">
+                        <TableCell className="hidden md:table-cell text-gray-600">
                           {coop.software || '—'}
                         </TableCell>
-                        <TableCell className="hidden lg:table-cell text-gray-600">
+                        <TableCell className="hidden md:table-cell text-gray-600">
                           {coop.cnpj || '—'}
                         </TableCell>
                         <TableCell className="text-right">

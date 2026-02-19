@@ -10,7 +10,7 @@ export interface User {
   cargo: string;
   cooperativa_id: string;
   cooperativas_ids?: string[];
-  modulos_acesso?: Array<'hub' | 'urede'>;
+  modulos_acesso?: Array<'hub' | 'urede' | 'udocs' | 'umarketing' | 'ufast' | 'central_apps'>;
   papel: 'admin' | 'operador' | 'federacao' | 'confederacao';
   ativo: boolean;
   data_cadastro: string;
@@ -66,7 +66,7 @@ export interface Operador {
   id_singular: string;
   cooperativas_ids?: string[];
   cooperativa_principal_id?: string;
-  modulos_acesso?: Array<'hub' | 'urede'>;
+  modulos_acesso?: Array<'hub' | 'urede' | 'udocs' | 'umarketing' | 'ufast' | 'central_apps'>;
   ativo: boolean;
   data_cadastro: string;
   papel?: 'operador' | 'admin' | 'federacao' | 'confederacao';
@@ -244,6 +244,34 @@ export interface SystemSettings {
     subtipos_contato: string[];
     redes_sociais: string[];
     departamentos: string[];
+  };
+}
+
+export interface CentralArquivosGoogleDriveCredentialStatus {
+  can_manage: boolean;
+  configured: boolean;
+  source: 'secure_store' | 'env' | null;
+  encryption_enabled: boolean;
+  credential: {
+    project_id: string | null;
+    client_email_masked: string;
+    updated_at: string | null;
+    updated_by: string | null;
+  } | null;
+  drive: {
+    source: 'secure_store' | 'env';
+    drive_id: string | null;
+    udocs_root_folder_id: string;
+    umarketing_root_folder_id: string | null;
+    validation?: {
+      status: 'valid';
+      checked_at: string;
+      drive_name: string | null;
+      udocs_folder_name: string | null;
+      umarketing_folder_name: string | null;
+    } | null;
+    updated_at: string | null;
+    updated_by: string | null;
   };
 }
 

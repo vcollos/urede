@@ -9,6 +9,7 @@ import type {
   CoberturaLog,
   CooperativaOverviewLog,
   SystemSettings,
+  CentralArquivosGoogleDriveCredentialStatus,
   Alerta,
   CooperativaConfig,
   PedidoImportPayload,
@@ -128,7 +129,7 @@ class ApiService {
     id_singular: string;
     cooperativas_ids?: string[];
     cooperativa_principal_id?: string;
-    modulos_acesso?: Array<'hub' | 'urede'>;
+    modulos_acesso?: Array<'hub' | 'urede' | 'udocs' | 'umarketing' | 'ufast' | 'central_apps'>;
     senha_temporaria?: string;
     forcar_troca_senha?: boolean;
   }): Promise<Operador> {
@@ -461,6 +462,60 @@ class ApiService {
       body: JSON.stringify(settings),
     });
     return response?.settings ?? settings;
+  }
+
+  async getCentralArquivosGoogleDriveCredentialStatus(): Promise<CentralArquivosGoogleDriveCredentialStatus> {
+    try {
+      return await apiRequest('/configuracoes/sistema/udocs/google-drive');
+    } catch {
+      return await apiRequest('/configuracoes/sistema/central-arquivos/google-drive');
+    }
+  }
+
+  async updateCentralArquivosGoogleDriveCredential(
+    serviceAccount: Record<string, unknown>,
+  ): Promise<CentralArquivosGoogleDriveCredentialStatus> {
+    try {
+      return await apiRequest('/configuracoes/sistema/udocs/google-drive', {
+        method: 'PUT',
+        body: JSON.stringify({ service_account: serviceAccount }),
+      });
+    } catch {
+      return await apiRequest('/configuracoes/sistema/central-arquivos/google-drive', {
+        method: 'PUT',
+        body: JSON.stringify({ service_account: serviceAccount }),
+      });
+    }
+  }
+
+  async updateCentralArquivosGoogleDriveFolders(payload: {
+    drive_id?: string | null;
+    udocs_root_folder_id: string;
+    umarketing_root_folder_id: string;
+  }): Promise<CentralArquivosGoogleDriveCredentialStatus> {
+    try {
+      return await apiRequest('/configuracoes/sistema/udocs/google-drive', {
+        method: 'PUT',
+        body: JSON.stringify({ drive: payload }),
+      });
+    } catch {
+      return await apiRequest('/configuracoes/sistema/central-arquivos/google-drive', {
+        method: 'PUT',
+        body: JSON.stringify({ drive: payload }),
+      });
+    }
+  }
+
+  async deleteCentralArquivosGoogleDriveCredential(): Promise<CentralArquivosGoogleDriveCredentialStatus> {
+    try {
+      return await apiRequest('/configuracoes/sistema/udocs/google-drive', {
+        method: 'DELETE',
+      });
+    } catch {
+      return await apiRequest('/configuracoes/sistema/central-arquivos/google-drive', {
+        method: 'DELETE',
+      });
+    }
   }
 
   async getReportsOverview(params?: { start?: string; end?: string }): Promise<ReportsOverview> {

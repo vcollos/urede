@@ -23,14 +23,20 @@ import { PessoasView } from './components/PessoasView';
 import { CentralAppsPage } from './components/CentralAppsPage';
 import { PropostasHubPage } from './components/PropostasHubPage';
 import { EmailSignatureHubPage } from './components/EmailSignatureHubPage';
+import { UDocsHubPage } from './components/CentralArquivosHubPage';
+import { UMarketingHubPage } from './components/UMarketingHubPage';
+import { UfastHubPage } from './components/UfastHubPage';
 import { hasModuleAccess } from './utils/moduleAccess';
 
-type AppModule = 'hub' | 'urede';
+type AppModule = 'hub' | 'urede' | 'udocs' | 'umarketing' | 'ufast';
 type AppTab =
   | 'hub_home'
   | 'central_apps'
   | 'apps_propostas'
   | 'apps_assinatura_email'
+  | 'udocs_dashboard'
+  | 'umarketing_dashboard'
+  | 'ufast_dashboard'
   | 'cooperativas'
   | 'cidades'
   | 'configuracoes'
@@ -52,6 +58,9 @@ function AppContent() {
     central_apps: '/hub/apps',
     apps_propostas: '/hub/apps/propostas',
     apps_assinatura_email: '/hub/apps/assinatura-email',
+    udocs_dashboard: '/udocs/dashboard',
+    umarketing_dashboard: '/umarketing/dashboard',
+    ufast_dashboard: '/ufast/dashboard',
     cooperativas: '/hub/cooperativas',
     cidades: '/hub/cidades',
     configuracoes: '/hub/configuracoes',
@@ -86,16 +95,46 @@ function AppContent() {
     'relatorios',
     'configuracoes_urede',
   ]), []);
+  const udocsTabs = useMemo(() => new Set<AppTab>([
+    'udocs_dashboard',
+  ]), []);
+  const umarketingTabs = useMemo(() => new Set<AppTab>([
+    'umarketing_dashboard',
+  ]), []);
+  const ufastTabs = useMemo(() => new Set<AppTab>([
+    'ufast_dashboard',
+  ]), []);
+  const centralAppsTabs = useMemo(() => new Set<AppTab>([
+    'central_apps',
+    'apps_propostas',
+    'apps_assinatura_email',
+  ]), []);
 
   const deriveModuleFromTab = useMemo(() => {
-    return (tab: AppTab): AppModule => (hubTabs.has(tab) ? 'hub' : 'urede');
-  }, [hubTabs]);
+    return (tab: AppTab): AppModule => {
+      if (hubTabs.has(tab)) return 'hub';
+      if (uredeTabs.has(tab)) return 'urede';
+      if (udocsTabs.has(tab)) return 'udocs';
+      if (umarketingTabs.has(tab)) return 'umarketing';
+      if (ufastTabs.has(tab)) return 'ufast';
+      return 'hub';
+    };
+  }, [hubTabs, uredeTabs, udocsTabs, umarketingTabs, ufastTabs]);
 
   const deriveTabFromPath = useMemo(() => {
     return (pathname: string): AppTab => {
       const normalizedPath = pathname.replace(/\/+$/, '') || '/';
 
       if (normalizedPath === '/' || normalizedPath === '/hub') return 'hub_home';
+      if (normalizedPath === '/udocs' || normalizedPath.startsWith('/udocs/dashboard')) return 'udocs_dashboard';
+      if (normalizedPath === '/umarketing' || normalizedPath.startsWith('/umarketing/dashboard')) return 'umarketing_dashboard';
+      if (normalizedPath === '/ufast' || normalizedPath.startsWith('/ufast/dashboard')) return 'ufast_dashboard';
+      // Compatibilidade com rotas legadas da Central de Arquivos
+      if (normalizedPath.startsWith('/hub/apps/central-arquivos')) return 'udocs_dashboard';
+      if (normalizedPath.startsWith('/hub/apps/udocs')) return 'udocs_dashboard';
+      if (normalizedPath.startsWith('/hub/apps/marketing')) return 'umarketing_dashboard';
+      if (normalizedPath.startsWith('/hub/apps/umarketing')) return 'umarketing_dashboard';
+      if (normalizedPath.startsWith('/hub/apps/ufast')) return 'ufast_dashboard';
       if (normalizedPath.startsWith('/hub/apps/assinatura-email')) return 'apps_assinatura_email';
       if (normalizedPath.startsWith('/hub/apps/propostas')) return 'apps_propostas';
       if (normalizedPath.startsWith('/hub/apps')) return 'central_apps';
@@ -127,7 +166,12 @@ function AppContent() {
   const [showNovoPedido, setShowNovoPedido] = useState(false);
   const [selectedPedido, setSelectedPedido] = useState<Pedido | null>(null);
   const [pedidosPresetFilter, setPedidosPresetFilter] = useState<PedidosFilterPreset | null>(null);
-  const canAccessUrede = hasModuleAccess(user?.modulos_acesso, 'urede', ['hub']);
+  const isMasterModuleUser = user?.papel === 'admin' || user?.papel === 'confederacao';
+  const canAccessUrede = isMasterModuleUser || hasModuleAccess(user?.modulos_acesso, 'urede', ['hub']);
+  const canAccessUDocs = isMasterModuleUser || hasModuleAccess(user?.modulos_acesso, 'udocs', ['hub']);
+  const canAccessUMarketing = isMasterModuleUser || hasModuleAccess(user?.modulos_acesso, 'umarketing', ['hub']);
+  const canAccessUfast = isMasterModuleUser || hasModuleAccess(user?.modulos_acesso, 'ufast', ['hub']);
+  const canAccessCentralApps = isMasterModuleUser || hasModuleAccess(user?.modulos_acesso, 'central_apps', ['hub']);
 
   const navigateByTab = (tab: AppTab) => {
     const path = tabPathMap[tab];
@@ -156,6 +200,42 @@ function AppContent() {
   const navigateToHubModule = () => {
     navigateByTab('hub_home');
     setCurrentTab('hub_home');
+    setShowNovoPedido(false);
+    setSelectedPedido(null);
+    setPedidosPresetFilter(null);
+  };
+
+  const navigateToUDocsModule = () => {
+    if (!canAccessUDocs) {
+      navigateToHubModule();
+      return;
+    }
+    navigateByTab('udocs_dashboard');
+    setCurrentTab('udocs_dashboard');
+    setShowNovoPedido(false);
+    setSelectedPedido(null);
+    setPedidosPresetFilter(null);
+  };
+
+  const navigateToUMarketingModule = () => {
+    if (!canAccessUMarketing) {
+      navigateToHubModule();
+      return;
+    }
+    navigateByTab('umarketing_dashboard');
+    setCurrentTab('umarketing_dashboard');
+    setShowNovoPedido(false);
+    setSelectedPedido(null);
+    setPedidosPresetFilter(null);
+  };
+
+  const navigateToUfastModule = () => {
+    if (!canAccessUfast) {
+      navigateToHubModule();
+      return;
+    }
+    navigateByTab('ufast_dashboard');
+    setCurrentTab('ufast_dashboard');
     setShowNovoPedido(false);
     setSelectedPedido(null);
     setPedidosPresetFilter(null);
@@ -192,6 +272,42 @@ function AppContent() {
     setSelectedPedido(null);
     setPedidosPresetFilter(null);
   }, [activeTab, canAccessUrede, uredeTabs, user]);
+
+  useEffect(() => {
+    if (!user || canAccessUDocs) return;
+    if (!udocsTabs.has(activeTab)) return;
+    navigateByTab('hub_home');
+    setCurrentTab('hub_home');
+    setSelectedPedido(null);
+    setPedidosPresetFilter(null);
+  }, [activeTab, canAccessUDocs, udocsTabs, user]);
+
+  useEffect(() => {
+    if (!user || canAccessUMarketing) return;
+    if (!umarketingTabs.has(activeTab)) return;
+    navigateByTab('hub_home');
+    setCurrentTab('hub_home');
+    setSelectedPedido(null);
+    setPedidosPresetFilter(null);
+  }, [activeTab, canAccessUMarketing, umarketingTabs, user]);
+
+  useEffect(() => {
+    if (!user || canAccessUfast) return;
+    if (!ufastTabs.has(activeTab)) return;
+    navigateByTab('hub_home');
+    setCurrentTab('hub_home');
+    setSelectedPedido(null);
+    setPedidosPresetFilter(null);
+  }, [activeTab, canAccessUfast, ufastTabs, user]);
+
+  useEffect(() => {
+    if (!user || canAccessCentralApps) return;
+    if (!centralAppsTabs.has(activeTab)) return;
+    navigateByTab('hub_home');
+    setCurrentTab('hub_home');
+    setSelectedPedido(null);
+    setPedidosPresetFilter(null);
+  }, [activeTab, canAccessCentralApps, centralAppsTabs, user]);
 
   if (pathname.startsWith('/documentacao/usuarios')) {
     return <DocumentacaoUsuariosApp />;
@@ -293,6 +409,18 @@ function AppContent() {
       navigateToHubModule();
       return;
     }
+    if (module === 'umarketing') {
+      navigateToUMarketingModule();
+      return;
+    }
+    if (module === 'ufast') {
+      navigateToUfastModule();
+      return;
+    }
+    if (module === 'udocs') {
+      navigateToUDocsModule();
+      return;
+    }
     if (!canAccessUrede) {
       navigateToHubModule();
       return;
@@ -329,8 +457,15 @@ function AppContent() {
   const renderHubHome = (isAdmin: boolean) => (
     <HubHomePage
       isAdmin={isAdmin}
-      userName={user?.nome || 'Usuário'}
+      canAccessUrede={canAccessUrede}
+      canAccessCentralApps={canAccessCentralApps}
+      canAccessUDocs={canAccessUDocs}
+      canAccessUMarketing={canAccessUMarketing}
+      canAccessUfast={canAccessUfast}
       onOpenUredeModule={navigateToUredeModule}
+      onOpenUDocsModule={navigateToUDocsModule}
+      onOpenUMarketingModule={navigateToUMarketingModule}
+      onOpenUfastModule={navigateToUfastModule}
       onOpenHubTab={(tab) => handleSidebarTabChange(tab)}
     />
   );
@@ -375,6 +510,7 @@ function AppContent() {
       case 'gestao_dados':
         return user?.papel === 'admin' ? <GestaoDadosPage /> : renderHubHome(false);
       case 'central_apps':
+        if (!canAccessCentralApps) return renderHubHome(user?.papel === 'admin');
         return (
           <CentralAppsPage
             onOpenPropostasModule={() => handleSidebarTabChange('apps_propostas')}
@@ -382,9 +518,20 @@ function AppContent() {
           />
         );
       case 'apps_propostas':
+        if (!canAccessCentralApps) return renderHubHome(user?.papel === 'admin');
         return <PropostasHubPage />;
       case 'apps_assinatura_email':
+        if (!canAccessCentralApps) return renderHubHome(user?.papel === 'admin');
         return <EmailSignatureHubPage />;
+      case 'udocs_dashboard':
+        if (!canAccessUDocs) return renderHubHome(user?.papel === 'admin');
+        return <UDocsHubPage />;
+      case 'umarketing_dashboard':
+        if (!canAccessUMarketing) return renderHubHome(user?.papel === 'admin');
+        return <UMarketingHubPage />;
+      case 'ufast_dashboard':
+        if (!canAccessUfast) return renderHubHome(user?.papel === 'admin');
+        return <UfastHubPage />;
       case 'cooperativas':
         return <CooperativasView />;
       case 'operadores':
@@ -414,6 +561,10 @@ function AppContent() {
         activeTab={activeTab}
         activeModule={activeModule}
         canAccessUrede={canAccessUrede}
+        canAccessCentralApps={canAccessCentralApps}
+        canAccessUDocs={canAccessUDocs}
+        canAccessUMarketing={canAccessUMarketing}
+        canAccessUfast={canAccessUfast}
         onModuleChange={handleModuleChange}
         onTabChange={handleSidebarTabChange}
         onCreatePedido={activeModule === 'urede' && canAccessUrede ? openNovoPedido : undefined}

@@ -1,6 +1,35 @@
-export type AppModuleAccess = 'hub' | 'urede';
+export type AppModuleAccess =
+  | 'hub'
+  | 'urede'
+  | 'udocs'
+  | 'umarketing'
+  | 'ufast'
+  | 'central_apps';
 
-const ALLOWED_MODULES: AppModuleAccess[] = ['hub', 'urede'];
+const ALLOWED_MODULES: AppModuleAccess[] = [
+  'hub',
+  'urede',
+  'udocs',
+  'umarketing',
+  'ufast',
+  'central_apps',
+];
+
+const normalizeLegacyModule = (value: string): AppModuleAccess | null => {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return null;
+
+  const aliases: Record<string, AppModuleAccess> = {
+    'central-apps': 'central_apps',
+    'centralapps': 'central_apps',
+    'central de apps': 'central_apps',
+    'central_de_apps': 'central_apps',
+  };
+
+  const canonical = aliases[normalized] ?? normalized;
+  if ((ALLOWED_MODULES as string[]).includes(canonical)) return canonical as AppModuleAccess;
+  return null;
+};
 
 export const normalizeModuleAccess = (
   value: unknown,
@@ -15,8 +44,8 @@ export const normalizeModuleAccess = (
   const normalized = Array.from(
     new Set(
       fromInput
-        .map((item) => String(item ?? '').trim().toLowerCase())
-        .filter((item): item is AppModuleAccess => ALLOWED_MODULES.includes(item as AppModuleAccess)),
+        .map((item) => normalizeLegacyModule(String(item ?? '')))
+        .filter((item): item is AppModuleAccess => Boolean(item)),
     ),
   );
 
@@ -36,4 +65,3 @@ export const hasModuleAccess = (
   module: AppModuleAccess,
   fallback: AppModuleAccess[] = ['hub'],
 ) => normalizeModuleAccess(value, fallback).includes(module);
-
